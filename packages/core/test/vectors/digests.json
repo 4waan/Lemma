@@ -258,6 +258,46 @@
       },
       "canonical": "{\"kind\":\"patch-bundle\",\"value\":{\"dependencies\":{\"@x402/mcp\":\"^2.27.0\"},\"devDependencies\":{},\"files\":[{\"baseDigest\":null,\"content\":\"export const paid = true;\\n\",\"op\":\"add\",\"path\":\"src/payments.ts\"},{\"baseDigest\":\"0x9999999999999999999999999999999999999999999999999999999999999999\",\"content\":\"import { paid } from './payments.js';\\n\",\"op\":\"modify\",\"path\":\"src/server.ts\"}],\"schemaVersion\":\"1\"}}",
       "digest": "0x24fa2027822d5941566cfb689daecb79e6cc8f2ecc0d8f86d9dd794defd0440d"
+    },
+    {
+      "name": "run-record",
+      "kind": "run-record",
+      "value": {
+        "schemaVersion": "1",
+        "runId": "0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1",
+        "benchmarkVersion": "bench-1",
+        "taskId": "mcp-server-gating",
+        "arm": "treatment",
+        "repetition": 1,
+        "fixtureProfileDigest": "0x1313131313131313131313131313131313131313131313131313131313131313",
+        "releaseDigest": "0x5555555555555555555555555555555555555555555555555555555555555555",
+        "model": "example-model-1",
+        "startedAt": "2026-09-21T10:00:00.000Z",
+        "finishedAt": "2026-09-21T10:30:00.000Z",
+        "tokens": {
+          "input": 400000,
+          "output": 20000,
+          "cacheRead": 150000,
+          "cacheWrite": 10000,
+          "reasoning": 5000
+        },
+        "rawModelCostMicroUsd": "900000",
+        "toolCalls": 12,
+        "retries": 1,
+        "filesChanged": 3,
+        "humanInterventions": 0,
+        "acceptance": {
+          "passed": true,
+          "exitCode": 0
+        },
+        "payment": {
+          "amountUsdc": "250000",
+          "gasCostMicroUsd": "10000",
+          "transaction": "0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a"
+        }
+      },
+      "canonical": "{\"kind\":\"run-record\",\"value\":{\"acceptance\":{\"exitCode\":0,\"passed\":true},\"arm\":\"treatment\",\"benchmarkVersion\":\"bench-1\",\"filesChanged\":3,\"finishedAt\":\"2026-09-21T10:30:00.000Z\",\"fixtureProfileDigest\":\"0x1313131313131313131313131313131313131313131313131313131313131313\",\"humanInterventions\":0,\"model\":\"example-model-1\",\"payment\":{\"amountUsdc\":\"250000\",\"gasCostMicroUsd\":\"10000\",\"transaction\":\"0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a\"},\"rawModelCostMicroUsd\":\"900000\",\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"repetition\":1,\"retries\":1,\"runId\":\"0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"schemaVersion\":\"1\",\"startedAt\":\"2026-09-21T10:00:00.000Z\",\"taskId\":\"mcp-server-gating\",\"tokens\":{\"cacheRead\":150000,\"cacheWrite\":10000,\"input\":400000,\"output\":20000,\"reasoning\":5000},\"toolCalls\":12}}",
+      "digest": "0xee6e4815dd8d28251dfc59fc4e0016c6f3ecc665ad8de2ea63281f645ec70e92"
     }
   ],
   "derived": {

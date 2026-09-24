@@ -24,6 +24,7 @@ const inputs: ReadonlyArray<{ name: string; kind: DigestKind; value: unknown }> 
   { name: "resolution-id", kind: "resolution-id", value: { previewId: ex.resolution.previewId, buyer: ex.resolution.buyer } },
   { name: "adoption-receipt", kind: "adoption-receipt", value: ex.receipt },
   { name: "patch-bundle", kind: "patch-bundle", value: ex.bundle },
+  { name: "run-record", kind: "run-record", value: ex.runRecord },
 ];
 
 const computed = inputs.map(({ name, kind, value }) => ({

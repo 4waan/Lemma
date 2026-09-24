@@ -6,7 +6,7 @@ The benchmark tests the core claim: a paid Compatibility Resolution should reduc
 
 ## Responsibilities
 
-- Run matched control and Lemma treatment tasks through the Codex SDK.
+- Run matched control and Lemma treatment tasks through the Cursor agent SDK (`@cursor/sdk`).
 - Freeze model, prompts, fixtures, repository state, settings, and time limits.
 - Capture model usage, cost, duration, tool calls, edits, test results, intervention, payment, and gas data.
 - Preserve raw run records outside source control.

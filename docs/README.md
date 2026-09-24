@@ -4,6 +4,7 @@ These documents keep product, economic, security, evaluation, and deployment dec
 
 - [architecture.md](architecture.md): Components, trust boundaries, and end-to-end data flow.
 - [economics.md](economics.md): What is sold, why it has value, pricing, and warranty incentives.
+- [economic-gates.md](economic-gates.md): Unit economics, the money path in code, critical-stage gates with iterate-if rules, and what makes the product scale.
 - [security-model.md](security-model.md): Assets, actors, threats, controls, and accepted MVP trust.
 - [benchmark-protocol.md](benchmark-protocol.md): Frozen control and treatment experiment.
 - [deployment.md](deployment.md): Arbitrum Sepolia, Railway, Postgres, keys, and release checks.

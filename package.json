@@ -14,7 +14,11 @@
   "scripts": {
     "build": "tsc -b && npm run bundle -w @lemma/web",
     "typecheck": "tsc -b",
+    "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json",
     "test": "vitest run",
+    "verify": "npm run typecheck && npm run typecheck:tests && npm test && npm run build",
+    "secrets:scan": "gitleaks git --no-banner --redact --config .gitleaks.toml .",
+    "hooks:install": "git config core.hooksPath .githooks",
     "dev:server": "npm run dev -w @lemma/server",
     "dev:bridge": "npm run dev -w @lemma/bridge",
     "dev:web": "npm run dev -w @lemma/web",

@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "vitest run",
+    "test": "vitest run --root ../.. apps/bridge/test",
     "dev": "tsx watch src/index.ts",
     "start": "node dist/index.js"
   },

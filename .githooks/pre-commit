@@ -1,0 +1,13 @@
+#!/bin/sh
+# Blocks a commit whose staged changes contain a credential.
+# Enable once per clone: git config core.hooksPath .githooks
+# (the Claude Code session-start hook does this for cloud sessions).
+set -eu
+
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-commit: gitleaks is not installed; staged changes were NOT scanned for secrets." >&2
+  echo "pre-commit: install it (https://github.com/gitleaks/gitleaks#installing) or rely on the CI secrets job." >&2
+  exit 0
+fi
+
+exec gitleaks git --no-banner --redact --staged --config .gitleaks.toml .

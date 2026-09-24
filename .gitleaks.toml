@@ -1,0 +1,33 @@
+# gitleaks rules for Lemma. The default rules cover provider tokens
+# (GitHub, Anthropic, cloud keys, PEM blocks). Lemma also holds EVM private
+# keys for five separate roles (buyer, provider, facilitator, evaluator,
+# deployer), and those are bare 32-byte hex that the defaults cannot tell
+# apart from digests. They are caught here by the label next to them.
+
+title = "Lemma"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "evm-private-key-labeled"
+description = "EVM private key assigned to a variable or field that names it as a key"
+regex = '''(?i)(?:private[_-]?key|privkey|secret[_-]?key|signing[_-]?key|mnemonic)[A-Za-z0-9_]*["']?\s*[=:]\s*["']?(?:0x)?[0-9a-fA-F]{64}\b'''
+keywords = ["private_key", "privatekey", "private-key", "privkey", "secret_key", "secretkey", "signing_key", "signingkey", "mnemonic"]
+
+[[rules]]
+id = "rpc-endpoint-with-key"
+description = "JSON-RPC endpoint URL carrying a provider key in its path"
+regex = '''https?://[a-z0-9.-]+\.(?:g\.alchemy\.com|infura\.io|quiknode\.pro|chainstack\.com|blastapi\.io|ankr\.com|getblock\.io)/(?:v[0-9]/)?[A-Za-z0-9_-]{16,}'''
+keywords = ["alchemy", "infura", "quiknode", "chainstack", "blastapi", "ankr", "getblock"]
+
+[[rules]]
+id = "postgres-url-with-password"
+description = "Postgres connection string with an inline password other than the public local default"
+regex = '''postgres(?:ql)?://[^:\s/]+:([^@\s]+)@'''
+secretGroup = 1
+keywords = ["postgres://", "postgresql://"]
+[[rules.allowlists]]
+description = "the public local-development password documented in README.md and compose.yaml"
+regexTarget = "secret"
+regexes = ['''^lemma_local_only$''', '''^\$\{''']

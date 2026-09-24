@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/catalog" },
+    { "path": "./packages/benchmark" },
+    { "path": "./apps/server" },
+    { "path": "./apps/bridge" },
+    { "path": "./apps/web" }
+  ]
+}

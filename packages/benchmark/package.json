@@ -1,0 +1,27 @@
+{
+  "name": "@lemma/benchmark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "benchmark": "node dist/index.js"
+  },
+  "dependencies": {
+    "@lemma/core": "0.1.0",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@cursor/sdk": "1.0.32"
+  }
+}

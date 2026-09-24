@@ -7,7 +7,7 @@
     "build": "tsc -b",
     "bundle": "vite build",
     "typecheck": "tsc -b",
-    "test": "vitest run",
+    "test": "vitest run --root ../.. apps/web/test",
     "dev": "vite"
   },
   "dependencies": {

@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run --root ../.. packages/core/test"
   },
   "dependencies": {
     "json-canonicalize": "3.0.1",

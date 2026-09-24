@@ -17,6 +17,8 @@ export const DIGEST_KINDS = [
   "resolution-id",
   "adoption-receipt",
   "patch-bundle",
+  "run-record",
+  "run-set",
 ] as const;
 
 export type DigestKind = (typeof DIGEST_KINDS)[number];

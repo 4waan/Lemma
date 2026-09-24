@@ -41,6 +41,7 @@ Schema version `"1"`. Every object schema is strict at every level (unknown fiel
 | `pricing` | `isSellable`, `saleBlocker`, `allInReductionBps`, `SALE_RULE`, `BENCHMARK_TARGET_BPS` |
 | `policy` | `SpendingPolicy`, `checkSpend`, `checkPurchase` |
 | `tools` | `LEMMA_TOOLS`, `toolResourceUrl`, `PreviewInput`, `PreviewResult` |
+| `run` | `RunRecord`, `RunArm`, `runRecordDigest`, `runSetDigest` (benchmark run records; evidence cites the run set) |
 | `redact` | `redact`, `redactString`, `REDACTED`, `CIRCULAR`, `TRUNCATED`, `MAX_REDACT_CHARS` |
 
 ### Rules the schemas enforce

@@ -1,3 +1,5 @@
+export * from "./evidence.js";
+
 export const BENCHMARK_COMPONENT = {
   name: "@lemma/benchmark",
   status: "scaffold",

@@ -1,0 +1,268 @@
+{
+  "algorithm": "keccak256(utf8(JCS({kind, value})))",
+  "vectors": [
+    {
+      "name": "repository-profile",
+      "kind": "repository-profile",
+      "value": {
+        "schemaVersion": "1",
+        "language": "typescript",
+        "runtime": {
+          "name": "node",
+          "major": 22
+        },
+        "packageManager": {
+          "name": "npm",
+          "lockfile": "package-lock.json"
+        },
+        "moduleSystem": "esm",
+        "dependencies": {
+          "@modelcontextprotocol/sdk": "1.30.1",
+          "hono": "4.13.9",
+          "zod": "4.6.5"
+        },
+        "frameworks": [
+          "hono"
+        ]
+      },
+      "canonical": "{\"kind\":\"repository-profile\",\"value\":{\"dependencies\":{\"@modelcontextprotocol/sdk\":\"1.30.1\",\"hono\":\"4.13.9\",\"zod\":\"4.6.5\"},\"frameworks\":[\"hono\"],\"language\":\"typescript\",\"moduleSystem\":\"esm\",\"packageManager\":{\"lockfile\":\"package-lock.json\",\"name\":\"npm\"},\"runtime\":{\"major\":22,\"name\":\"node\"},\"schemaVersion\":\"1\"}}",
+      "digest": "0x68d52ebfb58bd00c027f38e65933549ff1ace9efe77043f0f08452d533f6e4aa"
+    },
+    {
+      "name": "task-request",
+      "kind": "task-request",
+      "value": {
+        "schemaVersion": "1",
+        "capability": "mcp-server.add-payment-gating"
+      },
+      "canonical": "{\"kind\":\"task-request\",\"value\":{\"capability\":\"mcp-server.add-payment-gating\",\"schemaVersion\":\"1\"}}",
+      "digest": "0x0106f051b40c13840b55b4d01bf81b263a64c4eeed488e642060c3468b8805b5"
+    },
+    {
+      "name": "capability-release",
+      "kind": "capability-release",
+      "value": {
+        "schemaVersion": "1",
+        "releaseId": "mcp-server-payment-gating",
+        "version": "0.1.0",
+        "capability": "mcp-server.add-payment-gating",
+        "title": "Payment gating for a TypeScript MCP server",
+        "supportedProfiles": [
+          {
+            "languages": [
+              "typescript"
+            ],
+            "nodeMajor": {
+              "min": 22,
+              "max": 24
+            },
+            "packageManagers": [
+              "npm",
+              "pnpm"
+            ],
+            "moduleSystems": [
+              "esm"
+            ],
+            "dependencies": {
+              "@modelcontextprotocol/sdk": "^1.30.0",
+              "hono": ">=4.10 <5"
+            },
+            "frameworks": [
+              "hono"
+            ],
+            "evidence": {
+              "benchmarkVersion": "bench-1",
+              "runSetDigest": "0x1212121212121212121212121212121212121212121212121212121212121212",
+              "fixtureProfileDigest": "0x1313131313131313131313131313131313131313131313131313131313131313",
+              "model": "example-model-1",
+              "measuredAt": "2026-09-20T00:00:00.000Z",
+              "staleAfter": "2026-12-20T00:00:00.000Z",
+              "runs": {
+                "control": 3,
+                "treatment": 3
+              },
+              "passed": {
+                "control": 3,
+                "treatment": 3
+              },
+              "controlMedianCostUsdc": "2500000",
+              "expectedRawSavingUsdc": "1000000",
+              "expectedTokenSaving": 420000
+            }
+          }
+        ],
+        "provenance": {
+          "repository": "https://github.com/example/mcp-payment-gating",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "spdxLicense": "MIT"
+        },
+        "payloadDigest": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "acceptanceRecipe": {
+          "script": "test",
+          "args": [
+            "--run"
+          ],
+          "timeoutSec": 300,
+          "env": [
+            "CI",
+            "NODE_ENV"
+          ]
+        },
+        "price": "250000",
+        "provider": {
+          "payTo": "0x00000000000000000000000000000000000000a1"
+        },
+        "warranty": {
+          "claimWindowHours": 72
+        },
+        "publishedAt": "2026-09-24T00:00:00.000Z",
+        "expiresAt": "2026-12-31T00:00:00.000Z"
+      },
+      "canonical": "{\"kind\":\"capability-release\",\"value\":{\"acceptanceRecipe\":{\"args\":[\"--run\"],\"env\":[\"CI\",\"NODE_ENV\"],\"script\":\"test\",\"timeoutSec\":300},\"capability\":\"mcp-server.add-payment-gating\",\"expiresAt\":\"2026-12-31T00:00:00.000Z\",\"payloadDigest\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"price\":\"250000\",\"provenance\":{\"commit\":\"0123456789abcdef0123456789abcdef01234567\",\"repository\":\"https://github.com/example/mcp-payment-gating\",\"spdxLicense\":\"MIT\"},\"provider\":{\"payTo\":\"0x00000000000000000000000000000000000000a1\"},\"publishedAt\":\"2026-09-24T00:00:00.000Z\",\"releaseId\":\"mcp-server-payment-gating\",\"schemaVersion\":\"1\",\"supportedProfiles\":[{\"dependencies\":{\"@modelcontextprotocol/sdk\":\"^1.30.0\",\"hono\":\">=4.10 <5\"},\"evidence\":{\"benchmarkVersion\":\"bench-1\",\"controlMedianCostUsdc\":\"2500000\",\"expectedRawSavingUsdc\":\"1000000\",\"expectedTokenSaving\":420000,\"fixtureProfileDigest\":\"0x1313131313131313131313131313131313131313131313131313131313131313\",\"measuredAt\":\"2026-09-20T00:00:00.000Z\",\"model\":\"example-model-1\",\"passed\":{\"control\":3,\"treatment\":3},\"runSetDigest\":\"0x1212121212121212121212121212121212121212121212121212121212121212\",\"runs\":{\"control\":3,\"treatment\":3},\"staleAfter\":\"2026-12-20T00:00:00.000Z\"},\"frameworks\":[\"hono\"],\"languages\":[\"typescript\"],\"moduleSystems\":[\"esm\"],\"nodeMajor\":{\"max\":24,\"min\":22},\"packageManagers\":[\"npm\",\"pnpm\"]}],\"title\":\"Payment gating for a TypeScript MCP server\",\"version\":\"0.1.0\",\"warranty\":{\"claimWindowHours\":72}}}",
+      "digest": "0x4df8c327136074b9ca2cfa160f4444d4ef01e499d160b53d4a8afb040063de6a"
+    },
+    {
+      "name": "preview-offer",
+      "kind": "preview",
+      "value": {
+        "schemaVersion": "1",
+        "previewId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "taskDigest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "profileDigest": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "catalogDigest": "0x4545454545454545454545454545454545454545454545454545454545454545",
+        "createdAt": "2026-09-24T12:00:00.000Z",
+        "decision": "reuse",
+        "release": {
+          "releaseId": "mcp-server-payment-gating",
+          "version": "0.1.0",
+          "releaseDigest": "0x5555555555555555555555555555555555555555555555555555555555555555",
+          "profileIndex": 0
+        },
+        "offer": {
+          "terms": {
+            "scheme": "exact",
+            "network": "eip155:421614",
+            "asset": "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+            "amount": "250000",
+            "payTo": "0x00000000000000000000000000000000000000a1",
+            "maxTimeoutSeconds": 300
+          },
+          "expectedRawSavingUsdc": "1000000",
+          "expectedTokenSaving": 420000,
+          "claimWindowHours": 72,
+          "validUntil": "2026-09-24T12:15:00.000Z"
+        },
+        "reasons": []
+      },
+      "canonical": "{\"kind\":\"preview\",\"value\":{\"catalogDigest\":\"0x4545454545454545454545454545454545454545454545454545454545454545\",\"createdAt\":\"2026-09-24T12:00:00.000Z\",\"decision\":\"reuse\",\"offer\":{\"claimWindowHours\":72,\"expectedRawSavingUsdc\":\"1000000\",\"expectedTokenSaving\":420000,\"terms\":{\"amount\":\"250000\",\"asset\":\"0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d\",\"maxTimeoutSeconds\":300,\"network\":\"eip155:421614\",\"payTo\":\"0x00000000000000000000000000000000000000a1\",\"scheme\":\"exact\"},\"validUntil\":\"2026-09-24T12:15:00.000Z\"},\"previewId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"profileDigest\":\"0x4444444444444444444444444444444444444444444444444444444444444444\",\"reasons\":[],\"release\":{\"profileIndex\":0,\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"releaseId\":\"mcp-server-payment-gating\",\"version\":\"0.1.0\"},\"schemaVersion\":\"1\",\"taskDigest\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"}}",
+      "digest": "0x104a1b58f05f3fcb4e145dba1cc22ecf8a7b1800a89ee16f26a483b3c4dc286b"
+    },
+    {
+      "name": "preview-decline",
+      "kind": "preview",
+      "value": {
+        "schemaVersion": "1",
+        "previewId": "0x6666666666666666666666666666666666666666666666666666666666666666",
+        "taskDigest": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "profileDigest": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "catalogDigest": "0x4545454545454545454545454545454545454545454545454545454545454545",
+        "createdAt": "2026-09-24T12:00:00.000Z",
+        "decision": "decline",
+        "reasons": [
+          "UNSUPPORTED_RUNTIME"
+        ]
+      },
+      "canonical": "{\"kind\":\"preview\",\"value\":{\"catalogDigest\":\"0x4545454545454545454545454545454545454545454545454545454545454545\",\"createdAt\":\"2026-09-24T12:00:00.000Z\",\"decision\":\"decline\",\"previewId\":\"0x6666666666666666666666666666666666666666666666666666666666666666\",\"profileDigest\":\"0x4444444444444444444444444444444444444444444444444444444444444444\",\"reasons\":[\"UNSUPPORTED_RUNTIME\"],\"schemaVersion\":\"1\",\"taskDigest\":\"0x3333333333333333333333333333333333333333333333333333333333333333\"}}",
+      "digest": "0xf9978d5850c881ddb49e490f6f9146236bfdd24e222ff9ea9d8de843dae1cf36"
+    },
+    {
+      "name": "resolution",
+      "kind": "resolution",
+      "value": {
+        "schemaVersion": "1",
+        "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
+        "previewId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "release": {
+          "releaseId": "mcp-server-payment-gating",
+          "version": "0.1.0",
+          "releaseDigest": "0x5555555555555555555555555555555555555555555555555555555555555555",
+          "profileIndex": 0
+        },
+        "profileDigest": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "payloadDigest": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "buyer": "0x00000000000000000000000000000000000000b1",
+        "terms": {
+          "scheme": "exact",
+          "network": "eip155:421614",
+          "asset": "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+          "amount": "250000",
+          "payTo": "0x00000000000000000000000000000000000000a1",
+          "maxTimeoutSeconds": 300
+        },
+        "createdAt": "2026-09-24T12:01:00.000Z"
+      },
+      "canonical": "{\"kind\":\"resolution\",\"value\":{\"buyer\":\"0x00000000000000000000000000000000000000b1\",\"createdAt\":\"2026-09-24T12:01:00.000Z\",\"payloadDigest\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"previewId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"profileDigest\":\"0x4444444444444444444444444444444444444444444444444444444444444444\",\"release\":{\"profileIndex\":0,\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"releaseId\":\"mcp-server-payment-gating\",\"version\":\"0.1.0\"},\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\",\"schemaVersion\":\"1\",\"terms\":{\"amount\":\"250000\",\"asset\":\"0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d\",\"maxTimeoutSeconds\":300,\"network\":\"eip155:421614\",\"payTo\":\"0x00000000000000000000000000000000000000a1\",\"scheme\":\"exact\"}}}",
+      "digest": "0x85f8831f6a4b1148d685903645f4c9aa7478ecbe7f01cea703b1638b91643b7e"
+    },
+    {
+      "name": "resolution-id",
+      "kind": "resolution-id",
+      "value": {
+        "previewId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "buyer": "0x00000000000000000000000000000000000000b1"
+      },
+      "canonical": "{\"kind\":\"resolution-id\",\"value\":{\"buyer\":\"0x00000000000000000000000000000000000000b1\",\"previewId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\"}}",
+      "digest": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1"
+    },
+    {
+      "name": "adoption-receipt",
+      "kind": "adoption-receipt",
+      "value": {
+        "schemaVersion": "1",
+        "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
+        "outcome": "passed",
+        "acceptance": {
+          "exitCode": 0,
+          "durationMs": 41250,
+          "outputDigest": "0x8888888888888888888888888888888888888888888888888888888888888888"
+        },
+        "recordedAt": "2026-09-24T12:05:00.000Z",
+        "signature": null
+      },
+      "canonical": "{\"kind\":\"adoption-receipt\",\"value\":{\"acceptance\":{\"durationMs\":41250,\"exitCode\":0,\"outputDigest\":\"0x8888888888888888888888888888888888888888888888888888888888888888\"},\"outcome\":\"passed\",\"recordedAt\":\"2026-09-24T12:05:00.000Z\",\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\",\"schemaVersion\":\"1\",\"signature\":null}}",
+      "digest": "0xac81ea136ad765b8b8b934f7203162209ecbc7e8d03d8724d6f20f7c10ebdfd6"
+    },
+    {
+      "name": "patch-bundle",
+      "kind": "patch-bundle",
+      "value": {
+        "schemaVersion": "1",
+        "files": [
+          {
+            "path": "src/payments.ts",
+            "op": "add",
+            "baseDigest": null,
+            "content": "export const paid = true;\n"
+          },
+          {
+            "path": "src/server.ts",
+            "op": "modify",
+            "baseDigest": "0x9999999999999999999999999999999999999999999999999999999999999999",
+            "content": "import { paid } from './payments.js';\n"
+          }
+        ],
+        "dependencies": {
+          "@x402/mcp": "^2.27.0"
+        },
+        "devDependencies": {}
+      },
+      "canonical": "{\"kind\":\"patch-bundle\",\"value\":{\"dependencies\":{\"@x402/mcp\":\"^2.27.0\"},\"devDependencies\":{},\"files\":[{\"baseDigest\":null,\"content\":\"export const paid = true;\\n\",\"op\":\"add\",\"path\":\"src/payments.ts\"},{\"baseDigest\":\"0x9999999999999999999999999999999999999999999999999999999999999999\",\"content\":\"import { paid } from './payments.js';\\n\",\"op\":\"modify\",\"path\":\"src/server.ts\"}],\"schemaVersion\":\"1\"}}",
+      "digest": "0x24fa2027822d5941566cfb689daecb79e6cc8f2ecc0d8f86d9dd794defd0440d"
+    }
+  ],
+  "derived": {
+    "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
+    "adoptionReceiptDigest": "0xac81ea136ad765b8b8b934f7203162209ecbc7e8d03d8724d6f20f7c10ebdfd6",
+    "catalogDigest": "0x91e4753ca8a454383e5a46d0674dce650bd62eea9211039a9a6d34326d08711b"
+  }
+}

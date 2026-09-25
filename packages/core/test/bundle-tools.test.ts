@@ -39,7 +39,7 @@ describe("PatchBundle", () => {
   });
 
   it("confines paths to the workspace and away from protected files", () => {
-    const bad = ["/etc/passwd", "../x", "a/../b", "./a", "a//b", "a\\b", ".env", "src/.npmrc", ".github/workflows/ci.yml", ".git/config", "package.json", "apps/x/package.json", "yarn.lock", "node_modules/x/index.js", "a b.ts"];
+    const bad = ["/etc/passwd", "../x", "a/../b", "./a", "a//b", "a\\b", ".env", "src/.npmrc", ".github/workflows/ci.yml", ".git/config", "package.json", "apps/x/package.json", "yarn.lock", "node_modules/x/index.js", "a b.ts", "npm-shrinkwrap.json", "apps/api/npm-shrinkwrap.json", "pnpm-workspace.yaml", "bun.lock", "bun.lockb", ".pnpmfile.cjs", ".yarnrc.yml", ".yarn/plugins/p.cjs"];
     for (const path of bad) rejectsAt(PatchBundle, withFiles([{ ...a, path }]), ["files", 0, "path"]);
   });
 

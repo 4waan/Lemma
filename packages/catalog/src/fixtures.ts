@@ -84,6 +84,9 @@ export const FixtureCase = z
       (f.class === "unsupported" && f.expected.decision === "decline") ||
       (f.class === "no-release" && f.expected.decision === "build" && f.expected.reasons.join() === "NO_RELEASE_FOR_CAPABILITY");
     if (!ok) ctx.addIssue({ code: "custom", path: ["expected", "decision"], message: `a ${f.class} case cannot expect ${f.expected.decision}` });
+    if (f.class !== "no-release" && f.expected.reasons.includes("NO_RELEASE_FOR_CAPABILITY")) {
+      ctx.addIssue({ code: "custom", path: ["expected", "reasons"], message: "only a no-release case expects NO_RELEASE_FOR_CAPABILITY" });
+    }
   });
 
 export type FixtureCase = z.infer<typeof FixtureCase>;
@@ -101,7 +104,7 @@ export function loadFixtures(root: string, problems: string[]): LoadedFixture[] 
   const out: LoadedFixture[] = [];
   let capabilities: string[];
   try {
-    capabilities = listDirectories(root, FIXTURES_DIR);
+    capabilities = listDirectories(root, FIXTURES_DIR, { problems });
   } catch (error) {
     problems.push(message(error));
     return out;
@@ -113,7 +116,7 @@ export function loadFixtures(root: string, problems: string[]): LoadedFixture[] 
     }
     let files: string[];
     try {
-      files = listFilesRecursive(root, `${FIXTURES_DIR}/${capability}`);
+      files = listFilesRecursive(root, `${FIXTURES_DIR}/${capability}`, { problems });
     } catch (error) {
       problems.push(message(error));
       continue;

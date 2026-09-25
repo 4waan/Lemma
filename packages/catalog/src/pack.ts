@@ -1,7 +1,7 @@
 import { PackageName, PatchBundle, PatchPath, SemverRange, fileDigest } from "@lemma/core";
 import { z } from "zod";
 
-import { listFilesRecursive, readBytes, readJson, readText } from "./files.js";
+import { listEntries, listFilesRecursive, readBytes, readJson, readText } from "./files.js";
 import { PAYLOAD_DIR } from "./paths.js";
 
 /**
@@ -27,6 +27,10 @@ export type PayloadOps = z.infer<typeof PayloadOps>;
  * `base/` must be named by an op, so nothing unreviewed rides along.
  */
 export function packPayload(releaseDir: string): PatchBundle {
+  const stray = listEntries(releaseDir, PAYLOAD_DIR)
+    .filter((e) => !(e.kind === "file" && e.name === "ops.json") && !(e.kind === "dir" && (e.name === "files" || e.name === "base")))
+    .map((e) => e.name);
+  if (stray.length > 0) throw new Error(`${PAYLOAD_DIR}: holds only ops.json, files/ and base/, not ${stray.join(", ")}`);
   const ops = PayloadOps.parse(readJson(releaseDir, `${PAYLOAD_DIR}/ops.json`));
   const needsContent = new Set(ops.files.filter((f) => f.op !== "delete").map((f) => f.path));
   const needsBase = new Set(ops.files.filter((f) => f.op !== "add").map((f) => f.path));

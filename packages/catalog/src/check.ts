@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { CAPABILITY_IDS, type CapabilityId, bundleDigest, baseReleaseDigest, isSellable, maxPriceFor } from "@lemma/core";
 import { Range } from "semver";
 
-import { scanTree } from "./files.js";
+import { listEntries, scanTree } from "./files.js";
 import { loadFixtures } from "./fixtures.js";
 import { type LoadedCatalog, type LoadedRelease, loadCatalogResult, message } from "./load.js";
 import { packPayload } from "./pack.js";
-import { CATALOG_ROOT, FIXTURES_DIR, PROVISIONAL_DIR, PUBLIC_DIR } from "./paths.js";
+import { BUNDLE_FILE, CATALOG_ROOT, FIXTURES_DIR, MANIFEST_FILE, PAYLOAD_DIR, PROVISIONAL_DIR, PUBLIC_DIR } from "./paths.js";
 
 /** Benchmark versions reserved for runs and evidence that must never price a public release. */
 export const RESERVED_BENCHMARK_PREFIXES = ["probe-", "provisional-"] as const;
@@ -27,8 +27,8 @@ export interface CheckResult {
  * same answer in CI and at server startup.
  *
  * - Manifests and bundles load (see `loadCatalog`), and each `bundle.json` is
- *   exactly what `payload/` packs to.
- * - Every dependency range parses.
+ *   exactly what `payload/` packs to. A release directory holds nothing else.
+ * - Every dependency range parses and is bounded above.
  * - Versions without build metadata carry no evidence. Evidence ships as
  *   `X+<benchmarkVersion>` with the same `baseReleaseDigest` as `X`, which must
  *   exist in `releases/`: only price, dates and evidence may differ.
@@ -43,14 +43,17 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
   const root = options.root ?? CATALOG_ROOT;
   const problems: string[] = [];
 
-  problems.push(...scanTree(root, PUBLIC_DIR), ...scanTree(root, PROVISIONAL_DIR, { optional: true }), ...scanTree(root, FIXTURES_DIR));
+  // Payload files are the packer's to judge: it reads `files/` as text and hashes `base/` as raw bytes, so a binary base file is fine.
+  const notText = (path: string) => path.split("/")[3] === PAYLOAD_DIR;
+  problems.push(...scanTree(root, PUBLIC_DIR, { notText }), ...scanTree(root, PROVISIONAL_DIR, { optional: true, notText }), ...scanTree(root, FIXTURES_DIR));
   const loaded = loadCatalogResult({ root, includeProvisional: true });
-  problems.push(...loaded.problems.filter((p) => !problems.includes(p)));
+  problems.push(...loaded.problems);
   const catalog = loaded.catalog;
 
   if (catalog !== undefined) {
     const publicByKey = new Map(catalog.releases.filter((r) => r.source === "public").map((r) => [key(r), r]));
     for (const release of catalog.releases) {
+      checkLayout(root, release, problems);
       checkPayload(root, release, problems);
       checkRanges(release, problems);
       checkVersionAndEvidence(release, publicByKey, problems);
@@ -64,8 +67,12 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
     const byKey = new Map(publicReleases.map((r) => [key(r), r]));
     const withReleases = new Set(publicReleases.map((r) => r.release.capability));
     for (const { id, fixture } of fixtures) {
+      // A capability without releases has one answer, build with NO_RELEASE_FOR_CAPABILITY; one with releases never has it.
       if (fixture.class === "no-release" && withReleases.has(fixture.capability)) {
         problems.push(`fixtures/${id}.json: a no-release case for a capability that has releases`);
+      }
+      if (fixture.class !== "no-release" && !withReleases.has(fixture.capability)) {
+        problems.push(`fixtures/${id}.json: ${fixture.capability} has no releases, so its only case is no-release`);
       }
       const match = fixture.expected.match;
       if (match === null) continue;
@@ -96,11 +103,24 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
     }
   }
 
-  return { problems, catalog, fixtureCount: fixtures.length };
+  // Several passes can see the same fault (the scan and the loader both see a link); report it once.
+  return { problems: [...new Set(problems)], catalog, fixtureCount: fixtures.length };
 }
 
 function key(loaded: LoadedRelease): string {
   return `${loaded.release.releaseId}@${loaded.release.version}`;
+}
+
+/** A release directory holds its manifest, its bundle and its payload, and nothing that could ride along unreviewed. */
+function checkLayout(root: string, loaded: LoadedRelease, problems: string[]): void {
+  try {
+    const stray = listEntries(root, loaded.dir, { problems })
+      .filter((e) => !(e.kind === "file" && (e.name === MANIFEST_FILE || e.name === BUNDLE_FILE)) && !(e.kind === "dir" && e.name === PAYLOAD_DIR))
+      .map((e) => e.name);
+    if (stray.length > 0) problems.push(`${loaded.dir}: holds only ${MANIFEST_FILE}, ${BUNDLE_FILE} and ${PAYLOAD_DIR}/, not ${stray.join(", ")}`);
+  } catch (error) {
+    problems.push(message(error));
+  }
 }
 
 function checkPayload(root: string, loaded: LoadedRelease, problems: string[]): void {
@@ -116,8 +136,9 @@ function checkPayload(root: string, loaded: LoadedRelease, problems: string[]): 
 
 /**
  * Every range must parse, and must be bounded above. An open range (`*`,
- * `>=2`) would claim support for, or install, versions nobody has tested.
- * Dist-tags such as `latest` do not parse and are refused with the rest.
+ * `>=2`, `<2 || >=3`) would claim support for, or install, versions nobody has
+ * tested. Dist-tags such as `latest` do not parse and are refused with the
+ * rest.
  */
 function checkRanges(loaded: LoadedRelease, problems: string[]): void {
   const check = (where: string, name: string, range: string) => {
@@ -128,7 +149,7 @@ function checkRanges(loaded: LoadedRelease, problems: string[]): void {
       problems.push(`${loaded.dir}: ${where} range for ${name} does not parse: ${range}`);
       return;
     }
-    if (parsed.test(UNBOUNDED_PROBE)) problems.push(`${loaded.dir}: ${where} range for ${name} has no upper bound: ${range || "(empty)"}`);
+    if (!boundedAbove(parsed)) problems.push(`${loaded.dir}: ${where} range for ${name} has no upper bound: ${range || "(empty)"}`);
   };
   loaded.release.supportedProfiles.forEach((profile, index) => {
     for (const [name, range] of Object.entries(profile.dependencies)) check(`profile ${index}`, name, range);
@@ -137,8 +158,14 @@ function checkRanges(loaded: LoadedRelease, problems: string[]): void {
   for (const [name, range] of Object.entries(loaded.bundle.devDependencies)) check("bundle devDependency", name, range);
 }
 
-/** A version no real range should reach; a range that accepts it has no upper bound. */
-const UNBOUNDED_PROBE = "999999.999999.999999";
+/**
+ * True when every alternative of the range (each side of `||`) caps the
+ * version: a `<` or `<=` comparator, or an exact version. Read from the parsed
+ * comparators, so no probe version can be out-ranged.
+ */
+export function boundedAbove(range: Range): boolean {
+  return range.set.every((alternative) => alternative.some((c) => c.operator === "<" || c.operator === "<=" || ((c.operator === "" || c.operator === "=") && c.value !== "")));
+}
 
 function checkVersionAndEvidence(loaded: LoadedRelease, publicByKey: ReadonlyMap<string, LoadedRelease>, problems: string[]): void {
   const { release, dir, source } = loaded;

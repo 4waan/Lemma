@@ -79,7 +79,7 @@ export function loadCatalogResult(options: LoadOptions): { catalog: LoadedCatalo
   for (const [source, base, optional] of sources) {
     let ids: string[];
     try {
-      ids = listDirectories(root, base, { optional });
+      ids = listDirectories(root, base, { optional, problems });
     } catch (error) {
       problems.push(message(error));
       continue;
@@ -87,7 +87,7 @@ export function loadCatalogResult(options: LoadOptions): { catalog: LoadedCatalo
     for (const id of ids) {
       let versions: string[];
       try {
-        versions = listDirectories(root, `${base}/${id}`);
+        versions = listDirectories(root, `${base}/${id}`, { problems });
       } catch (error) {
         problems.push(message(error));
         continue;

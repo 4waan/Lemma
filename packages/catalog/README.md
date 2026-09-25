@@ -52,9 +52,9 @@ fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/READ
 
 ## Rules `catalog:check` enforces
 
-- Every `bundle.json` is exactly what its `payload/` packs to, and every file in `payload/files` and `payload/base` is named by an op.
-- No symbolic links, special files, traversal, non-UTF-8 names or non-UTF-8 text anywhere under `releases/`, `releases.provisional/` or `fixtures/`: the whole tree is scanned, not only the files the loader reads. `releases/` and `fixtures/` must exist; only the overlay is optional.
-- Every dependency range, in supported profiles and in bundle dependency changes, parses with `semver` and is bounded above. Dist-tags such as `latest` and open ranges such as `*` or `>=2` are refused, because they claim or install versions nobody has tested.
+- Every `bundle.json` is exactly what its `payload/` packs to, and every file in `payload/files` and `payload/base` is named by an op. A release directory holds only `manifest.json`, `bundle.json` and `payload/`, and `payload/` only `ops.json`, `files/` and `base/`, so nothing unreviewed can ride along.
+- No symbolic links, special files, traversal or non-UTF-8 names anywhere under `releases/`, `releases.provisional/` or `fixtures/`: the whole tree is scanned, not only the files the loader reads. Every file is strict UTF-8 text except `payload/base/`, whose files are hashed as bytes, so a patch may modify or delete a binary file. One bad entry is reported without hiding its siblings. `releases/` and `fixtures/` must exist; only the overlay is optional.
+- Every dependency range, in supported profiles and in bundle dependency changes, parses with `semver` and is bounded above: every alternative (each side of `||`) has a `<`, `<=` or exact comparator. Dist-tags such as `latest` and open ranges such as `*`, `>=2` or `<2 || >=3` are refused, because they claim or install versions nobody has tested.
 - **Evidence ships as a new version.** Evidence sits inside the manifest, so attaching it changes `releaseDigest`.
   - A version without build metadata carries no evidence.
   - Evidence ships as `X+<benchmarkVersion>`, and every evidence entry names that benchmark version.
@@ -70,7 +70,7 @@ fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/READ
 - **Fixtures.**
   - Every release family (versions sharing a base) has an exact case.
   - Every capability with a release has a near-miss case and an unsupported-language or unsupported-runtime case.
-  - Every case references a real release and profile, and `no-release` cases exist only for capabilities without releases.
+  - Every case references a real release and profile. A capability without releases has only `no-release` cases, and one with releases has none: only a `no-release` case expects `NO_RELEASE_FOR_CAPABILITY`.
   - A case's reasons must be an answer the resolver can give: a reuse is held back by one sale blocker at most, a decline names an unsupported platform, and a build names none.
 
 ## Commands

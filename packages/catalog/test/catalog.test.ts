@@ -1,10 +1,12 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { CAPABILITY_IDS, type CapabilityRelease, bundleDigest, catalogDigestOf, releaseDigest } from "@lemma/core";
 import { describe, expect, it } from "vitest";
 
-import { CatalogError, FixtureCase, buildIndex, checkCatalog, formatBundle, loadCatalog, packPayload } from "../src/index.js";
+import { Range } from "semver";
+
+import { CatalogError, FixtureCase, boundedAbove, buildIndex, checkCatalog, formatBundle, loadCatalog, packPayload } from "../src/index.js";
 import { writeText } from "../src/files.js";
 import { CLIENT, EVIDENCE, SERVER, catalogCopy, readJsonFile, writeJsonFile } from "./helpers.js";
 
@@ -134,15 +136,52 @@ describe("integrity", () => {
     const root = catalogCopy();
     symlinkSync("/etc", join(root, SERVER, "notes"));
     writeFileSync(join(root, SERVER, "payload", "extra.txt"), Buffer.from([0xff, 0xfe, 0x00]));
+    writeFileSync(join(root, "fixtures", "README.md"), Buffer.from([0xff, 0xfe, 0x00]));
     const found = problems(root);
     expect(found).toContainEqual(expect.stringContaining(`${SERVER}/notes: symbolic links are not allowed`));
-    expect(found).toContainEqual(expect.stringContaining("payload/extra.txt: not valid UTF-8"));
+    expect(found).toContainEqual(expect.stringContaining("payload: holds only ops.json, files/ and base/, not extra.txt"));
+    expect(found).toContainEqual("fixtures/README.md: not valid UTF-8");
+  });
+
+  it("refuses anything in a release directory besides its manifest, bundle and payload", () => {
+    const root = catalogCopy();
+    writeFileSync(join(root, SERVER, ".bundle.json.123.tmp"), "{}\n");
+    expect(problems(root)).toContainEqual(`${SERVER}: holds only manifest.json, bundle.json and payload/, not .bundle.json.123.tmp`);
+  });
+
+  it("hashes base files as bytes, so a binary file can be modified or deleted", () => {
+    const root = catalogCopy();
+    const ops = readJsonFile<{ files: Array<{ path: string; op: string }> }>(root, `${SERVER}/payload/ops.json`);
+    writeJsonFile(root, `${SERVER}/payload/ops.json`, { ...ops, files: [...ops.files, { path: "assets/logo.png", op: "delete" }] });
+    mkdirSync(join(root, SERVER, "payload", "base", "assets"), { recursive: true });
+    writeFileSync(join(root, SERVER, "payload", "base", "assets", "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]));
+    const bundle = packPayload(join(root, SERVER));
+    writeFileSync(join(root, SERVER, "bundle.json"), formatBundle(bundle));
+    writeJsonFile(root, `${SERVER}/manifest.json`, { ...readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`), payloadDigest: bundleDigest(bundle) });
+    expect(problems(root)).toEqual([]);
+  });
+
+  it("reads bounds from the parsed range, so no single probe version can be out-ranged", () => {
+    for (const bounded of ["1.2.3", "^1.2.3", "~1.2", "1.x", ">=1.0.0 <20250101.0.0", "<20250101.0.0", "<=2", "1.2.3 || ^2.0.0"]) expect(boundedAbove(new Range(bounded))).toBe(true);
+    for (const open of ["*", "", "x", ">=1000000.0.0", ">999999.999999.999999", "<2 || >=1000000", ">=1.0.0"]) expect(boundedAbove(new Range(open))).toBe(false);
   });
 
   it("fails on a missing releases/ directory instead of serving an empty catalog", () => {
     const root = catalogCopy();
     rmSync(join(root, "releases"), { recursive: true });
     expect(problems(root)).toContainEqual("releases: missing");
+  });
+
+  it("keeps loading the other releases when a directory holds a link", () => {
+    const root = catalogCopy();
+    symlinkSync(join(root, SERVER), join(root, "releases", "mcp-server-payment-gating", "0.0.9-link"));
+    symlinkSync("/etc/hostname", join(root, "releases", "NOTES.md"));
+    const result = checkCatalog({ root });
+    expect(result.catalog?.releases).toHaveLength(2);
+    expect([...result.problems].sort()).toEqual([
+      "releases/NOTES.md: symbolic links are not allowed in the catalog",
+      "releases/mcp-server-payment-gating/0.0.9-link: symbolic links are not allowed in the catalog",
+    ]);
   });
 
   it("keeps checking every other release when one fails to load", () => {
@@ -161,6 +200,14 @@ describe("integrity", () => {
     const file = join(root, SERVER, "payload/files/lemma/payment-gating/README.md");
     writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(file)]));
     expect(packPayload(join(root, SERVER)).files[0]?.content?.startsWith("\ufeff")).toBe(true);
+  });
+
+  it("leaves no temporary copy behind when a write fails", () => {
+    const root = catalogCopy();
+    rmSync(join(root, SERVER, "bundle.json"));
+    mkdirSync(join(root, SERVER, "bundle.json", "inside"), { recursive: true });
+    expect(() => writeText(root, `${SERVER}/bundle.json`, "{}\n")).toThrow();
+    expect(readdirSync(join(root, SERVER)).filter((name) => name.endsWith(".tmp"))).toEqual([]);
   });
 
   it("writes bundle.json by replacing a link, never through it", () => {
@@ -310,11 +357,25 @@ describe("fixtures", () => {
     for (const value of bad) expect(FixtureCase.safeParse(value).success).toBe(false);
   });
 
-  it("keeps no-release cases to capabilities without releases", () => {
+  it("keeps no-release cases to capabilities without releases, and only those", () => {
     const root = catalogCopy();
     const fixture = readJsonFile(root, "fixtures/node-service.add-payment-facilitator/no-release.json");
     writeJsonFile(root, "fixtures/mcp-server.add-payment-gating/no-release.json", { ...fixture, capability: "mcp-server.add-payment-gating" });
-    expect(problems(root)).toContainEqual("fixtures/mcp-server.add-payment-gating/no-release.json: a no-release case for a capability that has releases");
+    const nearMiss = readJsonFile(root, "fixtures/mcp-server.add-payment-gating/near-miss-no-sdk.json");
+    writeJsonFile(root, "fixtures/node-service.add-payment-facilitator/near-miss.json", { ...nearMiss, capability: "node-service.add-payment-facilitator" });
+    const found = problems(root);
+    expect(found).toContainEqual("fixtures/mcp-server.add-payment-gating/no-release.json: a no-release case for a capability that has releases");
+    expect(found).toContainEqual("fixtures/node-service.add-payment-facilitator/near-miss.json: node-service.add-payment-facilitator has no releases, so its only case is no-release");
+    expect(FixtureCase.safeParse({ ...nearMiss, expected: { decision: "build", reasons: ["NO_RELEASE_FOR_CAPABILITY"], match: null, offer: false } }).success).toBe(false);
+  });
+
+  it("keeps a capability's other cases when one entry is a link, and reports each fault once", () => {
+    const root = catalogCopy();
+    symlinkSync("/etc/hostname", join(root, "fixtures", "mcp-server.add-payment-gating", "link.json"));
+    const result = checkCatalog({ root });
+    expect(result.problems).toEqual(["fixtures/mcp-server.add-payment-gating/link.json: symbolic links are not allowed in the catalog"]);
+    rmSync(join(root, "fixtures"), { recursive: true });
+    expect(problems(root).filter((p) => p === "fixtures: missing")).toHaveLength(1);
   });
 
   it("only accepts answers the resolver can give", () => {

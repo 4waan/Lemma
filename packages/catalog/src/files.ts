@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync, readdirSync, renameSync, writeFileSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
@@ -38,6 +38,16 @@ export function readJson(root: string, relative: string): unknown {
 export interface ListOptions {
   /** Treat a missing directory as empty (only the optional provisional overlay is). */
   readonly optional?: boolean;
+  /**
+   * Where to report a disallowed entry (a link, a special file) and go on with
+   * its siblings. Without it, the first such entry is thrown.
+   */
+  readonly problems?: string[];
+}
+
+/** The entries directly under `relative`, sorted, with their kinds. */
+export function listEntries(root: string, relative: string, options: ListOptions = {}): Array<{ name: string; kind: "dir" | "file" }> {
+  return list(root, relative, options);
 }
 
 /** Names of the directories directly under `relative`, sorted. */
@@ -46,10 +56,10 @@ export function listDirectories(root: string, relative: string, options: ListOpt
 }
 
 /** Every regular file under `relative`, as sorted POSIX paths relative to it. A missing directory is empty. */
-export function listFilesRecursive(root: string, relative: string): string[] {
+export function listFilesRecursive(root: string, relative: string, options: Pick<ListOptions, "problems"> = {}): string[] {
   const out: string[] = [];
   const visit = (prefix: string) => {
-    for (const entry of list(root, prefix === "" ? relative : `${relative}/${prefix}`, { optional: prefix === "" })) {
+    for (const entry of list(root, prefix === "" ? relative : `${relative}/${prefix}`, { optional: prefix === "", ...options })) {
       const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
       if (entry.kind === "dir") visit(path);
       else out.push(path);
@@ -59,13 +69,19 @@ export function listFilesRecursive(root: string, relative: string): string[] {
   return out.sort();
 }
 
+export interface ScanOptions extends Pick<ListOptions, "optional"> {
+  /** Files whose content another check judges; they are checked for kind only, not decoded. */
+  readonly notText?: (path: string) => boolean;
+}
+
 /**
  * Walks a whole subtree and reports every entry that is not a directory or a
- * regular file, or whose name is not valid UTF-8. Every text file must also
- * be strict UTF-8. The loader and packer read only some files, so this is what
- * makes "no links, no special files" true for everything else too.
+ * regular file, or whose name is not valid UTF-8. Every file must also be
+ * strict UTF-8 unless `notText` hands it to another check. The loader and
+ * packer read only some files, so this is what makes "no links, no special
+ * files" true for everything else too.
  */
-export function scanTree(root: string, relative: string, options: ListOptions = {}): string[] {
+export function scanTree(root: string, relative: string, options: ScanOptions = {}): string[] {
   const problems: string[] = [];
   const visit = (rel: string, optional: boolean) => {
     let entries: Entry[];
@@ -79,7 +95,7 @@ export function scanTree(root: string, relative: string, options: ListOptions = 
       const path = `${rel}/${entry.name}`;
       if (entry.problem !== null) problems.push(entry.problem);
       else if (entry.kind === "dir") visit(path, false);
-      else {
+      else if (options.notText?.(path) !== true) {
         try {
           readText(root, path);
         } catch (error) {
@@ -102,8 +118,14 @@ export function writeText(root: string, relative: string, content: string): void
   const name = segments.pop() as string;
   const dir = segments.length === 0 ? root : walk(root, segments.join("/"));
   const temp = join(dir, `.${name}.${process.pid}.tmp`);
-  writeFileSync(temp, content, { flag: "wx" });
-  renameSync(temp, join(dir, name));
+  try {
+    writeFileSync(temp, content, { flag: "wx" });
+    renameSync(temp, join(dir, name));
+  } catch (error) {
+    // Never leave a copy of the content behind, where it could be committed unnoticed.
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") rmSync(temp, { force: true });
+    throw error;
+  }
 }
 
 interface Entry {
@@ -135,12 +157,15 @@ function entriesOf(root: string, relative: string, options: ListOptions): Entry[
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-/** Directory entries for the loader and packer: any disallowed entry is an error. */
+/** Directory entries for the loader and packer: a disallowed entry is reported and skipped, or thrown. */
 function list(root: string, relative: string, options: ListOptions): Array<{ name: string; kind: "dir" | "file" }> {
-  return entriesOf(root, relative, options).map((entry) => {
-    if (entry.problem !== null) throw new Error(entry.problem);
-    return { name: entry.name, kind: entry.kind };
-  });
+  const out: Array<{ name: string; kind: "dir" | "file" }> = [];
+  for (const entry of entriesOf(root, relative, options)) {
+    if (entry.problem === null) out.push({ name: entry.name, kind: entry.kind });
+    else if (options.problems !== undefined) options.problems.push(entry.problem);
+    else throw new Error(entry.problem);
+  }
+  return out;
 }
 
 /** Joins a POSIX relative path onto `root`, refusing links, traversal and absolute segments. */

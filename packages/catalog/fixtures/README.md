@@ -35,7 +35,7 @@ Each case is one file, `<capability>/<kebab-case-name>.json` (schema `FixtureCas
 - `exact` and `boundary` cases expect `reuse` and name their match.
 - `near-miss` cases expect `build` or `decline`.
 - `unsupported` cases expect `decline`.
-- `no-release` cases pin the answer for a capability without releases.
+- `no-release` cases pin the answer for a capability without releases, which is always `build` with `NO_RELEASE_FOR_CAPABILITY`. Such a capability has no other cases, and a capability with releases has no `no-release` case.
 
 Reasons must be an answer the resolver can give: a `reuse` is held back by one sale blocker at most, a `decline` names an unsupported platform, a `build` names none, and `NO_RELEASE_FOR_CAPABILITY` stands alone.
 

@@ -25,10 +25,18 @@ if (command === "check") {
 } else if (command === "pack") {
   const write = flags.includes("--write");
   let failed = 0;
+  const listing: string[] = [];
+  const directories = (relative: string, optional = false): string[] => {
+    try {
+      return listDirectories(CATALOG_ROOT, relative, { optional, problems: listing });
+    } catch (error) {
+      listing.push(error instanceof Error ? error.message : String(error));
+      return [];
+    }
+  };
   for (const base of [PUBLIC_DIR, PROVISIONAL_DIR]) {
-    const ids = listDirectories(CATALOG_ROOT, base, { optional: base === PROVISIONAL_DIR });
-    for (const id of ids) {
-      for (const version of listDirectories(CATALOG_ROOT, `${base}/${id}`)) {
+    for (const id of directories(base, base === PROVISIONAL_DIR)) {
+      for (const version of directories(`${base}/${id}`)) {
         const dir = `${base}/${id}/${version}`;
         try {
           const bundle = packPayload(join(CATALOG_ROOT, dir));
@@ -42,7 +50,8 @@ if (command === "check") {
       }
     }
   }
-  if (failed > 0) process.exitCode = 1;
+  for (const problem of listing) console.error(`✗ ${problem}`);
+  if (failed > 0 || listing.length > 0) process.exitCode = 1;
   try {
     const catalog = loadCatalog({ includeProvisional: true });
     const g = BigInt(catalog.economics.chainCostAtomic);

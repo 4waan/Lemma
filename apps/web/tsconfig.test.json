@@ -5,10 +5,20 @@
     "composite": false,
     "declaration": false,
     "declarationMap": false,
-    "types": ["vite/client", "node"],
+    "types": [
+      "vite/client",
+      "node"
+    ],
     "paths": {
-      "@lemma/core": ["../../packages/core/src/index.ts"]
-    }
+      "@lemma/core": [
+        "../../packages/core/src/index.ts"
+      ]
+    },
+    "rootDir": "../.."
   },
-  "include": ["src", "test", "vite.config.ts"]
+  "include": [
+    "src",
+    "test",
+    "vite.config.ts"
+  ]
 }

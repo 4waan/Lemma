@@ -43,13 +43,15 @@ Implemented:
 - `GET /api/v1/releases/:digest/base-probe`: modify and delete targets with their base digests. They are immutable and cacheable forever.
 - `GET /api/v1/resolutions/:id`: a public view of a resolution (state, release, payload digest, terms, receipt outcome). It never includes the preview id, which is the recovery secret, the buyer, or the bundle.
 - `POST /api/v1/adoption-receipts`: body `{ receipt, previewId }`. The preview id is the recovery secret, known only to the buyer's bridge, so only the buyer can submit; a resolution id alone, which is public, is answered as unknown. Accepted only for a settled resolution, with `recordedAt` no more than five minutes before its creation or after the server's clock, and only once (first write wins). A receipt stays `verified: false` until the payment work checks its signature. A store failure answers 500, so the bridge retries.
-- `GET /api/v1/demand`: closed-day demand buckets with at least five distinct repositories and at least five distinct client addresses.
+- `GET /api/v1/demand`: closed-day demand buckets with at least five distinct repositories and at least five distinct client addresses, each with its parsed key (core `DemandView`).
+- `GET /api/v1/catalog`: the dashboard's catalog (core `CatalogView`): per profile, whether it can be sold and why not, its evidence, the all-in reduction at the list price after chain cost, and `maxPriceFor`. Computed at request time, `max-age=60`.
+- `GET /api/v1/status`: network, catalog, whether purchases and provisional evidence are on, the economics status and the store (core `StatusView`).
 - `GET /healthz`
+- `GET /` and `GET /assets/:name`: the built dashboard (`apps/web/dist`), when present. Only regular files with Vite's hashed names and an allowlisted extension are served, never through a link. The page gets a CSP that allows only this origin's scripts, styles and API; every other response gets `default-src 'none'`.
 
 Planned:
 
 - `/facilitator/supported`, `/facilitator/verify` and `/facilitator/settle` (payment work)
-- `/api/v1/benchmarks`
 
 ## Persistence and the payment seam
 

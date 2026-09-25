@@ -2,15 +2,22 @@
 
 ## Purpose and economic role
 
-The dashboard makes the economic claim inspectable. It will show what a buyer paid for, which profile was covered, what evidence supported the decision, whether the warranty activated, and whether adoption passed or failed.
+The dashboard makes the economic claim inspectable. It shows what a buyer can buy and why, what evidence supports each price, what agents asked for that Lemma could not sell, and what happened to a resolution after it was paid.
 
-## Responsibilities
+## Views
 
-- Explain Capability Releases, Compatibility Resolutions, and Adoption Receipts.
-- List curated releases with provenance, licenses, prices, bonds, supported profiles, and evidence.
-- Display payment, warranty, outcome, and benchmark records.
-- Publish installation instructions and MCP configuration examples.
-- Label testnet data, provider attestations, evaluator trust, and experimental measurements clearly.
+The server serves the built dashboard at `/` (see the server README). Views are addressed by URL fragment, so the server serves one page:
+
+| Fragment | View | Read model |
+| --- | --- | --- |
+| `#/` | Product overview, setup (MCP configuration and the Lemma rule) and what to trust | none (static) |
+| `#/catalog` | Every release: provenance, price, warranty, and per profile the platform, evidence label, whether it can be sold and why not, the all-in reduction at the list price, and the highest price that keeps the benchmark target | `CatalogView` |
+| `#/evidence` | Every evidenced profile with its benchmark numbers | `CatalogView` |
+| `#/demand` | Unmet demand ranked by repositories: what to build next | `DemandView`, ranked by core `rankUnmetDemand` |
+| `#/resolutions/<id>` | One resolution's state, terms and adoption outcome | `ResolutionView` |
+| `#/status` | Network, catalog, purchases, provisional evidence, economics and storage | `StatusView` |
+
+Every response is parsed with its core schema before anything is rendered; an answer that does not match is shown as an error. Warranty, voucher and contract panes belong to the payment work.
 
 ## Outside this boundary
 
@@ -20,40 +27,30 @@ The dashboard makes the economic claim inspectable. It will show what a buyer pa
 - Evaluating warranty claims.
 - Serving as an authorization boundary.
 
-## Planned views
-
-- Product overview and setup.
-- Capability catalog.
-- Resolution detail.
-- Benchmark evidence.
-- Public system status and contract links.
-
-The current application is a static scaffold shell only.
-
 ## Workspace dependencies
 
 - React and Vite for the client application.
-- `@lemma/core` for public read-model types once implemented.
+- `@lemma/core` for the read-model schemas, formatting and the unmet-demand ranking.
 
 ## Environment variables
 
-Only explicitly public service URLs and chain identifiers may enter the web build. Database credentials, private RPC credentials, API keys, and wallet keys are forbidden.
+None in the build: the dashboard calls the API on its own origin. For `npm run dev` only, `LEMMA_API_URL` (default `http://127.0.0.1:3000`) is where the Vite dev server proxies `/api` to.
 
 ## Development and tests
 
-- `npm run dev -w @lemma/web`
+- `npm run dev -w @lemma/web`: serves the page with hot reload and proxies `/api` to a running Lemma server (`LEMMA_API_URL`).
 - `npm run build -w @lemma/web`
-- `npm run bundle -w @lemma/web`
-- `npm run test -w @lemma/web`
+- `npm run bundle -w @lemma/web`: builds `dist/` and then checks every file in it (`scripts/check-dist.mjs`): no inline script, style or event handler, every reference an existing file under `/assets/` with a name the server serves (so no other origin and no `data:` URI), no `@import` or foreign `url()` in CSS, and no source maps or source-map references.
+- `npm run test -w @lemma/web`: every view renders from read models, catalog prose is escaped, outbound links are allowlisted, and a malformed answer is never rendered.
 
 ## Security constraints
 
-- Render text through React escaping and avoid raw HTML.
-- Use a restrictive Content Security Policy in production.
-- Do not store bearer credentials or wallet keys in browser storage.
-- Treat all API text, transaction metadata, URLs, and release content as untrusted.
-- Allow only approved explorer and source links.
-- Do not ship production source maps containing internal information.
+- Text is rendered through React escaping only; there is no raw HTML.
+- The server's CSP allows scripts, styles, images, fonts and API calls from this origin only, with no inline code, no eval, no framing and no forms. zod is set to jitless before any schema is built, so its eval probe never runs.
+- Nothing is kept in browser storage, and requests carry no credentials.
+- The only outbound links are GitHub repositories at a full commit, rebuilt from validated parts.
+- No production source maps.
+- Testnet, provisional and unverified states are labeled wherever they appear.
 
 ## Later completion criteria
 

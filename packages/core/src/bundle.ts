@@ -12,8 +12,21 @@ export const MAX_BUNDLE_CONTENT = 2 * 1024 * 1024;
 const SEGMENT = /^[A-Za-z0-9_@+-][A-Za-z0-9._@+-]{0,127}$/;
 // Files a patch may never write. Dependency changes go through `dependencies`
 // and `devDependencies`, which the bridge applies with the package manager, so
-// package.json scripts and lockfiles are never edited as text.
-const PROTECTED = new Set(["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "node_modules"]);
+// package.json scripts, lockfiles and the files that steer an install
+// (npm-shrinkwrap.json, pnpm-workspace.yaml with its overrides) are never
+// edited as text. Dotfiles (.npmrc, .yarnrc.yml, .pnpmfile.cjs, .yarn/) are
+// refused by SEGMENT.
+const PROTECTED = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "node_modules",
+]);
 
 /**
  * A workspace-relative POSIX path: no leading "/", no "." or ".." segments,

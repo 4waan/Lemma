@@ -8,8 +8,14 @@ import { MatchedRelease } from "./release.js";
 /**
  * The resolution id for one buyer and one preview. It is deterministic, so a
  * retry after a lost paid response names the same resolution instead of buying
- * again. The payment work can also use it as the EIP-3009 authorization nonce,
- * which lets USDC itself refuse a second payment for the same resolution.
+ * again.
+ *
+ * A resolution id is public: the server's resolution view is keyed by it. So
+ * it should not be the EIP-3009 authorization nonce itself, which USDC
+ * publishes next to the payer's address, or anyone could join a wallet to what
+ * it bought. A nonce derived from the resolution id and the preview id (a
+ * secret the buyer's bridge and the server share) keeps USDC's refusal of a
+ * second payment for the same resolution without that link.
  */
 export function deriveResolutionId(previewId: Hex32, buyer: Address): Hex32 {
   return digest("resolution-id", { previewId: Hex32.parse(previewId), buyer: Address.parse(buyer) });

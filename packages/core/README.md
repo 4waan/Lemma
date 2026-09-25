@@ -47,7 +47,7 @@ Schema version `"1"`. Every object schema is strict at every level (unknown fiel
 ### Rules the schemas enforce
 
 - **Digests.** `digest(kind, value) = keccak256(utf8(JCS({ kind, value })))`. `kind` separates domains and must be registered in `DIGEST_KINDS`, and the value carries its own `schemaVersion`. `canonicalize` rejects anything that would serialize ambiguously: bigint, `undefined`, non-finite or unsafe-integer numbers, sparse arrays, lone surrogates, `toJSON` keys and non-plain objects. Hash only parsed values; the typed helpers (`profileDigest`, `releaseDigest`, `bundleDigest`, and so on) parse first. Frozen vectors, including the derived ids, live in `test/vectors/digests.json`.
-- **Identifiers.** Content objects are identified by their digest (profile, task, release, catalog, bundle). `previewId` is a random 32-byte value chosen by the server. `resolutionId = deriveResolutionId(previewId, buyer)`, so a retry after a lost response names the same resolution, and the payment path can use it as the EIP-3009 nonce.
+- **Identifiers.** Content objects are identified by their digest (profile, task, release, catalog, bundle). `previewId` is a random 32-byte value chosen by the server. `resolutionId = deriveResolutionId(previewId, buyer)`, so a retry after a lost response names the same resolution. It is public, so the EIP-3009 nonce should be derived from it and the preview id rather than be it; a nonce equal to it would let anyone join a wallet to what it bought.
 - **Timestamps.** Exactly millisecond precision with `Z` (`Date.toISOString()`), so one instant has one string.
 - **Amounts.** USDC is always atomic units in a decimal-integer string within uint256 (`"250000"` is 0.25 USDC), the same form as x402's `amount`. Floats, signs, exponents and more than six decimals are rejected.
 - **No match, no offer.** A `build` or `decline` preview has no `release` or `offer` field. A matched preview has `offer: null` plus reasons when it cannot be sold. Reasons are a sorted set of known codes.
@@ -58,7 +58,7 @@ Schema version `"1"`. Every object schema is strict at every level (unknown fiel
 - **What is paid.** `Offer.terms` and `Resolution.terms` are exactly the x402 v2 payment requirements. `checkPurchase` refuses a challenge that differs from the quote in any field, an expired quote, or a payment for a no-match, and then applies `checkSpend` (network, asset, allowed recipients, authorization lifetime, per-resolution limit and daily cap over committed spend).
 - **No free text in matching.** `TaskRequest` is a capability id only. `RepositoryProfile` holds allowlisted metadata only. `PreviewInput` is strict, so extra tool arguments are rejected, not dropped.
 - **Acceptance recipes.** A release names a package.json script and safe arguments. The bridge builds argv with the buyer's package manager (`acceptanceArgv`), without a shell, forwarding only `ACCEPTANCE_ENV`. The bridge must still sandbox the run.
-- **Patch bundles.** Relative POSIX paths only, with no dotfiles, manifests, lockfiles or `node_modules`. Each modify or delete carries the base file digest for drift detection, and dependency changes are declared, not edited.
+- **Patch bundles.** Relative POSIX paths only, with no dotfiles, manifests, lockfiles (including `npm-shrinkwrap.json` and bun's), `pnpm-workspace.yaml` or `node_modules`, so a bundle cannot steer the install that applies its dependency changes. Each modify or delete carries the base file digest for drift detection, and dependency changes are declared, not edited.
 - **Apply planning.** `planApply(bundle, state)` is pure. An add needs an empty path whose parents are directories or absent, and a modify or delete needs the file its `baseDigest` names. Any other state, including a directory where a file belongs, is drift: every drifted path is reported, and nothing is planned. The bridge and the benchmark probe share it.
 - **Digestible text.** Free text (`SafeText`, patch content) refuses lone UTF-16 surrogates, so every value that parses can also be digested.
 - **MCP schemas.** MCP clients read tool schemas as draft-7 JSON Schema converted from the input side, so no schema used in a tool input may contain `z.custom`. A test converts `PreviewInput` exactly as the SDK does and lists the tool through a real MCP server.
@@ -71,7 +71,7 @@ Schema version `"1"`. Every object schema is strict at every level (unknown fiel
 Core does not define the warranty voucher, its EIP-712 typed-data layout, the settlement record, or signing. What core provides for them:
 
 - `PaymentTerms` mirrors x402 v2 `PaymentRequirements` without importing x402 (x402 pins zod 3; core uses zod 4).
-- `deriveResolutionId` is the idempotency key and a candidate EIP-3009 nonce.
+- `deriveResolutionId` is the idempotency key. Derive the EIP-3009 nonce from it and the preview id rather than using it directly (see `receipt.ts`).
 - `adoptionReceiptDigest` is the value a buyer signs.
 - `checkPurchase` and `checkSpend` are the pure checks before signing. The caller reserves spend before signing, under a lock.
 - Digest kinds for vouchers and settlements should be added to `DIGEST_KINDS`.

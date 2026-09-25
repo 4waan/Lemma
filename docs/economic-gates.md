@@ -81,7 +81,7 @@ Items marked **done** are implemented in schema v1. The rest are ordered by how 
 
 1. **Evidence per profile, bound to its runs (done).** Evidence sits on each `SupportedProfile` and cites `runSetDigest` and `fixtureProfileDigest`. Unbenchmarked profiles stay preview-only.
 2. **Freshness and model awareness (done).** `staleAfter`, `model` and `expectedTokenSaving` are recorded. Next, let the bridge send a privacy-safe model-price class, so the resolver can price the saving for the buyer's own model.
-3. **Idempotent purchases (done in core).** `resolutionId = deriveResolutionId(previewId, buyer)`. Used as the EIP-3009 nonce, it lets USDC refuse a duplicate payment on-chain.
+3. **Idempotent purchases (done in core).** `resolutionId = deriveResolutionId(previewId, buyer)`. An EIP-3009 nonce derived from it and the preview id lets USDC refuse a duplicate payment on-chain; the resolution id itself is public, so using it as the nonce would link wallets to purchases.
 4. **One definition of what is paid (done in core).** `PaymentTerms` mirrors x402 v2, and `checkPurchase` refuses any challenge that differs from the quote.
 5. **Evidence attestation.** Before external providers join, record who measured the saving (Lemma, not the provider), because a provider could otherwise inflate `S` to pass the sale rule.
 6. **Profile classes and a dependency interest set.** Publish, per capability, the dependency names the catalog actually matches on. The bridge sends only those, internal package names never leave the machine, and one benchmark can cover a documented profile class.

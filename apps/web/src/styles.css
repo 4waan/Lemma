@@ -386,7 +386,8 @@ main.container {
   position: absolute;
   inset: -2rem 0 auto 0;
   height: 28rem;
-  background: radial-gradient(40rem 18rem at 20% 20%, var(--glow), transparent 70%);
+  /* Sized to fade out fully inside its box, so no edge of the glow shows. */
+  background: radial-gradient(22rem 12rem at 36% 45%, var(--glow), transparent);
   z-index: -1;
   pointer-events: none;
 }

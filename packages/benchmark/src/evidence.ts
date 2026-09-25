@@ -1,3 +1,4 @@
+import { RESERVED_BENCHMARK_PREFIXES } from "@lemma/catalog";
 import { BENCHMARK_TARGET_BPS, ProfileEvidence, type RunRecord, RunRecord as RunRecordSchema, runSetDigest } from "@lemma/core";
 
 /** Fewest complete control/treatment pairs a sold saving may rest on. */
@@ -70,6 +71,18 @@ function pairsFor(records: readonly RunRecord[], taskId: string): { runs: RunRec
   return { runs, pairs };
 }
 
+/**
+ * The release the paired treatments of a task adopted, the one
+ * `deriveEvidence` verified, with those treatments' run ids. An unpaired
+ * treatment never names the release its task's evidence is bound to.
+ */
+export function pairedRelease(records: readonly RunRecord[], taskId: string): { release: RunRecord["releaseDigest"]; treatmentRunIds: string[] } {
+  const { pairs } = pairsFor(records, taskId);
+  if (pairs.length === 0) throw new BenchmarkError(`no complete pairs for ${taskId}`);
+  const treatments = pairs.map((p) => p.treatment);
+  return { release: only(treatments.map((t) => t.releaseDigest), "the adopted release"), treatmentRunIds: treatments.map((t) => t.runId) };
+}
+
 export interface EvidenceOptions {
   readonly taskId: string;
   /** How long the evidence stays sellable after the last run finished. */
@@ -85,6 +98,11 @@ export interface EvidenceOptions {
  */
 export function deriveEvidence(records: readonly RunRecord[], options: EvidenceOptions): ProfileEvidence {
   const { runs, pairs } = pairsFor(records, options.taskId);
+  const version = runs[0]?.benchmarkVersion ?? "";
+  const reserved = RESERVED_BENCHMARK_PREFIXES.find((p) => version.startsWith(p));
+  if (reserved !== undefined) {
+    throw new BenchmarkError(`benchmark version ${version} is reserved (${reserved}): exploratory and provisional runs never become evidence`);
+  }
   if (pairs.length < MIN_PAIRS) throw new BenchmarkError(`${pairs.length} complete pairs for ${options.taskId}; at least ${MIN_PAIRS} are required`);
   const treatments = pairs.map((p) => p.treatment);
   const release = only(treatments.map((t) => t.releaseDigest), "the adopted release");
@@ -134,21 +152,36 @@ export interface BenchmarkVerdict {
   readonly tasks: readonly TaskVerdict[];
 }
 
-const reductionBps = (control: bigint, treatment: bigint) => (control === 0n ? 0n : ((control - treatment) * 10_000n) / control);
+/** Reduction in basis points of the control, rounded toward negative infinity so it never overstates. */
+export function reductionBps(control: bigint, treatment: bigint): bigint {
+  if (control === 0n) return 0n;
+  const numerator = (control - treatment) * 10_000n;
+  const q = numerator / control;
+  return numerator < 0n && q * control !== numerator ? q - 1n : q;
+}
 
 /**
  * The success criteria of docs/benchmark-protocol.md, evaluated per task: both
  * arms reach the same acceptance result with no regression, treatment median
  * all-in cost and total tokens are at least 25 percent lower on matched tasks,
  * and the no-match task spends nothing. A missed target is reported with its
- * measured values, never rounded into a pass.
+ * measured values, never rounded into a pass. `taskIds` names the frozen
+ * tasks: one with no runs fails instead of dropping out. A benchmark passes
+ * only with at least one matched task.
  */
-export function evaluateBenchmark(records: readonly RunRecord[], options: { readonly noMatchTaskIds: readonly string[] }): BenchmarkVerdict {
+export function evaluateBenchmark(records: readonly RunRecord[], options: { readonly noMatchTaskIds: readonly string[]; readonly taskIds?: readonly string[] }): BenchmarkVerdict {
   const parsed = records.map((r) => RunRecordSchema.parse(r));
-  const taskIds = [...new Set(parsed.map((r) => r.taskId))].sort();
+  const recorded = new Set(parsed.map((r) => r.taskId));
+  for (const id of options.noMatchTaskIds) {
+    if (!recorded.has(id) && options.taskIds === undefined) throw new BenchmarkError(`no-match task ${id} has no runs`);
+  }
+  const taskIds = [...new Set([...recorded, ...(options.taskIds ?? [])])].sort();
   const tasks = taskIds.map((taskId): TaskVerdict => {
-    const { pairs } = pairsFor(parsed, taskId);
     const kind = options.noMatchTaskIds.includes(taskId) ? "no-match" : "match";
+    if (!recorded.has(taskId)) {
+      return { taskId, kind, pairs: 0, controlPassed: 0, treatmentPassed: 0, allInReductionBps: 0n, tokenReductionBps: 0n, treatmentSpentUsdc: 0n, failures: ["no runs"] };
+    }
+    const { pairs } = pairsFor(parsed, taskId);
     const failures: string[] = [];
     const controls = pairs.map((p) => p.control);
     const treatments = pairs.map((p) => p.treatment);
@@ -168,8 +201,5 @@ export function evaluateBenchmark(records: readonly RunRecord[], options: { read
     }
     return { taskId, kind, pairs: pairs.length, controlPassed, treatmentPassed, allInReductionBps: allIn, tokenReductionBps: tokens, treatmentSpentUsdc: spent, failures };
   });
-  for (const id of options.noMatchTaskIds) {
-    if (!taskIds.includes(id)) throw new BenchmarkError(`no-match task ${id} has no runs`);
-  }
-  return { passes: tasks.length > 0 && tasks.every((t) => t.failures.length === 0), tasks };
+  return { passes: tasks.some((t) => t.kind === "match") && tasks.every((t) => t.failures.length === 0), tasks };
 }

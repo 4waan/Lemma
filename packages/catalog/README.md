@@ -46,6 +46,12 @@ fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/READ
   - releases by digest and bundles by payload digest
   - per-capability interest sets: the dependency names the catalog matches on, which are the only package names the bridge sends
   - base probes: every path the bundle touches, with the base digest of each modify or delete target and null for an add. The bridge can predict drift before paying without ever seeing content.
+- `resolve(input, index, ctx)` is the deterministic resolver. It takes a typed task and a privacy-safe profile and returns a free `Preview`. It is pure: the clock, the preview id and the payment settings are injected.
+  - Every supported profile is checked, and all failing codes are collected.
+  - Matches are ranked by the published order (`docs/economic-gates.md`, lever 8).
+  - The top match gives `reuse`. It carries an offer only when `saleBlocker` is null, and the offer closes at the earliest of the offer TTL, the release expiry and the evidence's `staleAfter`.
+  - Without a match, the nearest candidate's reasons decide the answer: `decline` for an unsupported platform, `build` otherwise. `NO_RELEASE_FOR_CAPABILITY` is also `build`.
+  - `adapt` needs the buyer's files, so the bridge decides it.
 - `checkCatalog()` runs every rule below and reports all problems at once. A release that fails to load does not stop the checks on the others. It is read-only and independent of the clock. A test runs it on the committed catalog, and the server runs it before serving.
 - `packPayload(root, dir)` and `formatBundle(bundle)` build `bundle.json` from `payload/`.
 - `loadFixtures(root, problems)` and `FixtureCase` expose the compatibility cases to the resolver's golden tests and to the benchmark.
@@ -68,6 +74,7 @@ fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/READ
   - The server loads it only when explicitly allowed, and the public deployment never does.
 - **Prices.** An evidenced profile needs measured economics, a non-zero `payTo`, and a price within `[priceFloorAtomic, maxPriceFor(evidence, { chainCostAtomic })]`. The upper bound keeps the buyer at the 25% all-in target after gas (`docs/economic-gates.md`).
 - **Fixtures.**
+  - Every case replays through `resolve` at its pinned instant and must give exactly its expected decision, reasons, match and offer.
   - Every release family (versions sharing a base) has an exact case.
   - Every capability with a release has a near-miss case and an unsupported-language or unsupported-runtime case.
   - Every case references a real release and profile. A capability without releases has only `no-release` cases, and one with releases has none: only a `no-release` case expects `NO_RELEASE_FOR_CAPABILITY`.

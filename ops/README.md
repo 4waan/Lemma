@@ -7,7 +7,7 @@ This directory holds the production container scaffold and Railway configuration
 ## Responsibilities
 
 - Build the TypeScript workspaces and Vite dashboard in a repeatable Node 22 image.
-- Start the compiled server entrypoint.
+- Start the compiled server entrypoint (`apps/server/dist/main.js`).
 - Provide Railway build and restart configuration.
 - Keep secrets outside the image and source tree.
 

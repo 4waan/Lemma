@@ -50,6 +50,12 @@ The dashboard explains releases, payments, warranties, outcomes, and benchmarks.
 9. The bridge previews or applies the patch and runs the acceptance recipe.
 10. The buyer signs an Adoption Receipt. The evaluator may finalize an onchain outcome.
 
+## Hosted MCP endpoint
+
+The server's MCP endpoint is stateless Streamable HTTP with JSON responses. Every request builds a new MCP server and transport, because the SDK refuses to reuse a stateless transport. `GET` and `DELETE` return 405, so no idle SSE stream is held. Each request carries one JSON-RPC message; batches are refused, so a request costs one rate-limit token. The endpoint itself keeps no session, but offers and rate limits live in one process until they move to shared storage, so the MVP runs one replica.
+
+The bridge is the only intended client. It calls `lemma_preview` with a typed task and a profile that holds only the dependencies in the catalog's published interest set, and it calls `lemma_recover_resolution` on its own after a lost paid response. Agents never see these server tools directly: the bridge exposes its own small, text-only tools.
+
 ## Schemas
 
 Every component imports its data shapes from `@lemma/core` (see [packages/core/README.md](../packages/core/README.md)), and no application redefines them. Content objects (profiles, tasks, releases, catalog snapshots, patch bundles) are identified by `keccak256` over the RFC 8785 canonical JSON of `{ kind, value }`. A preview id is random. A resolution id is derived from the preview id and the buyer, so a recovered purchase names the same resolution. USDC amounts travel as atomic-unit integer strings, and payment terms use x402 v2's `PaymentRequirements` fields. Any other encoder, including the contract tests, checks itself against the shared vectors in `packages/core/test/vectors/digests.json`.

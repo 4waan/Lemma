@@ -27,7 +27,7 @@ Record public addresses. Keep private keys only in scoped local files or Railway
 3. Apply the database schema and record its version.
 4. Configure the server with the verified registry address.
 5. Deploy one Railway replica from `ops/Dockerfile`.
-6. Verify facilitator supported kinds before enabling paid MCP tools.
+6. Verify facilitator supported kinds before enabling paid MCP tools (`PAID_TOOLS=on`; the default is off).
 7. Complete an unpaid preview, one successful payment, recovery, warranty activation, pass, and failure refund.
 8. Publish only secret-free deployment evidence.
 
@@ -39,6 +39,8 @@ The deployed server must enable HTTPS-only transport, Strict Transport Security,
 
 Pause new contract activations and disable paid tools if settlement, voucher signing, or accounting behaves unexpectedly. Preserve read-only resolution recovery and withdrawal access. Never delete evidence to make a failed deployment appear clean.
 
-## Scaffold note
+## Server startup
 
-The current Docker image builds the placeholder server module and exits when run. A long-lived HTTP process and health endpoint will be introduced with the server implementation.
+The image runs `apps/server/dist/main.js`. It refuses to listen unless the environment is valid, `checkCatalog()` passes, and every release that can be sold pays `PROVIDER_ADDRESS`. On Railway, set `TRUSTED_PROXY_HOPS=1`, so rate limits key on the address the platform proxy appends rather than on client-supplied `X-Forwarded-For` entries.
+
+`ALLOW_PROVISIONAL_EVIDENCE` loads the testnet-only provisional overlay (`packages/catalog/releases.provisional/`), which stages 5 and 6 need. The server refuses to start with it in production, and the public deployment never sets it. A separate, non-public testnet deployment or a local server runs those stages.

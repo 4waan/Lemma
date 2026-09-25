@@ -1,11 +1,13 @@
 import { CAPABILITY_IDS, type CapabilityId, bundleDigest, baseReleaseDigest, isSellable, maxPriceFor } from "@lemma/core";
-import { Range } from "semver";
+import { Range, SemVer } from "semver";
 
+import { buildIndex } from "./build-index.js";
 import { listEntries, scanTree } from "./files.js";
-import { loadFixtures } from "./fixtures.js";
+import { type LoadedFixture, loadFixtures } from "./fixtures.js";
 import { type LoadedCatalog, type LoadedRelease, loadCatalogResult, message } from "./load.js";
 import { packPayload } from "./pack.js";
 import { BUNDLE_FILE, CATALOG_ROOT, FIXTURES_DIR, MANIFEST_FILE, PAYLOAD_DIR, PROVISIONAL_DIR, PUBLIC_DIR } from "./paths.js";
+import { resolve } from "./resolve.js";
 
 /** Benchmark versions reserved for runs and evidence that must never price a public release. */
 export const RESERVED_BENCHMARK_PREFIXES = ["probe-", "provisional-"] as const;
@@ -96,6 +98,13 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
     for (const loaded of publicReleases) {
       if (!exactBases.has(baseReleaseDigest(loaded.release))) problems.push(`${loaded.dir}: no exact fixture matches this release or another version of it`);
     }
+    if (!problems.some((p) => p.includes("does not parse"))) {
+      try {
+        problems.push(...goldenMismatches({ ...catalog, releases: publicReleases }, fixtures));
+      } catch (error) {
+        problems.push(`fixtures could not be replayed: ${message(error)}`);
+      }
+    }
     const covered = new Set<CapabilityId>(publicReleases.map((r) => r.release.capability));
     for (const capability of CAPABILITY_IDS.filter((c) => covered.has(c))) {
       const cases = fixtures.filter(({ fixture: f }) => f.capability === capability).map(({ fixture: f }) => f);
@@ -155,6 +164,11 @@ function checkRanges(loaded: LoadedRelease, problems: string[]): void {
     }
     if (!boundedAbove(parsed)) problems.push(`${loaded.dir}: ${where} range for ${name} has no upper bound: ${range || "(empty)"}`);
   };
+  try {
+    new SemVer(loaded.release.version);
+  } catch {
+    problems.push(`${loaded.dir}: version ${loaded.release.version} does not parse as semver`);
+  }
   loaded.release.supportedProfiles.forEach((profile, index) => {
     for (const [name, range] of Object.entries(profile.dependencies)) check(`profile ${index}`, name, range);
   });
@@ -227,4 +241,38 @@ function checkPrices(catalog: LoadedCatalog, loaded: LoadedRelease, problems: st
       problems.push(`${loaded.dir}: profile ${index} price ${price} is below the price floor ${economics.priceFloorAtomic}`);
     }
   });
+}
+
+/** Settings for replaying fixtures. They do not affect decisions, only offer terms. */
+const GOLDEN_CONTEXT = {
+  previewId: `0x${"00".repeat(32)}`,
+  payment: { network: "eip155:421614", asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", maxTimeoutSeconds: 300 },
+  offerTtlSeconds: 900,
+} as const;
+
+/**
+ * Replays every fixture through the resolver against the public catalog at the
+ * fixture's pinned instant, and reports each case whose decision, reasons,
+ * match or offer differs from what it expects.
+ */
+export function goldenMismatches(catalog: LoadedCatalog, fixtures: readonly LoadedFixture[]): string[] {
+  const index = buildIndex(catalog);
+  const out: string[] = [];
+  for (const { id, fixture } of fixtures) {
+    const preview = resolve(
+      { task: { schemaVersion: "1", capability: fixture.capability }, profile: fixture.profile },
+      index,
+      { ...GOLDEN_CONTEXT, now: new Date(fixture.now) },
+    );
+    const got = {
+      decision: preview.decision,
+      reasons: preview.reasons,
+      match: "release" in preview ? { releaseId: preview.release.releaseId, version: preview.release.version, profileIndex: preview.release.profileIndex } : null,
+      offer: "offer" in preview && preview.offer !== null,
+    };
+    if (JSON.stringify(got) !== JSON.stringify(fixture.expected)) {
+      out.push(`fixtures/${id}.json: expected ${JSON.stringify(fixture.expected)}, the resolver gives ${JSON.stringify(got)}`);
+    }
+  }
+  return out;
 }

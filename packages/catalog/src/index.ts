@@ -5,6 +5,7 @@ export * from "./fixtures.js";
 export * from "./load.js";
 export * from "./pack.js";
 export { CATALOG_ROOT } from "./paths.js";
+export * from "./resolve.js";
 
 export const CATALOG_COMPONENT = {
   name: "@lemma/catalog",

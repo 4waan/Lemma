@@ -1,4 +1,13 @@
+export * from "./app.js";
+export * from "./client.js";
+export * from "./config.js";
+export * from "./log.js";
+export * from "./mcp.js";
+export * from "./rate-limit.js";
+export * from "./startup.js";
+export * from "./store.js";
+
 export const SERVER_COMPONENT = {
   name: "@lemma/server",
-  status: "scaffold",
+  status: "preview",
 } as const;

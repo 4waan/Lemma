@@ -40,6 +40,7 @@ Implemented:
     - Paid tools are added by the payment work's registrar, and only with `PAID_TOOLS=on`.
 - `GET /api/v1/releases`: every release with its digest, base digest and source. `max-age=60`, because sellability changes with time.
 - `GET /api/v1/interest`: per-capability interest sets. The `ETag` is the catalog digest, so the bridge revalidates for free.
+- `GET /api/v1/releases/:digest`: one release manifest, from the catalog or, for a release a redeploy dropped, from the store. Immutable and cacheable forever; the bridge checks the digest itself and reads the acceptance recipe from it.
 - `GET /api/v1/releases/:digest/base-probe`: modify and delete targets with their base digests. They are immutable and cacheable forever.
 - `GET /api/v1/resolutions/:id`: a public view of a resolution (state, release, payload digest, terms, receipt outcome). It never includes the preview id, which is the recovery secret, the buyer, or the bundle.
 - `POST /api/v1/adoption-receipts`: body `{ receipt, previewId }`. The preview id is the recovery secret, known only to the buyer's bridge, so only the buyer can submit; a resolution id alone, which is public, is answered as unknown. Accepted only for a settled resolution, with `recordedAt` no more than five minutes before its creation or after the server's clock, and only once (first write wins). A receipt stays `verified: false` until the payment work checks its signature. A store failure answers 500, so the bridge retries.

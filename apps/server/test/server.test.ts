@@ -301,6 +301,21 @@ describe("read API", () => {
     expect((await a.request(`/api/v1/releases/0x${"ab".repeat(32)}/base-probe`)).status).toBe(404);
   });
 
+  it("serves a release manifest by digest, from the catalog or, once a redeploy dropped it, from the store", async () => {
+    const index = sellableIndex();
+    const release = index.releases[0]?.release;
+    const digest = index.releases[0]?.releaseDigest as string;
+    const res = await app({ index }).request(`/api/v1/releases/${digest}`);
+    expect(await res.json()).toEqual({ releaseDigest: digest, release });
+    expect(res.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    // A later catalog without it: the copy saved at startup still answers, so a bought release is never stranded.
+    const store = new MemoryStore();
+    await store.saveCatalog(index, NOW);
+    expect(await (await app({ store }).request(`/api/v1/releases/${digest}`)).json()).toEqual({ releaseDigest: digest, release });
+    expect((await app().request("/api/v1/releases/0x1234")).status).toBe(400);
+    expect((await app().request(`/api/v1/releases/0x${"ab".repeat(32)}`)).status).toBe(404);
+  });
+
   it("reports health with the catalog digest", async () => {
     expect(await (await app().request("/healthz")).json()).toEqual({ status: "ok", catalogDigest: committedIndex().catalogDigest });
   });

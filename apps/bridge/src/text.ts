@@ -8,9 +8,11 @@ export type DriftCheck = "none" | "likely" | "unchecked";
 /**
  * The agent-facing preview answer, built only from enums, numbers and codes.
  * No catalog prose (titles, provenance, file names) reaches the model, which
- * limits prompt injection through release content.
+ * limits prompt injection through release content. `bought` says whether
+ * this bridge already bought the offered release for this profile, or has a
+ * purchase of it still settling.
  */
-export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, alreadyBought = false): string {
+export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, bought?: "bought" | "pending"): string {
   const reasons = preview.reasons.join(", ");
   let text: string;
   if (preview.decision === "build") {
@@ -22,7 +24,16 @@ export function previewText(preview: Preview, drift: DriftCheck, purchasesEnable
   } else {
     const o = preview.offer;
     const driftNote = drift === "likely" ? " Local files differ from what it expects: applying it will likely need adaptation, so do not buy it." : "";
-    const next = drift === "likely" ? "" : alreadyBought ? " A purchase of it is already pending or stored in this bridge; do not buy it again." : purchasesEnabled ? " To use it, call lemma_buy_resolution, then lemma_apply_resolution and lemma_verify_adoption." : " Purchases are not enabled in this bridge; build it yourself.";
+    const next =
+      drift === "likely"
+        ? ""
+        : bought === "bought"
+          ? " It is already bought in this bridge: do not buy it again; use lemma_apply_resolution."
+          : bought === "pending"
+            ? " A purchase of it is still settling in this bridge: do not buy it again; call lemma_apply_resolution in a minute."
+            : purchasesEnabled
+              ? " To use it, call lemma_buy_resolution, then lemma_apply_resolution and lemma_verify_adoption."
+              : " Purchases are not enabled in this bridge; build it yourself.";
     text = `Lemma: a verified resolution fits (decision ${preview.decision}). Price ${formatUsdc(BigInt(o.terms.amount))} USDC; expected raw model-cost saving ${formatUsdc(BigInt(o.expectedRawSavingUsdc))} USDC, about ${o.expectedTokenSaving} tokens; offer valid until ${o.validUntil}.${driftNote}${next}`;
   }
   if (incomplete && preview.decision !== "reuse") text += " Part of the repository profile (a dependency version, the lockfile or the Node pin) could not be read exactly, which can hide a match; fix that and ask again.";

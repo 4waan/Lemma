@@ -1,4 +1,16 @@
-import { type Address, type Hex32, LEMMA_TOOLS, PatchPath, type Preview, type PreviewInput, PreviewResult, ResolutionDelivery } from "@lemma/core";
+import {
+  AdoptionReceipt,
+  type Address,
+  CapabilityRelease,
+  type Hex32,
+  LEMMA_TOOLS,
+  PatchPath,
+  type Preview,
+  type PreviewInput,
+  PreviewResult,
+  ResolutionDelivery,
+  releaseDigest,
+} from "@lemma/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
@@ -22,8 +34,24 @@ export const BaseProbeResponse = z.object({
 
 export type BaseProbeEntry = z.infer<typeof BaseProbeResponse>["files"][number];
 
+/** The server's answers to a posted receipt (ResolutionService.acceptReceipt). */
+export const ReceiptAnswer = z.enum(["ACCEPTED", "DUPLICATE", "NOT_SETTLED", "TOO_EARLY", "UNKNOWN_RESOLUTION", "MISMATCH"]);
+
+/** Answers after which a receipt is never sent again: recorded, or refused for good. NOT_SETTLED and TOO_EARLY are retried. */
+export const FINAL_RECEIPT_ANSWERS: ReadonlySet<ReceiptAnswer> = new Set(["ACCEPTED", "DUPLICATE", "UNKNOWN_RESOLUTION", "MISMATCH"]);
+
+export type ReceiptAnswer = z.infer<typeof ReceiptAnswer>;
+
 export class RemoteError extends Error {
   override name = "RemoteError";
+
+  /** `missing`: the server answered, and has no such object (or a different one); retrying will not help. */
+  constructor(
+    message: string,
+    readonly missing = false,
+  ) {
+    super(message);
+  }
 }
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -86,6 +114,32 @@ export class LemmaRemote {
     if (body.releaseDigest !== releaseDigest) throw new RemoteError("the server answered for another release");
     this.probes.set(releaseDigest, body.files);
     return body.files;
+  }
+
+  /** A release manifest by digest. The digest is checked here, so the server need not be trusted for its content. */
+  async release(digest: Hex32): Promise<CapabilityRelease> {
+    const res = await this.fetchImpl(new URL(`/api/v1/releases/${digest}`, this.baseUrl), { signal: AbortSignal.timeout(this.timeoutMs) });
+    if (!res.ok) throw new RemoteError(`release request failed with ${res.status}`, res.status === 404);
+    const body = z.object({ release: CapabilityRelease }).parse(await res.json());
+    if (releaseDigest(body.release) !== digest) throw new RemoteError("the server answered with a different release", true);
+    return body.release;
+  }
+
+  /**
+   * Posts an adoption receipt with the preview id it was bought from, which
+   * proves to the server that the buyer sends it; the answer says whether the
+   * server recorded it.
+   */
+  async postReceipt(receipt: AdoptionReceipt, previewId: Hex32): Promise<ReceiptAnswer> {
+    const res = await this.fetchImpl(new URL("/api/v1/adoption-receipts", this.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ receipt: AdoptionReceipt.parse(receipt), previewId }),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    const parsed = z.object({ result: ReceiptAnswer }).safeParse(await res.json().catch(() => undefined));
+    if (!parsed.success) throw new RemoteError(`receipt request failed with ${res.status}`);
+    return parsed.data.result;
   }
 
   /** Free recovery of a settled resolution (server tool `lemma_recover_resolution`). */

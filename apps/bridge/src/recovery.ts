@@ -1,5 +1,5 @@
 import type { ResolutionInbox } from "./inbox.js";
-import type { LemmaRemote } from "./remote.js";
+import { FINAL_RECEIPT_ANSWERS, type LemmaRemote, type ReceiptAnswer } from "./remote.js";
 
 /** After this long without settling, an authorization can no longer settle (x402 windows are at most 600 s). */
 export const PENDING_GIVE_UP_MS = 15 * 60 * 1000;
@@ -35,4 +35,26 @@ export async function recoverPending(inbox: ResolutionInbox, remote: LemmaRemote
     }
   }
   return { recovered, waiting, dropped };
+}
+
+/** Sends receipts the server has not answered yet, for example because it was unreachable when acceptance ran. */
+export async function flushReceipts(inbox: ResolutionInbox, remote: LemmaRemote): Promise<{ sent: number; unsent: number }> {
+  let sent = 0;
+  let unsent = 0;
+  for (const stored of inbox.unpostedReceipts()) {
+    try {
+      const answer = await remote.postReceipt(stored.receipt, stored.previewId);
+      inbox.putReceipt({ ...stored, ...answered(answer) });
+      if (FINAL_RECEIPT_ANSWERS.has(answer)) sent++;
+      else unsent++;
+    } catch {
+      unsent++;
+    }
+  }
+  return { sent, unsent };
+}
+
+/** How an answer is stored: a final one ends the retries; a retryable one is kept as the last answer. */
+export function answered(answer: ReceiptAnswer): { answer: ReceiptAnswer | null; lastAnswer: ReceiptAnswer } {
+  return { answer: FINAL_RECEIPT_ANSWERS.has(answer) ? answer : null, lastAnswer: answer };
 }

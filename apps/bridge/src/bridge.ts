@@ -3,7 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { driftCheck } from "./drift.js";
-import type { ResolutionInbox } from "./inbox.js";
+import { type PackageRef, type ResolutionInbox, packageRef } from "./inbox.js";
 import { recoverPending } from "./recovery.js";
 import type { LemmaRemote } from "./remote.js";
 import type { ScanCache } from "./scan/cache.js";
@@ -28,6 +28,8 @@ export const BRIDGE_INSTRUCTIONS =
 
 export interface PreviewCacheEntry {
   readonly preview: Preview;
+  /** The package the preview was for. */
+  readonly here: PackageRef;
   /** The drift check the agent was told; only "none" leaves the offer open. */
   readonly drift: DriftCheck;
   /** Monotonic milliseconds after which the offer is no longer usable. */
@@ -71,9 +73,10 @@ export interface PaidToolContext {
 
 /**
  * The bridge's MCP server, what the coding agent sees. Its tools declare no
- * outputSchema and return short text built only from enums and numbers: a
- * schema would cost thousands of characters of context on every turn, and
- * catalog prose could carry instructions. The full Preview stays here.
+ * outputSchema and return short text built only from enums, numbers, codes
+ * and short validated paths: a schema would cost thousands of characters of
+ * context on every turn, and catalog prose could carry instructions. The
+ * full Preview stays here.
  *
  * Tool calls are traced from the transport, before the SDK validates their
  * arguments, so a rejected call still counts.
@@ -83,7 +86,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
   const cache = new Map<CapabilityId, PreviewCacheEntry>();
   const wallClock = deps.wallClock ?? Date.now;
   // Reuse and adapt offers alike are checked for drift and for an earlier purchase.
-  const blocked = (preview: Preview) => "release" in preview && deps.inbox.blocksOffer(preview.release.releaseDigest, preview.profileDigest);
+  const block = (preview: Preview, here: PackageRef) => ("release" in preview ? deps.inbox.offerBlock(preview.release.releaseDigest, preview.profileDigest, here) : undefined);
   /** Per capability, the latest preview started: an earlier one that finishes later never replaces its answer. */
   const latest = new Map<CapabilityId, number>();
   let sequence = 0;
@@ -95,7 +98,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
       const entry = cache.get(capability);
       if (entry === undefined || entry.drift !== "none") return undefined;
       if (deps.monotonic() >= entry.expiresAtMono || wallClock() >= entry.expiresAtWall) return undefined;
-      return "offer" in entry.preview && entry.preview.offer !== null && !blocked(entry.preview) ? entry.preview : undefined;
+      return "offer" in entry.preview && entry.preview.offer !== null && block(entry.preview, entry.here) === undefined ? entry.preview : undefined;
     },
     recover: () => recoverPending(deps.inbox, deps.remote, new Date(wallClock())),
   };
@@ -134,8 +137,11 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         const ttlMs = "offer" in preview && preview.offer !== null ? Date.parse(preview.offer.validUntil) - Date.parse(preview.createdAt) : 0;
         const drift =
           "release" in preview && preview.offer !== null ? driftCheck(packageDir, await deps.remote.baseProbe(preview.release.releaseDigest)) : "unchecked";
-        if (latest.get(capability) === call) cache.set(capability, { preview, drift, expiresAtMono: receivedMono + ttlMs, expiresAtWall: receivedWall + ttlMs });
-        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, blocked(preview)) }] };
+        const here = packageRef(deps.root, packageDir);
+        if (latest.get(capability) === call) cache.set(capability, { preview, here, drift, expiresAtMono: receivedMono + ttlMs, expiresAtWall: receivedWall + ttlMs });
+        // Apply and verify later find a purchase from this preview by the package and capability it was for.
+        if ("offer" in preview && preview.offer !== null) deps.inbox.notePreview(preview.previewId, here, capability);
+        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, block(preview, here)) }] };
       } catch (error) {
         return { isError: true, content: [{ type: "text", text: `Lemma preview failed (${error instanceof Error ? error.name : "error"}). Build it yourself; nothing is charged.` }] };
       }

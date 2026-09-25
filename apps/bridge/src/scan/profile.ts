@@ -138,6 +138,11 @@ export function scanWorkspace(options: ScanOptions): ScanResult {
   return { profile, notes };
 }
 
+/** The nearest directory at or above `pkgDir`, within `root`, that holds a lockfile: the package's own, or its monorepo's. */
+export function lockfileDir(root: string, pkgDir: string): string | undefined {
+  return findUp(root, pkgDir, (dir) => LOCKFILES.some(([, name]) => existsRegular(root, dir, name)));
+}
+
 /** The nearest directory at or above `cwd`, within `root`, that holds a package.json. */
 export function findPackageDir(root: string, cwd: string): string {
   const dir = findUp(root, cwd, (d) => readAllowlisted(root, d, "package.json") !== undefined);

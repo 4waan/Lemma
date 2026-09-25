@@ -62,6 +62,17 @@ export interface CatalogIndex {
  * parses a manifest, a version or a range. Throws on a range the semver library
  * cannot parse, which `checkCatalog` reports first.
  */
+/** A supported profile with its dependency ranges parsed, sorted by package name. */
+export function indexProfile(profile: SupportedProfile, index: number): IndexedProfile {
+  return {
+    index,
+    profile,
+    ranges: Object.keys(profile.dependencies)
+      .sort()
+      .map((name) => [name, new Range(profile.dependencies[name] as string)] as const),
+  };
+}
+
 export function buildIndex(catalog: LoadedCatalog): CatalogIndex {
   const releases = catalog.releases.map((loaded): IndexedRelease => {
     const { release } = loaded;
@@ -70,13 +81,7 @@ export function buildIndex(catalog: LoadedCatalog): CatalogIndex {
       releaseDigest: loaded.releaseDigest,
       baseReleaseDigest: baseReleaseDigest(release),
       version: new SemVer(release.version),
-      profiles: release.supportedProfiles.map((profile, index) => ({
-        index,
-        profile,
-        ranges: Object.keys(profile.dependencies)
-          .sort()
-          .map((name) => [name, new Range(profile.dependencies[name] as string)] as const),
-      })),
+      profiles: release.supportedProfiles.map((profile, index) => indexProfile(profile, index)),
       bundle: loaded.bundle,
       baseProbe: loaded.bundle.files.map((f) => ({ path: f.path, baseDigest: f.baseDigest })),
       source: loaded.source,

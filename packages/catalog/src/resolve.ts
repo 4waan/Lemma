@@ -1,5 +1,6 @@
 import {
   type Address,
+  type CapabilityRelease,
   type Hex32,
   Preview,
   PreviewInput,
@@ -11,7 +12,7 @@ import {
 } from "@lemma/core";
 import type { z } from "zod";
 
-import type { CatalogIndex, IndexedProfile, IndexedRelease } from "./build-index.js";
+import { type CatalogIndex, type IndexedProfile, type IndexedRelease, indexProfile } from "./build-index.js";
 
 type Profile = z.infer<typeof PreviewInput>["profile"];
 
@@ -132,7 +133,7 @@ export function resolve(input: PreviewInput, index: CatalogIndex, ctx: ResolveCo
  * failures. Dependency ranges were parsed when the index was built; a
  * prerelease version satisfies a range only if the range names that prerelease.
  */
-export function checkProfile(release: IndexedRelease, indexed: IndexedProfile, profile: Profile, now: Date): ReasonCode[] {
+export function checkProfile(release: Pick<IndexedRelease, "release">, indexed: Pick<IndexedProfile, "profile" | "ranges">, profile: Profile, now: Date): ReasonCode[] {
   const p = indexed.profile;
   const reasons: ReasonCode[] = [];
   if (now.getTime() >= Date.parse(release.release.expiresAt)) reasons.push("RELEASE_EXPIRED");
@@ -147,6 +148,17 @@ export function checkProfile(release: IndexedRelease, indexed: IndexedProfile, p
   }
   if (p.frameworks.some((f) => !profile.frameworks.includes(f))) reasons.push("MISSING_FRAMEWORK");
   return reasons;
+}
+
+/**
+ * `checkProfile` for one supported profile of a release manifest, for a
+ * client that holds the manifest but not the catalog index: the bridge checks
+ * with it that a package still fits the profile a resolution was bought for.
+ */
+export function checkReleaseProfile(release: CapabilityRelease, profileIndex: number, profile: Profile, now: Date): ReasonCode[] {
+  const supported = release.supportedProfiles[profileIndex];
+  if (supported === undefined) throw new RangeError(`the release has no supported profile ${profileIndex}`);
+  return checkProfile({ release }, indexProfile(supported, profileIndex), profile, now);
 }
 
 /**

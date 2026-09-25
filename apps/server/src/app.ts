@@ -191,6 +191,17 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ catalogDigest: deps.index.catalogDigest, capabilities: deps.index.interest });
   });
 
+  // A release manifest by digest: from the catalog, else from the store, so a redeploy never strands a bought release.
+  // The buyer's bridge checks the digest itself and reads the acceptance recipe from it.
+  app.get("/api/v1/releases/:digest", async (c) => {
+    const digest = Hex32.safeParse(c.req.param("digest"));
+    if (!digest.success) return c.json({ error: "expected a release digest" }, 400);
+    const release = deps.index.byDigest.get(digest.data)?.release ?? (await deps.store.getRelease(digest.data));
+    if (release === undefined) return c.json({ error: "unknown release" }, 404);
+    c.header("Cache-Control", "public, max-age=31536000, immutable");
+    return c.json({ releaseDigest: digest.data, release });
+  });
+
   app.get("/api/v1/releases/:digest/base-probe", (c) => {
     const digest = Hex32.safeParse(c.req.param("digest"));
     if (!digest.success) return c.json({ error: "expected a release digest" }, 400);

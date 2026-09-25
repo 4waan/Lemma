@@ -185,14 +185,14 @@ describe("the agent-facing bridge", () => {
     if (first === undefined || first.decision !== "reuse") throw new Error("expected an open offer");
     b.inbox.markPending(first.previewId, BUYER, NOW, first.release.releaseDigest);
     const again = await b.preview();
-    expect(again).toContain("already pending or stored");
+    expect(again).toContain("A purchase of it is still settling in this bridge: do not buy it again");
     expect(again).not.toContain("call lemma_buy_resolution");
     expect(b.offer()).toBeUndefined();
     await service.prepare(first.previewId, { payer: BUYER, nonce: "0x01", validBefore: new Date(NOW.getTime() + 300_000) });
     await service.commit(deriveResolutionId(first.previewId, BUYER), { nonce: "0x01", settlementRef: "0xsettlement" });
     expect(await b.paid()?.recover()).toEqual({ recovered: 1, waiting: 0, dropped: 0 });
     expect(b.inbox.pending()).toEqual([]);
-    await b.preview();
+    expect(await b.preview()).toContain("It is already bought in this bridge: do not buy it again; use lemma_apply_resolution.");
     expect(b.offer()).toBeUndefined();
   });
 

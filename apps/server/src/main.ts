@@ -1,4 +1,6 @@
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { buildIndex, checkCatalog, loadCatalog } from "@lemma/catalog";
 import { getConnInfo } from "@hono/node-server/conninfo";
@@ -38,12 +40,14 @@ if (config.paidTools) fail(["PAID_TOOLS=on needs the paid-tool registrar from th
 
 const check = checkCatalog();
 if (check.problems.length > 0) fail(check.problems);
-const index = buildIndex(loadCatalog({ includeProvisional: config.allowProvisionalEvidence }));
+const catalog = loadCatalog({ includeProvisional: config.allowProvisionalEvidence });
+const index = buildIndex(catalog);
 const problems = startupProblems(config, index);
 if (problems.length > 0) fail(problems);
 if (config.allowProvisionalEvidence) logger.log("warn", "startup.provisional_overlay", { note: "testnet-only provisional evidence is loaded" });
 
 let store: LemmaStore;
+const storeKind = config.databaseUrl === undefined ? "memory" : "postgres";
 if (config.databaseUrl !== undefined) {
   let schema: Awaited<ReturnType<typeof schemaIsCurrent>>;
   let db: ReturnType<typeof drizzle>;
@@ -114,6 +118,9 @@ const app = createApp({
   clock,
   newPreviewId: () => `0x${randomBytes(32).toString("hex")}`,
   logger,
+  economics: catalog.economics,
+  storeKind,
+  webRoot: dashboardRoot(),
   socketAddress: (c) => getConnInfo(c).remote.address,
 });
 
@@ -129,4 +136,12 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 10_000).unref();
   });
+}
+
+/** The built dashboard next to this build (apps/web/dist), when it was built. */
+function dashboardRoot(): string | undefined {
+  const root = fileURLToPath(new URL("../../web/dist", import.meta.url));
+  if (existsSync(root)) return root;
+  logger.log("warn", "startup.no_dashboard", { note: "apps/web/dist is missing: the dashboard is not served" });
+  return undefined;
 }

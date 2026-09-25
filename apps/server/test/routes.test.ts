@@ -1,4 +1,4 @@
-import { LEMMA_TOOLS, PreviewResult, ResolutionDelivery, deriveResolutionId } from "@lemma/core";
+import { DemandView, LEMMA_TOOLS, PreviewResult, ResolutionDelivery, deriveResolutionId } from "@lemma/core";
 import { describe, expect, it } from "vitest";
 
 import { MemoryStore, ResolutionService, silentLogger } from "../src/index.js";
@@ -101,10 +101,11 @@ describe("demand", () => {
     const client = await mcpClient(a);
     expect(await (await a.request("/api/v1/demand")).json()).toEqual({ minProfiles: 5, buckets: [] });
     await store.closeDemandDaysBefore("2026-10-02");
-    const body = (await (await a.request("/api/v1/demand")).json()) as { buckets: Array<{ day: string; bucket: string; profiles: number; sources: number }> };
+    const text = await (await a.request("/api/v1/demand")).text();
+    const body = DemandView.parse(JSON.parse(text));
     expect(body.buckets).toHaveLength(1);
     expect(body.buckets[0]).toMatchObject({ day: "2026-10-01", profiles: 5, sources: 5 });
-    expect(JSON.parse(body.buckets[0]?.bucket as string)).toEqual({
+    expect(body.buckets[0]?.key).toEqual({
       capability: "mcp-server.add-payment-gating",
       decision: "reuse",
       release: "mcp-server-payment-gating@0.1.0-skeleton",
@@ -113,7 +114,7 @@ describe("demand", () => {
       offer: false,
       class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] },
     });
-    expect(body.buckets[0]?.bucket).not.toContain("1.30.");
+    expect(text).not.toContain("1.30.");
     await client.close();
   });
 

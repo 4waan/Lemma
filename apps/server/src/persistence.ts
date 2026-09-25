@@ -35,6 +35,8 @@ export type RearmResult = "REARMED" | "NOT_EXPIRED" | "PAYMENT_REUSED";
  * contract suite runs against both, so they cannot drift apart.
  */
 export interface LemmaStore extends PreviewStore {
+  /** Resolves when the store can answer a query; the status view reports a store that cannot. */
+  ping(): Promise<void>;
   /** Upserts every release, bundle and the catalog snapshot; digests make this idempotent. */
   saveCatalog(index: CatalogIndex, now: Date): Promise<void>;
   getRelease(releaseDigest: Hex32): Promise<CapabilityRelease | undefined>;
@@ -133,6 +135,8 @@ export class MemoryStore implements LemmaStore {
     this.clock = options.clock ?? (() => new Date());
     this.capacity = options.capacity ?? MAX_MEMORY_OFFERS;
   }
+
+  async ping(): Promise<void> {}
 
   async saveCatalog(index: CatalogIndex, _now?: Date): Promise<void> {
     for (const r of index.releases) {

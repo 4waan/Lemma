@@ -21,6 +21,10 @@ export class PgStore implements LemmaStore {
     private readonly newSalt: () => string = () => crypto.randomUUID(),
   ) {}
 
+  async ping(): Promise<void> {
+    await this.db.execute(sql`select 1`);
+  }
+
   async saveCatalog(index: CatalogIndex, now: Date): Promise<void> {
     await this.db.transaction(async (tx) => {
       for (const r of index.releases) {

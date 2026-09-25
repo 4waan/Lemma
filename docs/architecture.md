@@ -26,7 +26,7 @@ The Arbitrum Sepolia contract holds provider bonds and records activated warrant
 
 ### Dashboard
 
-The dashboard explains releases, payments, warranties, outcomes, and benchmarks. It has no signing authority.
+The dashboard explains releases, payments, warranties, outcomes, and benchmarks. It has no signing authority. The server serves it from the same origin as its read API, so the page's CSP allows nothing but that origin, and every view renders a core read model (`packages/core/src/read.ts`) that the page validates before showing it. Views are addressed by URL fragment: overview and setup, catalog, benchmark evidence, unmet demand (what to build next), resolution detail and status.
 
 ## Trust boundaries
 

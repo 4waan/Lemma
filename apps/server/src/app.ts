@@ -1,5 +1,5 @@
 import { type CatalogIndex } from "@lemma/catalog";
-import { Hex32 } from "@lemma/core";
+import { type CatalogView, DemandKey, type DemandView, Hex32, ResolutionView, type StatusView, summarizeRelease } from "@lemma/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { type Context, Hono } from "hono";
@@ -15,6 +15,7 @@ import type { Logger } from "./log.js";
 import { type PaidToolRegistrar, buildMcpServer } from "./mcp.js";
 import { TokenBuckets } from "./rate-limit.js";
 import { DEMAND_MIN_PROFILES, DemandRecorder } from "./demand.js";
+import { DASHBOARD_CSP, serveDashboard } from "./dashboard.js";
 import type { LemmaStore } from "./persistence.js";
 import { describeError } from "./errors.js";
 import { ReceiptSubmission, type ResolutionService } from "./service.js";
@@ -36,6 +37,12 @@ export interface AppDeps {
   /** Overrides REQUEST_TIMEOUT_MS (tests). */
   readonly requestTimeoutMs?: number;
   readonly registerPaidTools?: PaidToolRegistrar | undefined;
+  /** The catalog's dated economic inputs (economics.json), for the read models' price bounds. Absent reads as an unmeasured placeholder. */
+  readonly economics?: { readonly status: "placeholder" | "measured"; readonly chainCostAtomic: string; readonly priceFloorAtomic: string } | undefined;
+  /** Which store backs the service, for the status view. */
+  readonly storeKind?: "postgres" | "memory";
+  /** The built dashboard (apps/web/dist); when absent, no dashboard is served. */
+  readonly webRoot?: string | undefined;
 }
 
 /**
@@ -48,9 +55,12 @@ export interface AppDeps {
  *   browser, which never has a reason to call it, and are refused.
  * - `/api/v1/*`: read-only catalog data for the bridge and the dashboard.
  * - `/healthz`.
+ * - `/` and `/assets/*`: the built dashboard, under a CSP that allows only
+ *   this origin's scripts, styles and API.
  */
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
+  const economics = deps.economics ?? { status: "placeholder" as const, chainCostAtomic: "0", priceFloorAtomic: "0" };
   const buckets = new TokenBuckets(deps.config.rateLimitPerMinute);
   const mcpDeps = {
     config: deps.config,
@@ -69,23 +79,34 @@ export function createApp(deps: AppDeps): Hono {
     if (error instanceof HTTPException) {
       // Deliberate HTTP answers (the request timeout's 504) keep their status.
       deps.logger.log("warn", "request.http_error", { path: c.req.path, status: error.status });
+      // An error is never cached, whatever a route set before it failed.
+      c.header("Cache-Control", "no-store");
       return c.json({ error: error.status === 504 ? "request timed out" : "request failed" }, error.status);
     }
     deps.logger.log("error", "request.failed", { path: c.req.path, error: describeError(error) });
+    c.header("Cache-Control", "no-store");
     return c.json({ error: "internal error" }, 500);
   });
-  app.notFound((c) => c.json({ error: "not found" }, 404));
+  app.notFound((c) => {
+    c.header("Cache-Control", "no-store");
+    return c.json({ error: "not found" }, 404);
+  });
 
   app.use(
     "*",
     secureHeaders({
       strictTransportSecurity: "max-age=63072000; includeSubDomains",
-      contentSecurityPolicy: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] },
       xFrameOptions: "DENY",
       referrerPolicy: "no-referrer",
       xContentTypeOptions: "nosniff",
     }),
   );
+  // Set after the handler, so no route can loosen it: the dashboard's own files get its policy, everything else none.
+  app.use("*", async (c, next) => {
+    await next();
+    const dashboard = c.req.path === "/" || c.req.path.startsWith("/assets/");
+    c.res.headers.set("Content-Security-Policy", dashboard ? DASHBOARD_CSP : "default-src 'none'; frame-ancestors 'none'");
+  });
   app.use("*", timeout(deps.requestTimeoutMs ?? REQUEST_TIMEOUT_MS));
 
   const limit = async (c: Context, next: () => Promise<void>) => {
@@ -186,6 +207,40 @@ export function createApp(deps: AppDeps): Hono {
     const view = await deps.service.publicResolution(id.data);
     if (view === undefined) return c.json({ error: "unknown resolution" }, 404);
     c.header("Cache-Control", "no-store");
+    return c.json(ResolutionView.parse(view));
+  });
+
+  // Read models for the dashboard (core read.ts): computed at request time, because sellability changes with time.
+  app.get("/api/v1/catalog", (c) => {
+    const now = deps.clock();
+    const view: CatalogView = {
+      schemaVersion: "1",
+      catalogDigest: deps.index.catalogDigest,
+      generatedAt: now.toISOString(),
+      economics: { status: economics.status, chainCostUsdc: economics.chainCostAtomic, priceFloorUsdc: economics.priceFloorAtomic },
+      releases: deps.index.releases.map((r) =>
+        summarizeRelease({ release: r.release, releaseDigest: r.releaseDigest, baseReleaseDigest: r.baseReleaseDigest, provisional: r.source === "provisional" }, { chainCostAtomic: BigInt(economics.chainCostAtomic) }, now),
+      ),
+    };
+    c.header("Cache-Control", "public, max-age=60");
+    return c.json(view);
+  });
+
+  app.get("/api/v1/status", async (c) => {
+    const storeOk = await storeAnswers(deps.store);
+    const view: StatusView = {
+      schemaVersion: "1",
+      status: storeOk ? "ok" : "degraded",
+      network: deps.config.payment.network,
+      catalogDigest: deps.index.catalogDigest,
+      releases: deps.index.releases.length,
+      // The same condition the MCP server uses to register paid tools.
+      paidTools: deps.config.paidTools && deps.registerPaidTools !== undefined,
+      provisionalEvidence: deps.index.releases.some((r) => r.source === "provisional"),
+      store: deps.storeKind ?? "memory",
+      economics: economics.status,
+    };
+    c.header("Cache-Control", storeOk ? "public, max-age=60" : "no-store");
     return c.json(view);
   });
 
@@ -208,9 +263,38 @@ export function createApp(deps: AppDeps): Hono {
 
   // Unmet and met demand, only for buckets with enough distinct repositories to publish (k-anonymity).
   app.get("/api/v1/demand", async (c) => {
+    const buckets: DemandView["buckets"] = [];
+    for (const b of await deps.store.demandBuckets(DEMAND_MIN_PROFILES)) {
+      // A bucket key this build cannot read (written by another version) is left out rather than guessed at.
+      const key = DemandKey.safeParse(safeJson(b.bucket));
+      if (key.success) buckets.push({ day: b.day, profiles: b.profiles, sources: b.sources, key: key.data });
+    }
+    const view: DemandView = { minProfiles: DEMAND_MIN_PROFILES, buckets };
+    // Set only once the answer exists, so a failure is never cached.
     c.header("Cache-Control", "public, max-age=300");
-    return c.json({ minProfiles: DEMAND_MIN_PROFILES, buckets: await deps.store.demandBuckets(DEMAND_MIN_PROFILES) });
+    return c.json(view);
   });
 
+  if (deps.webRoot !== undefined) serveDashboard(app, deps.webRoot);
   return app;
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether the store answers a trivial query within a second. */
+async function storeAnswers(store: { ping(): Promise<void> }): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([store.ping().then(() => true), new Promise<boolean>((resolve) => (timer = setTimeout(() => resolve(false), 1000)))]);
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }

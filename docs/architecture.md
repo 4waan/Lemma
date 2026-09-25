@@ -54,7 +54,9 @@ The dashboard explains releases, payments, warranties, outcomes, and benchmarks.
 
 The server's MCP endpoint is stateless Streamable HTTP with JSON responses. Every request builds a new MCP server and transport, because the SDK refuses to reuse a stateless transport. `GET` and `DELETE` return 405, so no idle SSE stream is held. Each request carries one JSON-RPC message; batches are refused, so a request costs one rate-limit token. The endpoint itself keeps no session, but offers and rate limits live in one process until they move to shared storage, so the MVP runs one replica.
 
-The bridge is the only intended client. It calls `lemma_preview` with a typed task and a profile that holds only the dependencies in the catalog's published interest set, and it calls `lemma_recover_resolution` on its own after a lost paid response. Agents never see these server tools directly: the bridge exposes its own small, text-only tools.
+The bridge is the only intended client. It calls `lemma_preview` with a typed task and a profile that holds only the dependencies in the catalog's published interest set, and it calls `lemma_recover_resolution` on its own at startup and after a lost paid response, and hands out no new offer for a release whose purchase is pending or stored. Agents never see these server tools directly: the bridge exposes its own small, text-only tools.
+
+In steady state a preview costs the bridge one request. The interest set is revalidated only when a preview reports a different catalog digest, base probes are cached per release, and one MCP session is reused.
 
 ## Schemas
 

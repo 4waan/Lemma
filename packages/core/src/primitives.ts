@@ -1,6 +1,8 @@
 import { getAddress, isAddress } from "viem";
 import { z } from "zod";
 
+import { hasLoneSurrogate } from "./canonical.js";
+
 export const LEMMA_SCHEMA_VERSION = "1" as const;
 
 /** Every signed, paid, or persisted Lemma object carries this literal. */
@@ -90,6 +92,7 @@ export function SafeText(max: number) {
     .min(1)
     .max(max)
     .refine((s) => !UNSAFE_TEXT.test(s), "control, bidirectional and zero-width characters are not allowed")
+    .refine((s) => !hasLoneSurrogate(s), "lone UTF-16 surrogates are not allowed")
     .refine((s) => s === s.trim(), "no leading or trailing whitespace");
 }
 

@@ -1,7 +1,7 @@
 import { keccak256, stringToBytes } from "viem";
 import { z } from "zod";
 
-import { digest } from "./canonical.js";
+import { digest, hasLoneSurrogate } from "./canonical.js";
 import { type Hex32, PackageName, SchemaVersion } from "./primitives.js";
 import { SemverRange } from "./release.js";
 
@@ -12,8 +12,21 @@ export const MAX_BUNDLE_CONTENT = 2 * 1024 * 1024;
 const SEGMENT = /^[A-Za-z0-9_@+-][A-Za-z0-9._@+-]{0,127}$/;
 // Files a patch may never write. Dependency changes go through `dependencies`
 // and `devDependencies`, which the bridge applies with the package manager, so
-// package.json scripts and lockfiles are never edited as text.
-const PROTECTED = new Set(["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock", "node_modules"]);
+// package.json scripts, lockfiles and the files that steer an install
+// (npm-shrinkwrap.json, pnpm-workspace.yaml with its overrides) are never
+// edited as text. Dotfiles (.npmrc, .yarnrc.yml, .pnpmfile.cjs, .yarn/) are
+// refused by SEGMENT.
+const PROTECTED = new Set([
+  "package.json",
+  "package-lock.json",
+  "npm-shrinkwrap.json",
+  "pnpm-lock.yaml",
+  "pnpm-workspace.yaml",
+  "yarn.lock",
+  "bun.lock",
+  "bun.lockb",
+  "node_modules",
+]);
 
 /**
  * A workspace-relative POSIX path: no leading "/", no "." or ".." segments,
@@ -34,7 +47,7 @@ export function fileDigest(content: string | Uint8Array): Hex32 {
 const Content = z
   .string()
   .max(MAX_FILE_CONTENT)
-  .refine((c) => !c.includes("\0") && !c.includes("\r"), "content is UTF-8 text with LF line endings");
+  .refine((c) => !c.includes("\0") && !c.includes("\r") && !hasLoneSurrogate(c), "content is UTF-8 text with LF line endings");
 
 /**
  * One file change. `baseDigest` is the digest of the file the patch was built
@@ -91,4 +104,79 @@ export type PatchBundle = z.infer<typeof PatchBundle>;
 
 export function bundleDigest(bundle: PatchBundle): Hex32 {
   return digest("patch-bundle", PatchBundle.parse(bundle));
+}
+
+/** What `planApply` is told about a workspace path: a file's `fileDigest`, a directory, or nothing. */
+export const DIRECTORY = "directory" as const;
+
+export type PathState = Hex32 | typeof DIRECTORY | null;
+
+/** A path the bundle expects in a different state than the buyer's workspace holds it. */
+export type Drift = {
+  path: string;
+  op: "add" | "modify" | "delete";
+  /** What the bundle needs there: its base file's digest, nothing (null), or a directory. */
+  expected: PathState;
+  /** What the workspace holds now. */
+  actual: PathState;
+};
+
+/** What applying a bundle would do, or every path that has drifted. */
+export type ApplyPlan =
+  | {
+      ok: true;
+      /** Files to write, sorted by path. */
+      writes: Array<{ path: string; op: "add" | "modify"; content: string }>;
+      /** Files to delete, sorted by path. */
+      deletes: string[];
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    }
+  | { ok: false; drift: Drift[] };
+
+/**
+ * Plans a bundle against the buyer's workspace without touching it.
+ *
+ * - An add needs nothing at its path, and a directory or nothing at every
+ *   parent path.
+ * - A modify or delete needs the file whose digest is its `baseDigest`.
+ *
+ * Any other state is drift. Then nothing is planned, and every drifted path is
+ * reported, so the bridge can answer `adapt`.
+ *
+ * `state(path)` reports the workspace, for bundle paths and their parents:
+ * `fileDigest` of a regular file, `DIRECTORY`, or null when nothing exists
+ * there. The caller reads the files, and this function stays pure, so the
+ * bridge, the benchmark probe and tests share one rule. On a case-insensitive
+ * filesystem the caller's lookup already finds a file that differs only in
+ * case, which then counts as drift.
+ */
+export function planApply(bundle: PatchBundle, state: (path: string) => PathState): ApplyPlan {
+  const b = PatchBundle.parse(bundle);
+  const drift: Drift[] = [];
+  const writes: Array<{ path: string; op: "add" | "modify"; content: string }> = [];
+  const deletes: string[] = [];
+  const seenParents = new Set<string>();
+  for (const file of b.files) {
+    if (file.op === "add") {
+      const segments = file.path.split("/");
+      for (let i = 1; i < segments.length; i++) {
+        const parent = segments.slice(0, i).join("/");
+        if (seenParents.has(parent)) continue;
+        seenParents.add(parent);
+        const actual = state(parent);
+        if (actual !== null && actual !== DIRECTORY) drift.push({ path: parent, op: file.op, expected: DIRECTORY, actual });
+      }
+    }
+    const actual = state(file.path);
+    if (actual !== file.baseDigest) {
+      drift.push({ path: file.path, op: file.op, expected: file.baseDigest, actual });
+    } else if (file.op === "delete") {
+      deletes.push(file.path);
+    } else {
+      writes.push({ path: file.path, op: file.op, content: file.content as string });
+    }
+  }
+  if (drift.length > 0) return { ok: false, drift };
+  return { ok: true, writes, deletes, dependencies: { ...b.dependencies }, devDependencies: { ...b.devDependencies } };
 }

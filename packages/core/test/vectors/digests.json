@@ -303,6 +303,7 @@
   "derived": {
     "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
     "adoptionReceiptDigest": "0xac81ea136ad765b8b8b934f7203162209ecbc7e8d03d8724d6f20f7c10ebdfd6",
-    "catalogDigest": "0x91e4753ca8a454383e5a46d0674dce650bd62eea9211039a9a6d34326d08711b"
+    "catalogDigest": "0x91e4753ca8a454383e5a46d0674dce650bd62eea9211039a9a6d34326d08711b",
+    "baseReleaseDigest": "0x1dc49faba87349a8220ccfd14bb29e3552494b5485975652123a87b6ecce1188"
   }
 }

@@ -24,13 +24,30 @@ const LOCKFILE_FOR: Record<z.infer<typeof PackageManager>, string> = {
 
 export const MAX_PROFILE_DEPENDENCIES = 500;
 
-// Rejects oversized maps before any entry is parsed.
-const DependencyMap = z
-  .custom<Record<string, unknown>>(
-    (v) => typeof v === "object" && v !== null && !Array.isArray(v) && Object.keys(v).length <= MAX_PROFILE_DEPENDENCIES,
-    `expected an object with at most ${MAX_PROFILE_DEPENDENCIES} dependencies`,
-  )
-  .pipe(z.record(PackageName, ExactVersion));
+/**
+ * Direct dependencies with exact versions. The size cap runs before any entry is
+ * parsed, so an oversized map costs one key count. It is a preprocess step
+ * rather than `z.custom`, because MCP clients read this schema as JSON Schema
+ * and a custom type cannot be represented there; `maxProperties` publishes the
+ * same cap to them.
+ */
+const DependencyMap = z.preprocess<unknown, z.ZodRecord<typeof PackageName, typeof ExactVersion>, Record<string, string>>(
+  (value, ctx) => {
+    if (typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length > MAX_PROFILE_DEPENDENCIES) {
+      ctx.addIssue({
+        code: "too_big",
+        origin: "object",
+        maximum: MAX_PROFILE_DEPENDENCIES,
+        inclusive: true,
+        input: value,
+        message: `expected at most ${MAX_PROFILE_DEPENDENCIES} dependencies`,
+      });
+      return z.NEVER;
+    }
+    return value;
+  },
+  z.record(PackageName, ExactVersion).meta({ maxProperties: MAX_PROFILE_DEPENDENCIES }),
+);
 
 /**
  * The only repository information the bridge sends to the server: allowlisted

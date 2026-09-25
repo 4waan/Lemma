@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { type DigestKind, adoptionReceiptDigest, canonicalize, catalogDigest, deriveResolutionId, digest } from "../src/index.js";
+import { type DigestKind, adoptionReceiptDigest, baseReleaseDigest, canonicalize, catalogDigest, deriveResolutionId, digest } from "../src/index.js";
 import * as ex from "./examples.js";
 
 /**
@@ -39,6 +39,7 @@ const derived = {
   resolutionId: deriveResolutionId(ex.resolution.previewId, ex.resolution.buyer),
   adoptionReceiptDigest: adoptionReceiptDigest(ex.receipt),
   catalogDigest: catalogDigest([ex.release]),
+  baseReleaseDigest: baseReleaseDigest(ex.release),
 };
 
 if (process.env.LEMMA_WRITE_VECTORS === "1") {

@@ -1,6 +1,7 @@
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { BENCHMARK_TARGET_BPS, allInReductionBps, checkPurchase, checkSpend, isSellable, saleBlocker } from "../src/index.js";
+import { BENCHMARK_TARGET_BPS, allInReductionBps, checkPurchase, checkSpend, isSellable, maxPriceFor, saleBlocker } from "../src/index.js";
 import * as ex from "./examples.js";
 
 describe("isSellable (30 percent rule)", () => {
@@ -45,6 +46,14 @@ describe("allInReductionBps", () => {
     expect(allInReductionBps(ex.evidence, 250_000n, 10_000n)).toBe(2960n);
   });
 
+  it("never rounds a cost increase up to zero", () => {
+    // S - P - g = -1 against C = 10_001 is -0.9999 bps.
+    const tiny = { ...ex.evidence, controlMedianCostUsdc: "10001", expectedRawSavingUsdc: "5" };
+    expect(allInReductionBps(tiny, 1n, 5n)).toBe(-1n);
+    expect(allInReductionBps(tiny, 0n, 5n)).toBe(0n);
+    expect(allInReductionBps({ ...tiny, expectedRawSavingUsdc: "0" }, 10_001n)).toBe(-10_000n);
+  });
+
   it("returns zero instead of dividing by a zero control cost", () => {
     expect(allInReductionBps({ ...ex.evidence, controlMedianCostUsdc: "0", expectedRawSavingUsdc: "0" }, 1n)).toBe(0n);
   });
@@ -54,6 +63,62 @@ describe("allInReductionBps", () => {
     const weak = { ...ex.evidence, controlMedianCostUsdc: "1000000", expectedRawSavingUsdc: "300000" };
     expect(isSellable(90_000n, 300_000n)).toBe(true);
     expect(allInReductionBps(weak, 90_000n) < BENCHMARK_TARGET_BPS).toBe(true);
+  });
+});
+
+describe("maxPriceFor", () => {
+  const withNumbers = (control: bigint, saving: bigint) => ({ ...ex.evidence, controlMedianCostUsdc: String(control), expectedRawSavingUsdc: String(saving) });
+
+  it("is the sale-rule cap when the saving easily clears the target", () => {
+    // S = 1.00, C = 2.50: sale cap 0.30; target cap 1.00 - g - 0.625.
+    expect(maxPriceFor(ex.evidence, { chainCostAtomic: 0n })).toBe(300_000n);
+    expect(maxPriceFor(ex.evidence, { chainCostAtomic: 100_000n })).toBe(275_000n);
+  });
+
+  it("lowers the price below the 30 percent cap when the target binds", () => {
+    // S = 30% of C: the cap (0.09) would leave the buyer 21%; 0.05 leaves exactly 25%.
+    const weak = withNumbers(1_000_000n, 300_000n);
+    expect(maxPriceFor(weak, { chainCostAtomic: 0n })).toBe(50_000n);
+    expect(allInReductionBps(weak, 50_000n)).toBe(2500n);
+    expect(allInReductionBps(weak, 50_001n) < BENCHMARK_TARGET_BPS).toBe(true);
+  });
+
+  it("rounds the target term up, so truncation never lets the buyer fall short", () => {
+    // 25% of 1_000_001 is 250_000.25, so the price must leave 250_001.
+    expect(maxPriceFor(withNumbers(1_000_001n, 300_000n), { chainCostAtomic: 0n })).toBe(49_999n);
+  });
+
+  it("returns zero (preview-only) when no positive price works", () => {
+    expect(maxPriceFor(withNumbers(1_000_000n, 200_000n), { chainCostAtomic: 0n })).toBe(0n);
+    expect(maxPriceFor(withNumbers(1_000_000n, 300_000n), { chainCostAtomic: 50_000n })).toBe(0n);
+    expect(maxPriceFor(withNumbers(0n, 0n), { chainCostAtomic: 0n })).toBe(0n);
+    expect(maxPriceFor(withNumbers(1_000_000n, 3n), { chainCostAtomic: 0n, targetBps: 0n })).toBe(0n);
+  });
+
+  it("accepts another target and rejects impossible inputs", () => {
+    expect(maxPriceFor(ex.evidence, { chainCostAtomic: 0n, targetBps: 3500n })).toBe(125_000n);
+    expect(() => maxPriceFor(ex.evidence, { chainCostAtomic: -1n })).toThrow(RangeError);
+    expect(() => maxPriceFor(ex.evidence, { chainCostAtomic: 0n, targetBps: 10_001n })).toThrow(RangeError);
+  });
+
+  it("is the largest price that is sellable and meets the target (property)", () => {
+    fc.assert(
+      fc.property(
+        fc.bigInt({ min: 1n, max: 10n ** 13n }),
+        fc.bigInt({ min: 0n, max: 10n ** 13n }),
+        fc.bigInt({ min: 0n, max: 10n ** 9n }),
+        fc.bigInt({ min: 0n, max: 10_000n }),
+        (control, rawSaving, gas, targetBps) => {
+          const saving = rawSaving > control ? control : rawSaving;
+          const e = withNumbers(control, saving);
+          const price = maxPriceFor(e, { chainCostAtomic: gas, targetBps });
+          const works = (p: bigint) => isSellable(p, saving) && allInReductionBps(e, p, gas) >= targetBps;
+          if (price > 0n) expect(works(price)).toBe(true);
+          expect(works(price + 1n)).toBe(false);
+        },
+      ),
+      { numRuns: 2000 },
+    );
   });
 });
 

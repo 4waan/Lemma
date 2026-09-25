@@ -19,11 +19,21 @@ export const DIGEST_KINDS = [
   "patch-bundle",
   "run-record",
   "run-set",
+  "release-base",
 ] as const;
 
 export type DigestKind = (typeof DIGEST_KINDS)[number];
 
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/**
+ * True when `s` contains an unpaired UTF-16 surrogate. Such a string is not
+ * valid JSON text, so `canonicalize` refuses it; schemas that accept free text
+ * refuse it too, so every value that parses can also be digested.
+ */
+export function hasLoneSurrogate(s: string): boolean {
+  return LONE_SURROGATE.test(s);
+}
 
 function assertWellFormed(s: string, path: string): void {
   if (LONE_SURROGATE.test(s)) throw new TypeError(`${path}: lone UTF-16 surrogate is not valid JSON text (RFC 8785 3.2.2.2)`);

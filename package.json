@@ -23,6 +23,8 @@
     "dev:bridge": "npm run dev -w @lemma/bridge",
     "dev:web": "npm run dev -w @lemma/web",
     "benchmark": "npm run benchmark -w @lemma/benchmark",
+    "catalog:check": "npm run catalog:check -w @lemma/catalog",
+    "catalog:pack": "npm run catalog:pack -w @lemma/catalog --",
     "contracts:build": "cd contracts && forge build",
     "contracts:test": "cd contracts && FOUNDRY_OFFLINE=true forge test"
   },

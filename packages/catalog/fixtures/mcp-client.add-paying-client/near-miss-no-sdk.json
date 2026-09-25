@@ -1,0 +1,28 @@
+{
+  "class": "near-miss",
+  "capability": "mcp-client.add-paying-client",
+  "now": "2026-10-01T00:00:00.000Z",
+  "profile": {
+    "schemaVersion": "1",
+    "language": "typescript",
+    "runtime": {
+      "name": "node",
+      "major": 22
+    },
+    "packageManager": {
+      "name": "npm",
+      "lockfile": "package-lock.json"
+    },
+    "moduleSystem": "esm",
+    "dependencies": {},
+    "frameworks": []
+  },
+  "expected": {
+    "decision": "build",
+    "reasons": [
+      "MISSING_DEPENDENCY"
+    ],
+    "match": null,
+    "offer": false
+  }
+}

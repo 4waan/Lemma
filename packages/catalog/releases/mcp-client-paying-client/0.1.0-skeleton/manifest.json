@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "1",
+  "releaseId": "mcp-client-paying-client",
+  "version": "0.1.0-skeleton",
+  "capability": "mcp-client.add-paying-client",
+  "title": "Skeleton: x402-paying MCP client with spending limits",
+  "supportedProfiles": [
+    {
+      "languages": [
+        "typescript"
+      ],
+      "nodeMajor": {
+        "min": 22,
+        "max": 24
+      },
+      "packageManagers": [
+        "npm",
+        "pnpm"
+      ],
+      "moduleSystems": [
+        "esm"
+      ],
+      "dependencies": {
+        "@modelcontextprotocol/sdk": ">=1.30.0 <2"
+      },
+      "frameworks": [],
+      "evidence": null
+    }
+  ],
+  "provenance": {
+    "repository": "https://github.com/coinbase/x402",
+    "commit": "dd927a26cfefc98c24b3ec38b3a8f204dad0c60d",
+    "spdxLicense": "Apache-2.0"
+  },
+  "payloadDigest": "0xb3526adcca1339a22ca262c2cf0629cd6a8b43fa2263397345510f9e9d2cda6b",
+  "acceptanceRecipe": {
+    "script": "test",
+    "args": [],
+    "timeoutSec": 300,
+    "env": [
+      "CI",
+      "NODE_ENV"
+    ]
+  },
+  "price": "0",
+  "provider": {
+    "payTo": "0x0000000000000000000000000000000000000000"
+  },
+  "warranty": {
+    "claimWindowHours": 72
+  },
+  "publishedAt": "2026-09-25T00:00:00.000Z",
+  "expiresAt": "2027-03-31T00:00:00.000Z"
+}

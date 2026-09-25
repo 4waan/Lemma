@@ -14,10 +14,16 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b",
-    "test": "vitest run --root ../.. packages/catalog/test"
+    "test": "vitest run --root ../.. packages/catalog/test",
+    "catalog:check": "tsc -b && node dist/cli.js check",
+    "catalog:pack": "tsc -b && node dist/cli.js pack"
   },
   "dependencies": {
     "@lemma/core": "0.1.0",
+    "semver": "7.8.5",
     "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/semver": "7.8.0"
   }
 }

@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "1",
+  "status": "placeholder",
+  "chainCostAtomic": "0",
+  "priceFloorAtomic": "0",
+  "ethUsdMicro": "0",
+  "measuredAt": "2026-09-25T00:00:00.000Z",
+  "source": "Placeholder until the protocol lane sets chain cost and the price floor (HANDOFF item 4). No release may carry evidence meanwhile."
+}

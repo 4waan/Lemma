@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "1",
+  "files": [
+    {
+      "path": "lemma/payment-gating/README.md",
+      "op": "add",
+      "baseDigest": null,
+      "content": "# Placeholder payload\n\nThis is the skeleton of the `mcp-server-payment-gating` release. It fixes the release's supported\nprofile, fixtures and acceptance recipe so the resolver and the preview path can\nbe built and tested. The protocol lane replaces this payload with the real\nintegration before any probe, benchmark or sale. The release has no evidence and\na zero price, so it can be previewed but never sold.\n"
+    }
+  ],
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -14,6 +14,8 @@ export default defineConfig({
       "@lemma/core": src("packages/core"),
       "@lemma/catalog": src("packages/catalog"),
       "@lemma/benchmark": src("packages/benchmark"),
+      "@lemma/server": src("apps/server"),
+      "@lemma/bridge": src("apps/bridge"),
     },
   },
   test: {

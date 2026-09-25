@@ -122,7 +122,7 @@ describe("integrity", () => {
     manifest.supportedProfiles[0]!.dependencies = { "@modelcontextprotocol/sdk": ">=1.30.0" };
     writeJsonFile(root, `${SERVER}/manifest.json`, manifest);
     writeJsonFile(root, `${CLIENT}/payload/ops.json`, { dependencies: { "@x402/mcp": "latest" }, devDependencies: { vitest: "*" }, files: [{ path: "lemma/paying-client/README.md", op: "add" }] });
-    const bundle = packPayload(join(root, CLIENT));
+    const bundle = packPayload(root, CLIENT);
     writeFileSync(join(root, CLIENT, "bundle.json"), formatBundle(bundle));
     const client = readJsonFile<CapabilityRelease>(root, `${CLIENT}/manifest.json`);
     writeJsonFile(root, `${CLIENT}/manifest.json`, { ...client, payloadDigest: bundleDigest(bundle) });
@@ -155,7 +155,7 @@ describe("integrity", () => {
     writeJsonFile(root, `${SERVER}/payload/ops.json`, { ...ops, files: [...ops.files, { path: "assets/logo.png", op: "delete" }] });
     mkdirSync(join(root, SERVER, "payload", "base", "assets"), { recursive: true });
     writeFileSync(join(root, SERVER, "payload", "base", "assets", "logo.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0xff, 0xfe]));
-    const bundle = packPayload(join(root, SERVER));
+    const bundle = packPayload(root, SERVER);
     writeFileSync(join(root, SERVER, "bundle.json"), formatBundle(bundle));
     writeJsonFile(root, `${SERVER}/manifest.json`, { ...readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`), payloadDigest: bundleDigest(bundle) });
     expect(problems(root)).toEqual([]);
@@ -195,11 +195,57 @@ describe("integrity", () => {
     expect(found).toContainEqual(expect.stringContaining(`${CLIENT}: profile 0 range for @modelcontextprotocol/sdk has no upper bound`));
   });
 
+  it("reports each payload fault once, with its path from the catalog root", () => {
+    const root = catalogCopy();
+    symlinkSync("/etc/hostname", join(root, SERVER, "payload/files/lemma/payment-gating/x.md"));
+    symlinkSync("/etc", join(root, SERVER, "payload/notes"));
+    const found = problems(root);
+    // Before, the packer's copy of a fault named it from the release directory, so the two copies never merged.
+    for (const link of ["payment-gating/x.md", "payload/notes"]) {
+      expect(found.filter((p) => p.includes(link)).length, link).toBeLessThanOrEqual(1);
+    }
+    expect(found).toContainEqual(expect.stringContaining(`${SERVER}/payload/notes`));
+  });
+
+  it("requires payload files to be text, and reports every file that is not", () => {
+    const root = catalogCopy();
+    const ops = readJsonFile<{ files: Array<{ path: string; op: string }> }>(root, `${SERVER}/payload/ops.json`);
+    writeJsonFile(root, `${SERVER}/payload/ops.json`, { ...ops, files: [...ops.files, { path: "a.md", op: "add" }, { path: "b.md", op: "add" }] });
+    writeFileSync(join(root, SERVER, "payload/files/a.md"), Buffer.from([0xff, 0x61]));
+    writeFileSync(join(root, SERVER, "payload/files/b.md"), Buffer.from([0xfe, 0x62]));
+    const found = problems(root);
+    expect(found.filter((p) => p === `${SERVER}/payload/files/a.md: not valid UTF-8`)).toHaveLength(1);
+    expect(found.filter((p) => p === `${SERVER}/payload/files/b.md: not valid UTF-8`)).toHaveLength(1);
+    // The scan still judges payload files when the release itself fails to load.
+    const broken = catalogCopy();
+    writeFileSync(join(broken, SERVER, "manifest.json"), "{ not json");
+    writeFileSync(join(broken, SERVER, "payload/files/lemma/payment-gating/README.md"), Buffer.from([0xff]));
+    expect(problems(broken)).toContainEqual(`${SERVER}/payload/files/lemma/payment-gating/README.md: not valid UTF-8`);
+  });
+
+  it("does not flood fixtures with no-release problems while a release fails to load", () => {
+    const root = catalogCopy();
+    writeFileSync(join(root, SERVER, "manifest.json"), "{ not json");
+    const found = problems(root);
+    expect(found).toContainEqual(expect.stringContaining(`${SERVER}/manifest.json: not valid JSON`));
+    expect(found.filter((p) => p.includes("has no releases"))).toEqual([]);
+  });
+
+  it("names each entry whose name is not valid UTF-8", () => {
+    const root = catalogCopy();
+    const dir = Buffer.from(join(root, "fixtures", "mcp-server.add-payment-gating") + "/");
+    writeFileSync(Buffer.concat([dir, Buffer.from([0x61, 0xff]), Buffer.from(".json")]), "{}");
+    writeFileSync(Buffer.concat([dir, Buffer.from([0x62, 0xfe]), Buffer.from(".json")]), "{}");
+    const found = problems(root).filter((p) => p.includes("is not valid UTF-8"));
+    expect(found).toContainEqual("fixtures/mcp-server.add-payment-gating: entry name a\\xff.json is not valid UTF-8");
+    expect(found).toContainEqual("fixtures/mcp-server.add-payment-gating: entry name b\\xfe.json is not valid UTF-8");
+  });
+
   it("keeps a byte-order mark, so the bundle carries exactly the reviewed bytes", () => {
     const root = catalogCopy();
     const file = join(root, SERVER, "payload/files/lemma/payment-gating/README.md");
     writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(file)]));
-    expect(packPayload(join(root, SERVER)).files[0]?.content?.startsWith("\ufeff")).toBe(true);
+    expect(packPayload(root, SERVER).files[0]?.content?.startsWith("\ufeff")).toBe(true);
   });
 
   it("leaves no temporary copy behind when a write fails", () => {
@@ -222,8 +268,8 @@ describe("integrity", () => {
   });
 
   it("packs deterministically", () => {
-    const a = packPayload(join(catalogCopy(), SERVER));
-    const b = packPayload(join(catalogCopy(), SERVER));
+    const a = packPayload(catalogCopy(), SERVER);
+    const b = packPayload(catalogCopy(), SERVER);
     expect(bundleDigest(a)).toBe(bundleDigest(b));
     expect(JSON.parse(formatBundle(a))).toEqual(a);
   });

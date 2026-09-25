@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import { CAPABILITY_IDS, type CapabilityId, bundleDigest, baseReleaseDigest, isSellable, maxPriceFor } from "@lemma/core";
 import { Range } from "semver";
 
@@ -43,8 +41,11 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
   const root = options.root ?? CATALOG_ROOT;
   const problems: string[] = [];
 
-  // Payload files are the packer's to judge: it reads `files/` as text and hashes `base/` as raw bytes, so a binary base file is fine.
-  const notText = (path: string) => path.split("/")[3] === PAYLOAD_DIR;
+  // `payload/base/` is hashed as raw bytes, so a binary base file is fine; everything else, `payload/files/` included, must be text.
+  const notText = (path: string) => {
+    const p = path.split("/");
+    return p[3] === PAYLOAD_DIR && p[4] === "base";
+  };
   problems.push(...scanTree(root, PUBLIC_DIR, { notText }), ...scanTree(root, PROVISIONAL_DIR, { optional: true, notText }), ...scanTree(root, FIXTURES_DIR));
   const loaded = loadCatalogResult({ root, includeProvisional: true });
   problems.push(...loaded.problems);
@@ -66,12 +67,14 @@ export function checkCatalog(options: { root?: string } = {}): CheckResult {
     const publicReleases = catalog.releases.filter((r) => r.source === "public");
     const byKey = new Map(publicReleases.map((r) => [key(r), r]));
     const withReleases = new Set(publicReleases.map((r) => r.release.capability));
+    // A release that failed to load may be the capability's, so "no releases" is only known once releases/ loads cleanly.
+    const publicIncomplete = loaded.problems.some((p) => p.split(/[/:]/)[0] === PUBLIC_DIR);
     for (const { id, fixture } of fixtures) {
       // A capability without releases has one answer, build with NO_RELEASE_FOR_CAPABILITY; one with releases never has it.
       if (fixture.class === "no-release" && withReleases.has(fixture.capability)) {
         problems.push(`fixtures/${id}.json: a no-release case for a capability that has releases`);
       }
-      if (fixture.class !== "no-release" && !withReleases.has(fixture.capability)) {
+      if (fixture.class !== "no-release" && !withReleases.has(fixture.capability) && !publicIncomplete) {
         problems.push(`fixtures/${id}.json: ${fixture.capability} has no releases, so its only case is no-release`);
       }
       const match = fixture.expected.match;
@@ -125,12 +128,13 @@ function checkLayout(root: string, loaded: LoadedRelease, problems: string[]): v
 
 function checkPayload(root: string, loaded: LoadedRelease, problems: string[]): void {
   try {
-    const packed = packPayload(join(root, loaded.dir));
+    const packed = packPayload(root, loaded.dir);
     if (bundleDigest(packed) !== loaded.release.payloadDigest) {
       problems.push(`${loaded.dir}: bundle.json is not what payload/ packs to; run catalog:pack`);
     }
   } catch (error) {
-    problems.push(`${loaded.dir}: ${message(error)}`);
+    // The packer names paths from the catalog root, like the scan, so a fault both see merges into one problem.
+    problems.push(message(error));
   }
 }
 

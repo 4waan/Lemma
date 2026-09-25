@@ -1,5 +1,3 @@
-import { join } from "node:path";
-
 import { bundleDigest, maxPriceFor } from "@lemma/core";
 
 import { checkCatalog } from "./check.js";
@@ -39,13 +37,13 @@ if (command === "check") {
       for (const version of directories(`${base}/${id}`)) {
         const dir = `${base}/${id}/${version}`;
         try {
-          const bundle = packPayload(join(CATALOG_ROOT, dir));
+          const bundle = packPayload(CATALOG_ROOT, dir);
           // Written through a temporary file and a rename, so a linked bundle.json is replaced, never written through.
           if (write) writeText(CATALOG_ROOT, `${dir}/${BUNDLE_FILE}`, formatBundle(bundle));
           console.log(`${dir}: payloadDigest ${bundleDigest(bundle)}${write ? " (written)" : ""}`);
         } catch (error) {
           failed++;
-          console.error(`✗ ${dir}: ${error instanceof Error ? error.message : String(error)}`);
+          console.error(`✗ ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     }

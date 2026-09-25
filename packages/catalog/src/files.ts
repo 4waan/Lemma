@@ -135,6 +135,13 @@ interface Entry {
   readonly problem: string | null;
 }
 
+const strictName = new TextDecoder("utf-8", { fatal: true });
+
+/** A non-UTF-8 entry name, printable ASCII kept and every other byte as \xNN, so distinct bad names stay distinct. */
+function escapeName(bytes: Buffer): string {
+  return [...bytes].map((b) => (b >= 0x20 && b < 0x7f && b !== 0x5c ? String.fromCharCode(b) : `\\x${b.toString(16).padStart(2, "0")}`)).join("");
+}
+
 function entriesOf(root: string, relative: string, options: ListOptions): Entry[] {
   let path: string;
   try {
@@ -145,14 +152,19 @@ function entriesOf(root: string, relative: string, options: ListOptions): Entry[
     throw error;
   }
   if (!lstatSync(path).isDirectory()) throw new Error(`${relative}: not a directory`);
-  return readdirSync(path, { withFileTypes: true })
-    .map((entry): Entry => {
-      const at = `${relative}/${entry.name}`;
-      if (entry.name.includes("\uFFFD")) return { name: entry.name, kind: "file", problem: `${relative}: an entry name is not valid UTF-8` };
-      if (entry.isSymbolicLink()) return { name: entry.name, kind: "file", problem: `${at}: symbolic links are not allowed in the catalog` };
-      if (entry.isDirectory()) return { name: entry.name, kind: "dir", problem: null };
-      if (entry.isFile()) return { name: entry.name, kind: "file", problem: null };
-      return { name: entry.name, kind: "file", problem: `${at}: not a regular file or directory` };
+  return readdirSync(path, { withFileTypes: true, encoding: "buffer" })
+    .map((raw): Entry => {
+      let name: string;
+      try {
+        name = strictName.decode(raw.name);
+      } catch {
+        return { name: raw.name.toString("utf8"), kind: "file", problem: `${relative}: entry name ${escapeName(raw.name)} is not valid UTF-8` };
+      }
+      const at = `${relative}/${name}`;
+      if (raw.isSymbolicLink()) return { name, kind: "file", problem: `${at}: symbolic links are not allowed in the catalog` };
+      if (raw.isDirectory()) return { name, kind: "dir", problem: null };
+      if (raw.isFile()) return { name, kind: "file", problem: null };
+      return { name, kind: "file", problem: `${at}: not a regular file or directory` };
     })
     .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }

@@ -47,7 +47,7 @@ fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/READ
   - per-capability interest sets: the dependency names the catalog matches on, which are the only package names the bridge sends
   - base probes: every path the bundle touches, with the base digest of each modify or delete target and null for an add. The bridge can predict drift before paying without ever seeing content.
 - `checkCatalog()` runs every rule below and reports all problems at once. A release that fails to load does not stop the checks on the others. It is read-only and independent of the clock. A test runs it on the committed catalog, and the server runs it before serving.
-- `packPayload(dir)` and `formatBundle(bundle)` build `bundle.json` from `payload/`.
+- `packPayload(root, dir)` and `formatBundle(bundle)` build `bundle.json` from `payload/`.
 - `loadFixtures(root, problems)` and `FixtureCase` expose the compatibility cases to the resolver's golden tests and to the benchmark.
 
 ## Rules `catalog:check` enforces

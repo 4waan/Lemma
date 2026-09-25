@@ -15,9 +15,10 @@
     "build": "tsc -b",
     "typecheck": "tsc -b",
     "test": "vitest run --root ../.. packages/benchmark/test",
-    "benchmark": "node dist/index.js"
+    "benchmark": "node dist/cli.js"
   },
   "dependencies": {
+    "@lemma/catalog": "0.1.0",
     "@lemma/core": "0.1.0",
     "zod": "4.6.5"
   },

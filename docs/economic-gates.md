@@ -67,12 +67,12 @@ Each stage names its gate: the evidence that must exist before the next stage st
 | 7 | Pilot on a public repository | One external attempt completes and produces an Adoption Receipt without manual intervention, or the intervention is recorded. | The buyer needed help the product should provide. | N and P |
 | 8 | Scale readiness | See section 4. | Any item that would force a code release per new provider or capability. | N and P |
 
-Stage 4 is the cheapest place to learn that a release family can't pay for itself. Run it before finishing stages 5 and 6.
+Stage 4 is the cheapest place to learn that a release family can't pay for itself. Run it before finishing stages 5 and 6: `<key source> | npm run benchmark -- probe probe-<n> --task <taskId> --bundle <draft bundle.json>` prints the verdict and the price to pre-register. Only runs that finished or timed out count, and the treatment must have finished on its own for a `go`.
 
 Stages 5 and 6 need something to buy before frozen evidence exists. The testnet-only overlay `packages/catalog/releases.provisional/` provides it.
 - It holds `X+provisional-N` versions that differ from `X` only in version, evidence, price and dates.
 - They carry the stage-4 probe numbers at the pre-registered price.
-- The public service never loads the overlay, and `catalog:check` refuses `provisional-` evidence in `releases/`.
+- The public service never loads the overlay. `catalog:check` refuses `provisional-` evidence in `releases/`, and `deriveEvidence` refuses `provisional-` and `probe-` benchmark versions.
 - Frozen evidence then ships as `X+<benchmarkVersion>` in `releases/`, bound to the same `baseReleaseDigest` as the runs that measured it.
 
 ## 4. What makes the product scale

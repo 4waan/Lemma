@@ -20,6 +20,9 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/dist ./apps/server/dist
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
+# Migrations ship with the server: `node apps/server/dist/migrate.js` applies them
+# (deployment step 3), and the server refuses to start while the schema is behind.
+COPY --from=build /app/apps/server/drizzle ./apps/server/drizzle
 COPY --from=build /app/packages ./packages
 
 USER node

@@ -11,10 +11,8 @@ import {
 } from "@lemma/core";
 import { describe, expect, it } from "vitest";
 
-import { ConfigError, MAX_BODY_BYTES, MemoryPreviewStore, type PreviewStore, TokenBuckets, clientAddress, loadConfig, normalizeIp, startupProblems } from "../src/index.js";
-import { NOW, app, committedIndex, config, deps, mcpClient } from "./helpers.js";
-
-const PROVIDER = "0x00000000000000000000000000000000000000a1";
+import { ConfigError, MAX_BODY_BYTES, MemoryStore, TokenBuckets, clientAddress, loadConfig, normalizeIp, startupProblems } from "../src/index.js";
+import { NOW, PROVIDER, app, committedIndex, config, gatingTask, matchingProfile, mcpClient, sellableIndex } from "./helpers.js";
 const post = (body: unknown, headers: Record<string, string> = {}) => ({
   method: "POST",
   headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
@@ -22,64 +20,8 @@ const post = (body: unknown, headers: Record<string, string> = {}) => ({
 });
 const listTools = { jsonrpc: "2.0", id: 1, method: "tools/list", params: {} };
 
-function sellableIndex() {
-  const bundle: PatchBundle = { schemaVersion: "1", files: [{ path: "src/x.ts", op: "add", baseDigest: null, content: "export {};\n" }], dependencies: {}, devDependencies: {} };
-  const release: CapabilityRelease = {
-    schemaVersion: "1",
-    releaseId: "gating",
-    version: "1.0.0+bench-1",
-    capability: "mcp-server.add-payment-gating",
-    title: "Sellable test release",
-    supportedProfiles: [
-      {
-        languages: ["typescript"],
-        nodeMajor: { min: 22, max: 24 },
-        packageManagers: ["npm"],
-        moduleSystems: ["esm"],
-        dependencies: { "@modelcontextprotocol/sdk": ">=1.30.0 <2" },
-        frameworks: [],
-        evidence: {
-          benchmarkVersion: "bench-1",
-          runSetDigest: `0x${"12".repeat(32)}`,
-          fixtureProfileDigest: `0x${"13".repeat(32)}`,
-          model: "example-model-1",
-          measuredAt: "2026-09-20T00:00:00.000Z",
-          staleAfter: "2026-12-20T00:00:00.000Z",
-          runs: { control: 3, treatment: 3 },
-          passed: { control: 3, treatment: 3 },
-          controlMedianCostUsdc: "2500000",
-          expectedRawSavingUsdc: "1000000",
-          expectedTokenSaving: 420000,
-        },
-      },
-    ],
-    provenance: { repository: "https://github.com/coinbase/x402", commit: "dd927a26cfefc98c24b3ec38b3a8f204dad0c60d", spdxLicense: "Apache-2.0" },
-    payloadDigest: bundleDigest(bundle),
-    acceptanceRecipe: { script: "test", args: [], timeoutSec: 300, env: ["CI"] },
-    price: "250000",
-    provider: { payTo: PROVIDER },
-    warranty: { claimWindowHours: 72 },
-    publishedAt: "2026-09-01T00:00:00.000Z",
-    expiresAt: "2027-03-31T00:00:00.000Z",
-  };
-  const catalog: LoadedCatalog = {
-    root: "/nonexistent",
-    economics: { schemaVersion: "1", status: "measured", chainCostAtomic: "0", priceFloorAtomic: "0", ethUsdMicro: "0", measuredAt: "2026-09-01T00:00:00.000Z", source: "test" },
-    releases: [{ release, releaseDigest: releaseDigest(release), bundle, source: "public", dir: "releases/gating/1.0.0+bench-1" }],
-  };
-  return buildIndex(catalog);
-}
-
-const profile: RepositoryProfile = {
-  schemaVersion: "1",
-  language: "typescript",
-  runtime: { name: "node", major: 22 },
-  packageManager: { name: "npm", lockfile: "package-lock.json" },
-  moduleSystem: "esm",
-  dependencies: { "@modelcontextprotocol/sdk": "1.30.1" },
-  frameworks: [],
-};
-const task = { schemaVersion: "1" as const, capability: "mcp-server.add-payment-gating" as const };
+const profile = matchingProfile;
+const task = gatingTask;
 
 describe("config", () => {
   it("has safe defaults: paid tools off, Arbitrum Sepolia USDC, bounded windows", () => {
@@ -139,8 +81,13 @@ describe("MCP over stateless Streamable HTTP", () => {
 
   it("stores an offer before returning it", async () => {
     const saved: string[] = [];
-    const previews: PreviewStore = { saveOffer: async (p) => void saved.push(p.previewId), getOffer: async () => undefined };
-    const client = await mcpClient(app({ index: sellableIndex(), previews, config: config({ PROVIDER_ADDRESS: PROVIDER }) }));
+    const store = new (class extends MemoryStore {
+      override async saveOffer(p: Parameters<MemoryStore["saveOffer"]>[0]) {
+        saved.push(p.previewId);
+        return super.saveOffer(p);
+      }
+    })();
+    const client = await mcpClient(app({ index: sellableIndex(), store, config: config({ PROVIDER_ADDRESS: PROVIDER }) }));
     const result = await client.callTool({ name: LEMMA_TOOLS.preview, arguments: { task, profile } });
     const { preview } = PreviewResult.parse(result.structuredContent);
     expect(preview.decision === "reuse" && preview.offer?.terms.amount).toBe("250000");
@@ -150,8 +97,12 @@ describe("MCP over stateless Streamable HTTP", () => {
   });
 
   it("returns a text-only error when the offer cannot be stored", async () => {
-    const previews: PreviewStore = { saveOffer: async () => { throw new Error("database down"); }, getOffer: async () => undefined };
-    const client = await mcpClient(app({ index: sellableIndex(), previews }));
+    const store = new (class extends MemoryStore {
+      override async saveOffer(): Promise<void> {
+        throw new Error("database down");
+      }
+    })();
+    const client = await mcpClient(app({ index: sellableIndex(), store }));
     const result = await client.callTool({ name: LEMMA_TOOLS.preview, arguments: { task, profile } });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toBeUndefined();
@@ -179,17 +130,59 @@ describe("MCP over stateless Streamable HTTP", () => {
     expect(await res.json()).toEqual({ error: "internal error" });
   });
 
+  it("waits for an async registrar before dispatching, and answers 500 when it fails", async () => {
+    const slow = await mcpClient(app({
+      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      // Like a registrar that quotes the named preview from the store before registering.
+      registerPaidTools: async (server) => {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        server.registerTool(LEMMA_TOOLS.buyResolution, { description: "paid" }, async () => ({ content: [] }));
+      },
+    }));
+    expect((await slow.listTools()).tools.map((t) => t.name)).toContain(LEMMA_TOOLS.buyResolution);
+    await slow.close();
+    const failing = app({
+      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      registerPaidTools: async () => {
+        throw new Error("store unavailable");
+      },
+    });
+    const res = await failing.request("/mcp", post(listTools));
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: "internal error" });
+  });
+
+  it("never dispatches a call after the request timed out while the registrar ran", async () => {
+    let ran = 0;
+    const slow = app({
+      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      requestTimeoutMs: 50,
+      registerPaidTools: async (server) => {
+        await new Promise((resolve) => setTimeout(resolve, 200));
+        server.registerTool(LEMMA_TOOLS.buyResolution, { description: "paid" }, async () => {
+          ran++;
+          return { content: [] };
+        });
+      },
+    });
+    const res = await slow.request("/mcp", post({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: LEMMA_TOOLS.buyResolution, arguments: {} } }));
+    expect(res.status).toBe(504);
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(ran).toBe(0);
+  });
+
   it("registers paid tools through the registrar when enabled", async () => {
-    const registered: string[] = [];
+    const registered: unknown[] = [];
     const client = await mcpClient(app({
       config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
-      registerPaidTools: (server) => {
-        registered.push("buy");
+      registerPaidTools: (server, _service, request) => {
+        // The registrar sees each request's message, so it can quote the preview a paid call names.
+        registered.push(request.message);
         server.registerTool(LEMMA_TOOLS.buyResolution, { description: "paid" }, async () => ({ content: [] }));
       },
     }));
     expect((await client.listTools()).tools.map((t) => t.name)).toContain(LEMMA_TOOLS.buyResolution);
-    expect(registered.length).toBeGreaterThan(0);
+    expect(registered).toContainEqual(expect.objectContaining({ jsonrpc: "2.0", method: "tools/list" }));
     await client.close();
   });
 });
@@ -218,8 +211,12 @@ describe("HTTP boundary", () => {
   });
 
   it("answers a slow request with 504, not a server error", async () => {
-    const slow: PreviewStore = { saveOffer: () => new Promise((r) => setTimeout(r, 300)), getOffer: async () => undefined };
-    const res = await app({ index: sellableIndex(), previews: slow, requestTimeoutMs: 50 }).request(
+    class SlowStore extends MemoryStore {
+      override async saveOffer(): Promise<void> {
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
+    const res = await app({ index: sellableIndex(), store: new SlowStore(), requestTimeoutMs: 50 }).request(
       "/mcp",
       post({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: LEMMA_TOOLS.preview, arguments: { task, profile } } }, { "mcp-protocol-version": "2025-06-18" }),
     );
@@ -340,14 +337,14 @@ describe("clientAddress and TokenBuckets", () => {
 
   it("bounds the memory preview store, sweeping expired offers first", async () => {
     let now = NOW;
-    const store = new MemoryPreviewStore(() => now, 2);
-    const offerPreview = (id: string) => ({ previewId: id, offer: { validUntil: "2026-10-01T00:15:00.000Z" } }) as unknown as Parameters<MemoryPreviewStore["saveOffer"]>[0];
+    const store = new MemoryStore({ clock: () => now, capacity: 2 });
+    const offerPreview = (id: string) => ({ previewId: id, offer: { validUntil: "2026-10-01T00:15:00.000Z" } }) as unknown as Parameters<MemoryStore["saveOffer"]>[0];
     await store.saveOffer(offerPreview(`0x${"01".repeat(32)}`));
     await store.saveOffer(offerPreview(`0x${"02".repeat(32)}`));
     await expect(store.saveOffer(offerPreview(`0x${"03".repeat(32)}`))).rejects.toThrow(/full/);
     now = new Date("2026-10-01T00:16:00.000Z");
     await store.saveOffer(offerPreview(`0x${"03".repeat(32)}`));
-    expect(store.size).toBe(1);
+    expect(store.offerCount).toBe(1);
   });
 
   it("refills continuously and bounds its key table", () => {

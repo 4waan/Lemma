@@ -76,6 +76,11 @@ describe("RepositoryProfile", () => {
     const deps = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`pkg-${i}`, "1.0.0"]));
     accepts(RepositoryProfile, { ...ex.profile, dependencies: deps(500) });
     rejectsAt(RepositoryProfile, { ...ex.profile, dependencies: deps(501) }, ["dependencies"]);
+    // An oversized map is refused on its size alone: none of its entries is parsed.
+    const bad = Object.fromEntries(Array.from({ length: 501 }, (_, i) => [`../${i}`, "latest"]));
+    expect(RepositoryProfile.safeParse({ ...ex.profile, dependencies: bad }).error?.issues).toEqual([
+      expect.objectContaining({ code: "too_big", path: ["dependencies"], maximum: 500 }),
+    ]);
   });
 
   it("requires an integer node major in range", () => {
@@ -145,6 +150,10 @@ describe("CapabilityRelease", () => {
     bad({ expectedRawSavingUsdc: "2500001" }, ["expectedRawSavingUsdc"]);
     bad({ expectedTokenSaving: -1 }, ["expectedTokenSaving"]);
     bad({ model: "model with spaces" }, ["model"]);
+  });
+
+  it("rejects a title that could not be digested", () => {
+    rejectsAt(CapabilityRelease, { ...ex.release, title: "broken \udc00 title" }, ["title"]);
   });
 
   it("rejects an expiry at or before publication, a non-SPDX license and unsafe titles", () => {

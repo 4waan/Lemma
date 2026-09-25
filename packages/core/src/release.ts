@@ -188,8 +188,43 @@ export function releaseDigest(release: CapabilityRelease): Hex32 {
  * Preview records it, so a decision can be reproduced against the exact catalog.
  */
 export function catalogDigest(releases: readonly CapabilityRelease[]): Hex32 {
-  const digests = [...new Set(releases.map(releaseDigest))].sort();
+  return catalogDigestOf(releases.map(releaseDigest));
+}
+
+/** `catalogDigest` from release digests computed earlier, so a loaded catalog hashes each release once. */
+export function catalogDigestOf(releaseDigests: readonly Hex32[]): Hex32 {
+  const digests = [...new Set(z.array(Hex32).parse(releaseDigests))].sort();
   return digest("catalog", { schemaVersion: "1", releases: digests });
+}
+
+/** A release's identity apart from its commercial terms and evidence (see `baseRelease`). */
+export type ReleaseBase = Omit<CapabilityRelease, "price" | "publishedAt" | "expiresAt">;
+
+/**
+ * What a buyer gets from a release, without the terms that may change between
+ * its versions: every profile's `evidence` is null, semver build metadata is
+ * removed from `version`, and `price`, `publishedAt` and `expiresAt` are left
+ * out.
+ *
+ * Attaching evidence changes `releaseDigest`, so evidence ships as a new version
+ * `X+<benchmark>` whose base is `X`. The price may follow the evidence, because
+ * the measured saving does not depend on it. Benchmark runs and reports bind to
+ * the base, which stays the same across the unbenchmarked, provisional and
+ * benchmarked versions.
+ */
+export function baseRelease(release: CapabilityRelease): ReleaseBase {
+  const { price: _price, publishedAt: _publishedAt, expiresAt: _expiresAt, ...rest } = CapabilityRelease.parse(release);
+  const plus = rest.version.indexOf("+");
+  return {
+    ...rest,
+    version: plus === -1 ? rest.version : rest.version.slice(0, plus),
+    supportedProfiles: rest.supportedProfiles.map((p) => ({ ...p, evidence: null })),
+  };
+}
+
+/** Digest of `baseRelease(release)`, under its own digest kind. */
+export function baseReleaseDigest(release: CapabilityRelease): Hex32 {
+  return digest("release-base", baseRelease(release));
 }
 
 /** The exact release version, and which of its supported profiles matched. */

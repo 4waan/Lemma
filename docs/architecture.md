@@ -63,7 +63,7 @@ Postgres will store previews, resolution preparation, settlement receipts, signe
 - No match means no payment offer.
 - Local budget failure means no payment signature.
 - Settlement uncertainty enters reconciliation, not an immediate retry.
-- Lost paid responses are recovered by resolution ID.
+- Lost paid responses are recovered by preview ID and buyer, which derive the resolution ID. The preview ID is the bearer secret: only the bridge that asked for the preview receives it, and it is never published or logged. A resolution ID can be shown publicly without exposing the paid payload.
 - Patch drift stops application before mutation.
 - Missing evaluator confirmation leaves the warranty active until its claim deadline.
 - Expiry releases unresolved bond without claiming software success.

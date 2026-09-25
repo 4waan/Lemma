@@ -46,6 +46,8 @@
 - Browser rendering escapes untrusted values and restricts external destinations.
 - Database operations are parameterized and resource access uses non-guessable identifiers.
 - Logs and run records are scrubbed before persistence.
+- Preview IDs are bearer secrets for recovery. They are random, returned only to the requesting bridge, never logged, and never exposed by a read API. Recovery needs the preview ID and the buyer, so a published resolution ID recovers nothing.
+- The hosted MCP endpoint refuses browser-originated requests (any `Origin` header), limits bodies to 256 KB, and rate-limits per client address taken from the trusted proxy hop.
 
 ## Accepted MVP trust
 

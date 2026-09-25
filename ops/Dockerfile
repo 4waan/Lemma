@@ -23,4 +23,4 @@ COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/packages ./packages
 
 USER node
-CMD ["node", "apps/server/dist/index.js"]
+CMD ["node", "apps/server/dist/main.js"]

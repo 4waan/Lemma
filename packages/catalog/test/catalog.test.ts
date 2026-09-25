@@ -267,6 +267,16 @@ describe("integrity", () => {
     expect(readFileSync(join(root, SERVER, "bundle.json"), "utf8")).toBe("{}\n");
   });
 
+  it("reports a version semver cannot parse instead of throwing", () => {
+    const root = catalogCopy();
+    const dir = "releases/mcp-client-paying-client/9007199254740992.0.0";
+    cpSync(join(root, CLIENT), join(root, dir), { recursive: true });
+    const manifest = readJsonFile<CapabilityRelease>(root, `${dir}/manifest.json`);
+    writeJsonFile(root, `${dir}/manifest.json`, { ...manifest, version: "9007199254740992.0.0" });
+    expect(() => checkCatalog({ root })).not.toThrow();
+    expect(problems(root)).toContainEqual(expect.stringContaining("version 9007199254740992.0.0 does not parse as semver"));
+  });
+
   it("packs deterministically", () => {
     const a = packPayload(catalogCopy(), SERVER);
     const b = packPayload(catalogCopy(), SERVER);
@@ -327,7 +337,10 @@ describe("evidence and versions", () => {
     const root = catalogCopy();
     measured(root);
     evidenced(root, "releases", "0.1.0-skeleton+bench-1", "bench-1");
-    expect(problems(root)).toEqual([`releases/mcp-server-payment-gating/0.1.0-skeleton+bench-1: no verified benchmark report backs evidence bench-1`]);
+    const found = problems(root);
+    expect(found).toContainEqual("releases/mcp-server-payment-gating/0.1.0-skeleton+bench-1: no verified benchmark report backs evidence bench-1");
+    // The benchmarked version now wins the exact cases, so their frozen answers must change with it.
+    expect(found).toContainEqual(expect.stringMatching(/^fixtures\/mcp-server\.add-payment-gating\/exact-npm-node22\.json: expected .* the resolver gives .*\+bench-1/));
   });
 
   it("requires evidence to name the version's build metadata", () => {
@@ -372,6 +385,15 @@ describe("prices", () => {
 });
 
 describe("fixtures", () => {
+  it("replays every case through the resolver and reports a changed answer", () => {
+    const root = catalogCopy();
+    const path = "fixtures/mcp-server.add-payment-gating/near-miss-sdk-too-old.json";
+    const fixture = readJsonFile<{ expected: { reasons: string[] } }>(root, path);
+    fixture.expected.reasons = ["MISSING_DEPENDENCY"];
+    writeJsonFile(root, path, fixture);
+    expect(problems(root)).toEqual([expect.stringMatching(/^fixtures\/mcp-server\.add-payment-gating\/near-miss-sdk-too-old\.json: expected .*MISSING_DEPENDENCY.* the resolver gives .*DEPENDENCY_OUT_OF_RANGE/)]);
+  });
+
   it("requires an exact case per release and near-miss and unsupported cases per capability", () => {
     const root = catalogCopy();
     rmSync(join(root, "fixtures/mcp-client.add-paying-client"), { recursive: true });

@@ -15,10 +15,26 @@ const AddressInput = z.string().transform((value, ctx) => {
 
 const Flag = z.enum(["true", "false"]).transform((v) => v === "true");
 
+/**
+ * A postgres:// or postgresql:// connection string. postgres.js parses the
+ * rest itself (multi-host lists, host-less URLs that use PGHOST or a unix
+ * socket), so only the scheme is checked here. The message never repeats the
+ * value: it usually holds a password.
+ */
+export function isPostgresUrl(value: string): boolean {
+  return /^postgres(?:ql)?:\/\//.test(value);
+}
+
+const DatabaseUrl = z.string().refine(isPostgresUrl, "must be a postgres:// or postgresql:// URL; its value is not shown");
+
+/** At least 32 characters: the key that hides client addresses in demand counts (never stored in the database). */
+const SourceKey = z.string().min(32, "must be at least 32 characters; its value is not shown");
+
 const Env = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
-  DATABASE_URL: optional(z.string().min(1)),
+  DATABASE_URL: optional(DatabaseUrl),
+  DEMAND_SOURCE_KEY: optional(SourceKey),
   ARBITRUM_SEPOLIA_CHAIN_ID: z.coerce.number().int().default(421_614),
   USDC_ADDRESS: optional(AddressInput),
   PROVIDER_ADDRESS: optional(AddressInput),
@@ -35,6 +51,12 @@ export interface ServerConfig {
   readonly env: "development" | "test" | "production";
   readonly port: number;
   readonly databaseUrl: string | undefined;
+  /**
+   * The HMAC key for client addresses in demand counts. It must stay the same
+   * across restarts and replicas, or one address counts as several sources; a
+   * random per-process key is used in development.
+   */
+  readonly demandSourceKey: Uint8Array | undefined;
   /** Offer terms: CAIP-2 network, USDC asset and authorization window. */
   readonly payment: { readonly network: typeof ARBITRUM_SEPOLIA; readonly asset: Address; readonly maxTimeoutSeconds: number };
   /** The only x402 recipient the server will quote for (server README). */
@@ -69,11 +91,13 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
   const asset = e.USDC_ADDRESS ?? ARBITRUM_SEPOLIA_USDC;
   if (asset !== ARBITRUM_SEPOLIA_USDC) throw new ConfigError(`USDC_ADDRESS must be Arbitrum Sepolia USDC (${ARBITRUM_SEPOLIA_USDC})`);
   if (e.NODE_ENV === "production" && e.DATABASE_URL === undefined) throw new ConfigError("DATABASE_URL is required in production");
+  if (e.NODE_ENV === "production" && e.DEMAND_SOURCE_KEY === undefined) throw new ConfigError("DEMAND_SOURCE_KEY is required in production");
   if (e.PAID_TOOLS === "on" && e.PROVIDER_ADDRESS === undefined) throw new ConfigError("PAID_TOOLS=on requires PROVIDER_ADDRESS");
   return {
     env: e.NODE_ENV,
     port: e.PORT,
     databaseUrl: e.DATABASE_URL,
+    demandSourceKey: e.DEMAND_SOURCE_KEY === undefined ? undefined : new TextEncoder().encode(e.DEMAND_SOURCE_KEY),
     payment: { network: ARBITRUM_SEPOLIA, asset, maxTimeoutSeconds: e.PAYMENT_TIMEOUT_SECONDS },
     provider: e.PROVIDER_ADDRESS,
     paidTools: e.PAID_TOOLS === "on",

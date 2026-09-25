@@ -85,10 +85,14 @@ Items marked **done** are implemented in schema v1. The rest are ordered by how 
 4. **One definition of what is paid (done in core).** `PaymentTerms` mirrors x402 v2, and `checkPurchase` refuses any challenge that differs from the quote.
 5. **Evidence attestation.** Before external providers join, record who measured the saving (Lemma, not the provider), because a provider could otherwise inflate `S` to pass the sale rule.
 6. **Profile classes and a dependency interest set.** Publish, per capability, the dependency names the catalog actually matches on. The bridge sends only those, internal package names never leave the machine, and one benchmark can cover a documented profile class.
-7. **Compatibility history.** Group adoption receipts by (release digest, matched profile index) to estimate `q` per profile. Use it to stop offering failing profiles, set the bond or price per profile, and later build provider reputation. Receipts are observational, so they never replace the paired benchmark for savings claims.
+7. **Compatibility history.** Group adoption receipts by (release digest, matched profile index) to estimate `q` per profile. Only verified receipts count; the server stores every receipt as unverified until its signature is checked. Use it to stop offering failing profiles, set the bond or price per profile, and later build provider reputation. Receipts are observational, so they never replace the paired benchmark for savings claims.
 8. **Deterministic ranking at catalog scale (done in the resolver).** When several releases match, rank by a published total order: sellable now, then expected net saving `S - P` descending (no evidence last), then semver precedence descending, release id, release digest and profile index. Net saving replaces price because a pricier release that saves more is better for the buyer. Pass rate slots in after "sellable" once verified receipts exist (lever 7).
 9. **Data-driven taxonomy.** Capability ids, frameworks and per-capability options should move into validated catalog data, so a new capability doesn't need a core release. Consider CAIP-19 asset ids and per-asset spend limits for multiple chains.
 10. **Cheaper evidence.** Sequential designs that stop once the interval clears the threshold, shared control arms across releases for the same task, and occasional shadow-control runs for high-volume releases reduce `K` without weakening the claim.
+
+**Demand as a roadmap input.** Every preview, offer or not, is counted per UTC day in a bucket of capability, decision, matched release or reasons, and coarse repository class (`GET /api/v1/demand`, buckets with at least five repositories from at least five client addresses).
+- No-match and unsellable buckets, weighted by the control cost `C` from probes, rank which release to build or benchmark next.
+- Offer buckets divided by resolutions give conversion.
 
 ## 5. Records each stage must produce
 

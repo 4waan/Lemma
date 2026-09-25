@@ -62,7 +62,22 @@ Every component imports its data shapes from `@lemma/core` (see [packages/core/R
 
 ## Persistence
 
-Postgres will store previews, resolution preparation, settlement receipts, signed vouchers, adoption receipts, and indexer cursors. Catalog assets remain version-controlled. Chain events are projected idempotently by chain ID, transaction hash, and log index.
+Postgres stores:
+
+- immutable copies of every served release and bundle
+- catalog snapshots
+- offer-bearing previews
+- resolution preparation and settlement state
+- adoption receipts
+- daily demand counts
+
+Later it will also store signed vouchers and indexer cursors. Catalog assets remain version-controlled, and the database copies are keyed by digest, so a redeploy never strands an offer or a recovery. Chain events are projected idempotently by chain ID, transaction hash, and log index.
+
+The paid path meets the payment work at `ResolutionService` (`apps/server/src/service.ts`):
+
+- `prepare` writes one row per resolution with a single conditional insert. A duplicate payment is answered with `IN_FLIGHT` or `ALREADY_SETTLED`, and an authorization already backing another resolution with `PAYMENT_REUSED`; the paid tool returns `isError`, so x402 cancels that settlement.
+- `commit` records settlement for the authorization that settled and never throws.
+- Unsettled rows are listed for the settlement reconciler, which expires a row by the nonce it checked.
 
 ## Failure behavior
 

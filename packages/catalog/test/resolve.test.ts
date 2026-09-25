@@ -10,7 +10,7 @@ import fc from "fast-check";
 import { Range } from "semver";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { type LoadedCatalog, type LoadedRelease, buildIndex, checkProfile, resolve } from "../src/index.js";
+import { type LoadedCatalog, type LoadedRelease, buildIndex, checkProfile, checkReleaseProfile, resolve } from "../src/index.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const PROVIDER = "0x00000000000000000000000000000000000000a1";
@@ -287,6 +287,17 @@ describe("resolve: properties", () => {
         expect(preview.offer === null).toBe(preview.reasons.length > 0);
       }),
       { numRuns: 500 },
+    );
+  });
+
+  it("checks a profile against a bare release manifest exactly as against the index", () => {
+    fc.assert(
+      fc.property(releasesArb, profileArb, (releases, p) => {
+        for (const r of buildIndex(catalog(...releases)).releases) {
+          for (const indexed of r.profiles) expect(checkReleaseProfile(r.release, indexed.index, p, NOW)).toEqual(checkProfile(r, indexed, p, NOW));
+        }
+      }),
+      { numRuns: 300 },
     );
   });
 });

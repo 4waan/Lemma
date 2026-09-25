@@ -108,10 +108,12 @@ describe("views render only from read models", () => {
   it("renders the shell with its testnet banner, and loading and error states", () => {
     const shell = renderToStaticMarkup(<App initialHash="#/" />);
     expect(shell).toContain("Testnet");
-    // The setup uses the bridge as built from a checkout; nothing installs a lemma-mcp command yet.
-    expect(shell).not.toContain("lemma-mcp");
-    expect(shell).toContain("apps/bridge/dist/main.js");
     expect(shell).toContain('aria-current="page"');
+    // The setup uses the bridge as built from a checkout; nothing installs a lemma-mcp command yet.
+    const setup = renderToStaticMarkup(<App initialHash="#/setup" />);
+    expect(setup).not.toContain("lemma-mcp");
+    expect(setup).toContain("apps/bridge/dist/main.js");
+    expect(setup).toContain('href="#/setup" aria-current="page"');
     expect(renderToStaticMarkup(<Shown loaded={{ state: "error", message: "<b>bad</b>" }} render={() => null} />)).toContain("&lt;b&gt;bad&lt;/b&gt;");
   });
 });
@@ -177,6 +179,8 @@ describe("the dist check", () => {
       ["css import", good, { "index-a1.js": "x", "index-a1.css": "@import url(https://fonts.example/a.css);" }],
       ["css url to data", good, { "index-a1.js": "x", "index-a1.css": "a{background:url(data:image/png;base64,AA==)}" }],
       ["stray file", good, { "index-a1.js": "x", "index-a1.css": "b{}", "index-a1.js.map": "{}" }],
+      ["favicon outside /assets/", good.replace("</head>", '<link rel="icon" href="/favicon.svg"></head>')],
+      ["foreign font", good, { "index-a1.js": "x", "index-a1.css": "@font-face{font-family:x;src:url(https://fonts.example/x.woff2)}" }],
     ];
     for (const [name, html, assets] of cases) expect(checkDist(dist(html, assets)), name).not.toEqual([]);
     for (const dir of dists.splice(0)) rmSync(dir, { recursive: true, force: true });

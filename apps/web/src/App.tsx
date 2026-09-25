@@ -2,15 +2,18 @@ import { CatalogView, DemandView, ResolutionView, StatusView } from "@lemma/core
 import { type ReactNode, useEffect, useState } from "react";
 
 import { type Loaded, useView } from "./api.js";
-import { NAV, type Route, parseRoute } from "./routes.js";
+import { Logo } from "./components/Logo.js";
+import { Callout, EmptyState } from "./components/ui.js";
+import { NAV, type Route, parseRoute, titleFor } from "./routes.js";
 import { Catalog } from "./views/Catalog.js";
 import { Demand } from "./views/Demand.js";
 import { Evidence } from "./views/Evidence.js";
 import { Overview } from "./views/Overview.js";
-import { Resolution } from "./views/Resolution.js";
+import { Resolution, ResolutionLookup } from "./views/Resolution.js";
+import { Setup } from "./views/Setup.js";
 import { Status } from "./views/Status.js";
 
-/** The dashboard shell: a testnet banner, navigation, and the view the URL fragment names. */
+/** The dashboard shell: a testnet banner, the header and navigation, and the view the URL fragment names. */
 export function App({ initialHash = typeof window === "undefined" ? "" : window.location.hash }: { initialHash?: string }) {
   const [route, setRoute] = useState<Route>(() => parseRoute(initialHash));
   useEffect(() => {
@@ -18,23 +21,37 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
     window.addEventListener("hashchange", update);
     return () => window.removeEventListener("hashchange", update);
   }, []);
+  useEffect(() => {
+    document.title = titleFor(route);
+    window.scrollTo(0, 0);
+  }, [route]);
   return (
     <>
-      <header>
-        <h1>Lemma</h1>
-        <p className="tagline">Verified, benchmarked integrations for coding agents, priced below the tokens they save.</p>
-        <p className="banner">Testnet: every amount is test USDC, and nothing here is financial or production advice.</p>
-        <nav>
-          {NAV.map((item) => (
-            <a key={item.href} href={item.href} aria-current={item.view === route.view ? "page" : undefined}>
-              {item.label}
-            </a>
-          ))}
-        </nav>
+      <p className="banner">Testnet: every amount is test USDC on Arbitrum Sepolia, and nothing here is financial or production advice.</p>
+      <header className="site-header">
+        <div className="container header-inner">
+          <a className="brand" href="#/" aria-label="Lemma overview">
+            <Logo />
+            Lemma
+          </a>
+          <nav className="site-nav" aria-label="Main">
+            {NAV.map((item) => (
+              <a key={item.href} href={item.href} aria-current={item.view === route.view ? "page" : undefined}>
+                {item.label}
+              </a>
+            ))}
+          </nav>
+        </div>
       </header>
-      <main>
+      <main className="container" id="main">
         <RouteView route={route} />
       </main>
+      <footer className="site-footer">
+        <div className="container footer-inner">
+          <p>Lemma: verified, benchmarked integrations for coding agents, paid in USDC through x402 on Arbitrum.</p>
+          <p>Read-only dashboard. It holds no keys and cannot sign or change anything.</p>
+        </div>
+      </footer>
     </>
   );
 }
@@ -43,6 +60,8 @@ function RouteView({ route }: { route: Route }) {
   switch (route.view) {
     case "overview":
       return <Overview />;
+    case "setup":
+      return <Setup />;
     case "catalog":
       return <View name="catalog" path="/api/v1/catalog" schema={CatalogView} render={(v) => <Catalog view={v} />} />;
     case "evidence":
@@ -52,9 +71,19 @@ function RouteView({ route }: { route: Route }) {
     case "status":
       return <View name="status" path="/api/v1/status" schema={StatusView} render={(v) => <Status view={v} />} />;
     case "resolution":
-      return route.id === null ? <ResolutionLookup /> : <View name="resolution" path={`/api/v1/resolutions/${route.id}`} schema={ResolutionView} render={(v) => <Resolution view={v} />} />;
+      return route.id === null ? (
+        <ResolutionLookup />
+      ) : (
+        <View name="resolution" path={`/api/v1/resolutions/${route.id}`} schema={ResolutionView} render={(v) => <Resolution view={v} />} />
+      );
     case "not-found":
-      return <p>There is nothing at this address.</p>;
+      return (
+        <EmptyState title="Nothing at this address">
+          <p>
+            There is nothing at this address. <a href="#/">Back to the overview</a>.
+          </p>
+        </EmptyState>
+      );
   }
 }
 
@@ -68,22 +97,12 @@ function View<T>(props: { path: string; schema: Parameters<typeof useView<T>>[1]
 }
 
 export function Shown<T>({ loaded, render }: { loaded: Loaded<T>; render: (view: T) => ReactNode }) {
-  if (loaded.state === "loading") return <p className="meta">Loading…</p>;
-  if (loaded.state === "error") return <p className="error">{loaded.message}</p>;
+  if (loaded.state === "loading") return <p className="loading">Loading…</p>;
+  if (loaded.state === "error")
+    return (
+      <Callout tone="danger" title="This view could not be loaded">
+        <p>{loaded.message}</p>
+      </Callout>
+    );
   return <>{render(loaded.data)}</>;
-}
-
-/** Looks a resolution up by id. A resolution id is public; the preview id that recovers it never appears here. */
-function ResolutionLookup() {
-  const [id, setId] = useState("");
-  const valid = /^0x[0-9a-f]{64}$/.test(id.trim().toLowerCase());
-  return (
-    <section>
-      <h2>Look up a resolution</h2>
-      <label>
-        Resolution id <input value={id} onChange={(e) => setId(e.target.value)} placeholder="0x…" spellCheck={false} size={70} />
-      </label>{" "}
-      {valid ? <a href={`#/resolutions/${id.trim().toLowerCase()}`}>Show</a> : <span className="meta">a 0x-prefixed 32-byte hex id</span>}
-    </section>
-  );
 }

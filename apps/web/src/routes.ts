@@ -5,6 +5,7 @@ export type Route =
   | { readonly view: "evidence" }
   | { readonly view: "demand" }
   | { readonly view: "status" }
+  | { readonly view: "setup" }
   | { readonly view: "resolution"; readonly id: string | null }
   | { readonly view: "not-found" };
 
@@ -13,7 +14,7 @@ const HEX32 = /^0x[0-9a-f]{64}$/;
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   if (path === "" || path === "overview") return { view: "overview" };
-  if (path === "catalog" || path === "evidence" || path === "demand" || path === "status") return { view: path };
+  if (path === "catalog" || path === "evidence" || path === "demand" || path === "status" || path === "setup") return { view: path };
   if (path === "resolutions") return { view: "resolution", id: null };
   const match = /^resolutions\/(.+)$/.exec(path);
   if (match !== null) return HEX32.test(match[1] as string) ? { view: "resolution", id: match[1] as string } : { view: "not-found" };
@@ -24,7 +25,14 @@ export const NAV: ReadonlyArray<{ readonly href: string; readonly label: string;
   { href: "#/", label: "Overview", view: "overview" },
   { href: "#/catalog", label: "Catalog", view: "catalog" },
   { href: "#/evidence", label: "Evidence", view: "evidence" },
-  { href: "#/demand", label: "Unmet demand", view: "demand" },
   { href: "#/resolutions", label: "Resolutions", view: "resolution" },
+  { href: "#/demand", label: "Demand", view: "demand" },
   { href: "#/status", label: "Status", view: "status" },
+  { href: "#/setup", label: "Setup", view: "setup" },
 ];
+
+/** The document title for a route, so tabs and history entries name the view. */
+export function titleFor(route: Route): string {
+  const label = route.view === "not-found" ? "Not found" : (NAV.find((item) => item.view === route.view)?.label ?? "Lemma");
+  return route.view === "overview" ? "Lemma · Compatibility resolutions for coding agents" : `${label} · Lemma`;
+}

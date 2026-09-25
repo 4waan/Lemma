@@ -12,3 +12,12 @@ export function sourceUrl(provenance: { repository: string; commit: string }): s
   if (owner === "." || owner === ".." || name === "." || name === "..") return null;
   return `https://github.com/${owner}/${name}/tree/${provenance.commit}`;
 }
+
+/** The block explorer for Arbitrum Sepolia, the only network the MVP settles on. */
+const EXPLORER = "https://sepolia.arbiscan.io";
+const ADDRESS = /^0x[0-9a-fA-F]{40}$/;
+
+/** An explorer page for a contract or account, rebuilt from a validated address, never a URL taken as is. */
+export function explorerAddressUrl(address: string): string | null {
+  return ADDRESS.test(address) ? `${EXPLORER}/address/${address.toLowerCase()}` : null;
+}

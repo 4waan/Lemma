@@ -1,7 +1,8 @@
-import { ARBITRUM_SEPOLIA, type ReasonCode, formatUsdc } from "@lemma/core";
+import { ARBITRUM_SEPOLIA, type CapabilityId, type ReasonCode, formatUsdc } from "@lemma/core";
 
+/** An atomic USDC string as an exact amount with at least two decimals, and its unit. */
 export function usdc(atomic: string): string {
-  return `${formatUsdc(BigInt(atomic))} USDC`;
+  return `${usdcAmount(BigInt(atomic))} USDC`;
 }
 
 /** Basis points as a percentage with two decimals, in integer math. */
@@ -43,3 +44,21 @@ export const REASON_TEXT: Readonly<Record<ReasonCode, string>> = {
 export function reasonText(code: string): string {
   return (REASON_TEXT as Readonly<Record<string, string>>)[code] ?? code;
 }
+
+/**
+ * Atomic USDC as an exact decimal with at least two places ("2.50", "0.005"),
+ * for columns and charts where amounts are compared. Never rounds.
+ */
+export function usdcAmount(atomic: bigint): string {
+  const sign = atomic < 0n ? "-" : "";
+  const text = formatUsdc(atomic < 0n ? -atomic : atomic);
+  const [whole, fraction = ""] = text.split(".");
+  return `${sign}${whole}.${fraction.padEnd(2, "0")}`;
+}
+
+/** Plain words for each capability id; the ids come from core. */
+export const CAPABILITY_TEXT: Readonly<Record<CapabilityId, string>> = {
+  "mcp-server.add-payment-gating": "x402 payment gating for a TypeScript MCP server",
+  "mcp-client.add-paying-client": "An x402-paying MCP client with spending limits",
+  "node-service.add-payment-facilitator": "An Arbitrum x402 facilitator for a Node service",
+};

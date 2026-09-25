@@ -1,0 +1,10 @@
+{
+  "dependencies": {},
+  "devDependencies": {},
+  "files": [
+    {
+      "path": "lemma/paying-client/README.md",
+      "op": "add"
+    }
+  ]
+}

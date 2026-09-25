@@ -1,0 +1,34 @@
+{
+  "class": "boundary",
+  "capability": "mcp-client.add-paying-client",
+  "now": "2026-10-01T00:00:00.000Z",
+  "profile": {
+    "schemaVersion": "1",
+    "language": "typescript",
+    "runtime": {
+      "name": "node",
+      "major": 24
+    },
+    "packageManager": {
+      "name": "pnpm",
+      "lockfile": "pnpm-lock.yaml"
+    },
+    "moduleSystem": "esm",
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "1.30.0"
+    },
+    "frameworks": []
+  },
+  "expected": {
+    "decision": "reuse",
+    "reasons": [
+      "PROFILE_NOT_BENCHMARKED"
+    ],
+    "match": {
+      "releaseId": "mcp-client-paying-client",
+      "version": "0.1.0-skeleton",
+      "profileIndex": 0
+    },
+    "offer": false
+  }
+}

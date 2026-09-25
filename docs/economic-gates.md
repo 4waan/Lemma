@@ -33,6 +33,7 @@ The sale rule is `P <= 0.3 S` (`isSellable`). From it:
 
 - **Buyer net saving** is `S - P - g_buyer`, at least `0.7 S - g_buyer`, before counting time and interventions.
 - **Buyer all-in reduction** is `(S - P - g) / C` (`allInReductionBps`). **The sale rule does not imply the benchmark target.** At the 30% price cap, the all-in reduction is `0.7 S / C`, which meets the 25% target only when `S >= 0.357 C`. A release that saves 25–35% of the control cost can pass the sale rule yet leave the buyer short of the promised reduction. Both numbers must be shown, and the frozen benchmark (`evaluateBenchmark`) is what licenses the claim.
+- **Price bound.** `maxPriceFor(S, C, g)` (core) is the highest price that is sellable and still leaves the buyer the 25% target after chain cost: `min(floor(0.3 S), S - g - ceil(0.25 C))`. `0` means preview-only. `catalog:check` refuses any evidenced price above it, or below the price floor, using the dated inputs in `packages/catalog/economics.json`. Until the protocol lane sets `g` and the floor there, no release may carry evidence.
 - **Provider margin per resolution** is `P (1 - q) - g_provider - K / N`. The warranty refunds `P` on an eligible failure.
 - **Break-even volume** is `N* = K / (P (1 - q) - g_provider)`.
 
@@ -58,7 +59,7 @@ Each stage names its gate: the evidence that must exist before the next stage st
 | # | Stage | Gate (evidence) | Iterate if | Owner |
 | --- | --- | --- | --- | --- |
 | 1 | Shared schemas (`@lemma/core` v1) | Vectors reproduce in every consuming encoder. The protocol owner maps `Resolution`, `AdoptionReceipt`, `PaymentTerms` and `deriveResolutionId` into typed data without adding fields. | A settlement or warranty field is missing. Change the schema now, before anything persists v1. | N, reviewed by P |
-| 2 | Catalog and fixtures | Every release has exact, boundary, near-miss and unsupported fixtures with frozen expected decisions. `payloadDigest` equals `bundleDigest` of the bundle files. | A near-miss matches, or a digest depends on the machine. | N |
+| 2 | Catalog and fixtures | Every release has exact, boundary, near-miss and unsupported fixtures with frozen expected decisions. `payloadDigest` equals `bundleDigest` of the bundle files. `npm run catalog:check` passes. | A near-miss matches, or a digest depends on the machine. | N |
 | 3 | Resolver and free preview | Output is deterministic and records `catalogDigest`. Negative fixtures produce zero matches. No-match previews carry no offer. | Any nondeterminism, or an offer on an unsupported or unbenchmarked profile. | N |
 | 4 | **Economic probe** (before the paid path is finished) | Two or three exploratory control runs and one hand-applied treatment run per candidate release give a rough `S` and `C`. It passes when `maxPriceFor(S, C, g)` is at least the price floor: some price then meets the sale rule, the 25% all-in target after chain cost, and the floor at once. This replaces the older `S >= 0.357 C` check, which assumed the 30% cap and ignored gas. | Either threshold fails. Pick larger or more failure-prone integration tasks before spending on payments. | N |
 | 5 | Paid path end to end | One purchase through `checkPurchase`. Recovery without a duplicate payment, with `deriveResolutionId` as the idempotency key. Voucher activation, one pass and one refunded failure, all on testnet. | Any duplicate charge or unrecoverable response. | P |
@@ -67,6 +68,12 @@ Each stage names its gate: the evidence that must exist before the next stage st
 | 8 | Scale readiness | See section 4. | Any item that would force a code release per new provider or capability. | N and P |
 
 Stage 4 is the cheapest place to learn that a release family can't pay for itself. Run it before finishing stages 5 and 6.
+
+Stages 5 and 6 need something to buy before frozen evidence exists. The testnet-only overlay `packages/catalog/releases.provisional/` provides it.
+- It holds `X+provisional-N` versions that differ from `X` only in version, evidence, price and dates.
+- They carry the stage-4 probe numbers at the pre-registered price.
+- The public service never loads the overlay, and `catalog:check` refuses `provisional-` evidence in `releases/`.
+- Frozen evidence then ships as `X+<benchmarkVersion>` in `releases/`, bound to the same `baseReleaseDigest` as the runs that measured it.
 
 ## 4. What makes the product scale
 

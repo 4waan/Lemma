@@ -1,0 +1,7 @@
+# Catalog payloads are hashed byte for byte (bundleDigest, baseDigest). Never
+# convert their line endings on checkout, or digests would depend on the
+# machine that checked them out.
+packages/catalog/releases/** -text
+packages/catalog/releases.provisional/** -text
+packages/catalog/fixtures/** -text
+packages/benchmark/fixtures/** -text

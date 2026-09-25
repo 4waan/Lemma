@@ -1,0 +1,32 @@
+{
+  "class": "unsupported",
+  "capability": "mcp-server.add-payment-gating",
+  "now": "2026-10-01T00:00:00.000Z",
+  "profile": {
+    "schemaVersion": "1",
+    "language": "javascript",
+    "runtime": {
+      "name": "node",
+      "major": 22
+    },
+    "packageManager": {
+      "name": "yarn",
+      "lockfile": "yarn.lock"
+    },
+    "moduleSystem": "esm",
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "1.29.0"
+    },
+    "frameworks": []
+  },
+  "expected": {
+    "decision": "decline",
+    "reasons": [
+      "DEPENDENCY_OUT_OF_RANGE",
+      "UNSUPPORTED_LANGUAGE",
+      "UNSUPPORTED_PACKAGE_MANAGER"
+    ],
+    "match": null,
+    "offer": false
+  }
+}

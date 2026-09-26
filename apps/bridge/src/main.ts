@@ -12,13 +12,15 @@ import { createBridgeServer } from "./bridge.js";
 import { ResolutionInbox, stateDirFor } from "./inbox.js";
 import { flushReceipts, recoverPending } from "./recovery.js";
 import { LemmaRemote } from "./remote.js";
-import { installRule } from "./rule.js";
+import { RULE_TARGETS, installRules, isRuleAgent } from "./rule.js";
 import { ScanCache } from "./scan/cache.js";
 import { Trace } from "./trace.js";
 
 /**
  * `lemma-mcp`: the local MCP bridge on stdio.
- * `lemma-mcp install-rule [dir]`: writes the Lemma rule to `<dir>/.cursor/rules/lemma.mdc`.
+ * `lemma-mcp install-rule [--agent cursor|claude|agents|all] [dir]`: installs the Lemma
+ * rule for the agent (Cursor by default): `.cursor/rules/lemma.mdc`, `.claude/rules/lemma.md`,
+ * or a marked block in `AGENTS.md`.
  *
  * Environment: LEMMA_API_URL (default http://localhost:3000), LEMMA_WORKSPACE
  * (default: the current directory), LEMMA_STATE_DIR (default
@@ -90,10 +92,35 @@ async function serve(): Promise<void> {
     .catch(() => undefined);
 }
 
-const [command, arg] = process.argv.slice(2);
-if (command === "install-rule") console.log(`wrote ${installRule(arg ?? process.cwd())}`);
-else if (command === undefined) await serve();
+const USAGE = `usage: lemma-mcp [install-rule [--agent ${[...RULE_TARGETS, "all"].join("|")}] [dir]]`;
+
+/** `install-rule [--agent <agent>] [dir]`, or null when the arguments make no sense. */
+function parseInstall(args: readonly string[]): { agent: string; dir: string } | null {
+  let agent = "cursor";
+  const rest: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i] as string;
+    if (a === "--agent") {
+      const value = args[++i];
+      if (value === undefined) return null;
+      agent = value;
+    } else if (a.startsWith("--agent=")) agent = a.slice("--agent=".length);
+    else if (a.startsWith("--")) return null;
+    else rest.push(a);
+  }
+  if (rest.length > 1) return null;
+  return { agent, dir: rest[0] ?? process.cwd() };
+}
+
+const [command, ...args] = process.argv.slice(2);
+if (command === "install-rule") {
+  const parsed = parseInstall(args);
+  if (parsed === null || !isRuleAgent(parsed.agent)) {
+    console.error(USAGE);
+    process.exitCode = 2;
+  } else for (const file of installRules(parsed.dir, parsed.agent)) console.log(`wrote ${file}`);
+} else if (command === undefined) await serve();
 else {
-  console.error("usage: lemma-mcp [install-rule [dir]]");
+  console.error(USAGE);
   process.exitCode = 2;
 }

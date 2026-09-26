@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -26,8 +26,10 @@ import {
   defaultStateDir,
   driftCheck,
   installRule,
+  installRules,
   previewText,
   recoverPending,
+  ruleBody,
   stateDirFor,
 } from "../src/index.js";
 import { sellableIndexFor } from "./sellable.js";
@@ -412,6 +414,51 @@ describe("the Lemma rule", () => {
     expect(readFileSync(RULE_PATH, "utf8").length).toBeLessThanOrEqual(MAX_RULE_CHARS);
     const dir = temp("lemma-proj-");
     const written = installRule(dir);
+    expect(written).toBe(join(dir, ".cursor", "rules", "lemma.mdc"));
     expect(readFileSync(written, "utf8")).toBe(readFileSync(RULE_PATH, "utf8"));
+  });
+
+  it("gives Claude Code and AGENTS.md the rule's body, without Cursor's frontmatter", () => {
+    const body = ruleBody();
+    expect(body.startsWith("---")).toBe(false);
+    expect(body).toContain("lemma_preview");
+    expect(readFileSync(RULE_PATH, "utf8")).toContain(body.trim());
+    const dir = temp("lemma-proj-");
+    const files = installRules(dir, "all");
+    expect(files).toEqual([join(dir, ".cursor", "rules", "lemma.mdc"), join(dir, ".claude", "rules", "lemma.md"), join(dir, "AGENTS.md")]);
+    expect(readFileSync(join(dir, ".claude", "rules", "lemma.md"), "utf8")).toBe(body);
+    const agents = readFileSync(join(dir, "AGENTS.md"), "utf8");
+    expect(agents).toContain("<!-- lemma:begin -->");
+    expect(agents).toContain(body);
+    expect(agents.trimEnd().endsWith("<!-- lemma:end -->")).toBe(true);
+    // A second install changes nothing.
+    const before = files.map((f) => [readFileSync(f, "utf8"), statSync(f).mtimeMs]);
+    installRules(dir, "all");
+    expect(files.map((f) => [readFileSync(f, "utf8"), statSync(f).mtimeMs])).toEqual(before);
+  });
+
+  it("keeps a project's own AGENTS.md text, replaces an outdated block, and refuses links and half-open blocks", () => {
+    const dir = temp("lemma-proj-");
+    const file = join(dir, "AGENTS.md");
+    writeFileSync(file, "# My project\n\nRun the tests before pushing.\n");
+    installRule(dir, "agents");
+    const first = readFileSync(file, "utf8");
+    expect(first.startsWith("# My project\n\nRun the tests before pushing.\n\n<!-- lemma:begin -->")).toBe(true);
+    // An outdated block is replaced in place, and text after it survives.
+    writeFileSync(file, `${first.replace(ruleBody(), "old rule text\n")}\n## After\n\nKeep this.\n`);
+    installRule(dir, "agents");
+    const second = readFileSync(file, "utf8");
+    expect(second).toContain(ruleBody());
+    expect(second).not.toContain("old rule text");
+    expect(second.endsWith("<!-- lemma:end -->\n\n## After\n\nKeep this.\n")).toBe(true);
+    expect(second.startsWith("# My project")).toBe(true);
+    writeFileSync(file, "# Broken\n<!-- lemma:begin -->\nno end marker\n");
+    expect(() => installRule(dir, "agents")).toThrow(/half-open/);
+    const linked = temp("lemma-proj-");
+    symlinkSync(file, join(linked, "AGENTS.md"));
+    expect(() => installRule(linked, "agents")).toThrow(/symbolic link/);
+    mkdirSync(join(linked, ".claude"));
+    symlinkSync(dir, join(linked, ".claude", "rules"));
+    expect(() => installRule(linked, "claude")).toThrow(/symbolic link/);
   });
 });

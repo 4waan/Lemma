@@ -57,4 +57,3 @@ On Linux, optional offline mode creates a new network namespace with loopback en
 The first started acceptance run creates the receipt that counts. Retryable server responses and network failures are retried later. Final mismatches are retained and reported.
 
 A registered payment hook signs the receipt. If signing fails, the bridge keeps it and never submits it unsigned. Without a payment hook, the current development path can submit an unsigned receipt, which the server stores as unverified.
-

@@ -60,4 +60,3 @@ The process handles `SIGTERM` by stopping new requests, closing background work,
 - Settlement uncertainty remains pending for reconciliation.
 - Recovery uses the original preview secret and buyer, so a public resolution id is insufficient.
 - Paid tools can be disabled while free preview, recovery, and read APIs remain available.
-

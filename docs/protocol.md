@@ -77,4 +77,3 @@ The current implementation stops at the paid-tool registration and signer seams.
 - Evaluator outcomes, expiry, and buyer withdrawal credit.
 
 Those additions must preserve the existing identifiers, payment terms, recovery behavior, and adoption receipt digest. Any required schema change belongs in `@lemma/core` before paid records are persisted.
-

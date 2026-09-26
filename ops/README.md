@@ -1,46 +1,57 @@
 # Operations
 
-## Purpose
+`ops/` contains the production container and Railway configuration for the hosted Lemma server and dashboard. Local Postgres remains in the root `compose.yaml`.
 
-This directory holds the production container scaffold and Railway configuration for the hosted Lemma service. Postgres development configuration remains at the monorepo root in `compose.yaml`.
+The container build is implemented. Public deployment and the x402 production process remain pending.
 
-## Responsibilities
+## Container
 
-- Build the TypeScript workspaces and Vite dashboard in a repeatable Node 22 image.
-- Start the compiled server entrypoint (`apps/server/dist/main.js`).
-- Provide Railway build and restart configuration.
-- Keep secrets outside the image and source tree.
+`Dockerfile` performs a reproducible Node 22 workspace build, prunes development dependencies, copies the compiled server and shared packages into the runtime image, and runs as the unprivileged `node` user.
 
-## Outside this boundary
+Build from the Lemma repository root so workspace paths resolve:
 
-- Contract deployment.
-- Database migrations.
-- Key generation or faucet funding.
-- Runtime secret creation.
-- Automatic production promotion.
+```bash
+docker build -f ops/Dockerfile -t lemma .
+```
 
-## Files
+The runtime command is:
 
-- `Dockerfile`: Multi-stage build from the monorepo root.
-- `railway.toml`: Railway Dockerfile path and restart policy.
-- `../.dockerignore`: Excludes secrets, local dependencies, build output, and run records from the container context.
+```text
+node apps/server/dist/main.js
+```
 
-Railway must use `Lemma/` as the service root so Docker copy paths resolve correctly.
+The image does not contain `.env` files, local dependencies, source maps, benchmark runs, Foundry output, or Git history.
 
-## Environment variables
+## Railway
 
-Configure server-only variables from `.env.example` in Railway. Do not add `BUYER_PRIVATE_KEY` or `CURSOR_API_KEY` to the hosted product service unless a separately scoped benchmark job explicitly requires them.
+Use `Lemma/` as the Railway service root. `railway.toml` selects the Dockerfile, starts the compiled server, and restarts failed processes within its configured limit.
 
-## Security constraints
+Apply database migrations as an explicit release step before promoting a build. The server refuses to start against an older schema.
 
-- Build without copying `.env` files.
-- Run as the unprivileged Node user.
-- Disable production source maps.
-- Keep one facilitator replica until pending settlement state is shared.
-- Scope the database user to the Lemma database.
-- Restrict public ingress to the intended HTTP port.
-- Store no credential in image layers, build arguments, or Railway configuration files.
+Required production concerns:
 
-## Later completion criteria
+- Railway Postgres with a database-scoped user.
+- Stable `DEMAND_SOURCE_KEY` and server-only secrets in Railway's secret store.
+- `TRUSTED_PROXY_HOPS=1` for Railway's proxy chain.
+- HTTPS-only ingress to the application port.
+- One facilitator replica until pending settlement state and nonce coordination are proven safe across replicas.
+- Contract and payment addresses copied from a verified deployment record.
 
-Operations is complete when the image serves the production API and static dashboard, Railway health checks pass, database and RPC failures degrade safely, and deployment evidence contains no secrets.
+Do not place buyer keys or benchmark credentials in the hosted service. Provider, facilitator, evaluator, and deployer roles must remain distinct.
+
+## Release checks
+
+Before deployment:
+
+```bash
+npm ci
+npm run verify
+npm run catalog:check
+npm run contracts:build
+npm run contracts:test
+npm run secrets:scan
+```
+
+Then apply migrations, start the image, and verify `/healthz`, free preview, immutable release reads, dashboard assets, security headers, and graceful shutdown.
+
+Enable paid tools only after the facilitator registrar, settlement reconciler, signer separation, and warranty addresses have passed the testnet sequence in [Deployment](../docs/deployment.md).

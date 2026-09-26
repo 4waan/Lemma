@@ -1,122 +1,80 @@
-# Lemma Capability Catalog
+# Lemma Catalog
 
-## Purpose and economic role
+`@lemma/catalog` stores and validates the integration releases Lemma can resolve. A release becomes sellable only when its payload, supported profile, evidence, price, provenance, and fixtures pass the catalog checks.
 
-The catalog contains the productive assets Lemma can resolve against. Each Capability Release packages open-source provenance with a narrow supported profile, deterministic adaptation, acceptance evidence, a price, an expiry, and warranty terms.
-
-The catalog is curated during the MVP. Publishing a file is not enough to create a sellable release.
-
-## Responsibilities
-
-- Store versioned Capability Release manifests.
-- Store reviewed patch templates and acceptance recipes.
-- Store positive, boundary, and negative compatibility fixtures.
-- Record upstream source commits, SPDX licenses, attribution, and modification notes.
-- Record measured savings evidence and its benchmark version.
-- Validate catalog integrity before server startup.
-
-## Outside this boundary
-
-- Open provider onboarding.
-- Dynamic pricing.
-- Payment settlement.
-- Buyer-specific repository content.
-- Runtime warranty adjudication.
+The resolver, loader, packer, index, and integrity checks are implemented. The two committed releases are preview-only skeletons with placeholder payloads, zero price, and no benchmark evidence.
 
 ## Layout
 
 ```text
-economics.json                         dated price inputs: chain cost g, price floor, ETH/USD; status placeholder | measured
+economics.json
 releases/<releaseId>/<version>/
-  manifest.json                        CapabilityRelease; a committed version is never edited
-  bundle.json                          PatchBundle packed from payload/ (catalog:pack)
-  payload/ops.json                     file ops and declared dependency changes
-  payload/files/<path>                 content of each add and modify
-  payload/base/<path>                  the file each modify or delete was built against
-releases.provisional/<releaseId>/<version>/   testnet-only overlay, loaded only on request (see below)
-fixtures/<capability>/<case>.json      frozen compatibility cases (fixtures/README.md)
+  manifest.json
+  bundle.json
+  payload/ops.json
+  payload/files/<path>
+  payload/base/<path>
+releases.provisional/<releaseId>/<version>/
+fixtures/<capability>/<case>.json
 ```
 
-## Public interface
+- `economics.json` holds dated chain-cost and price-floor inputs.
+- `releases/` contains immutable public release versions.
+- `releases.provisional/` is an explicit testnet-only overlay for the paid-path and benchmark stages.
+- `fixtures/` freezes exact, boundary, near-miss, and unsupported resolver cases.
 
-- `loadCatalog({ includeProvisional })` parses every manifest and bundle with the `@lemma/core` schemas. It requires each release at `<releaseId>/<version>`, each bundle's digest to equal the manifest's `payloadDigest`, and each `releaseId@version` once. Releases come back sorted by digest.
-- `buildIndex(catalog)` precomputes what the resolver and the read API need, so no request parses anything:
-  - the catalog digest
-  - releases by capability, with semver ranges parsed
-  - releases by digest and bundles by payload digest
-  - per-capability interest sets: the dependency names the catalog matches on, which are the only package names the bridge sends
-  - base probes: every path the bundle touches, with the base digest of each modify or delete target and null for an add. The bridge can predict drift before paying without ever seeing content.
-- `resolve(input, index, ctx)` is the deterministic resolver. It takes a typed task and a privacy-safe profile and returns a free `Preview`. It is pure: the clock, the preview id and the payment settings are injected.
-  - Every supported profile is checked, and all failing codes are collected.
-  - Matches are ranked by the published order (`docs/economic-gates.md`, lever 8).
-  - The top match gives `reuse`. It carries an offer only when `saleBlocker` is null, and the offer closes at the earliest of the offer TTL, the release expiry and the evidence's `staleAfter`.
-  - Without a match, the nearest candidate's reasons decide the answer: `decline` for an unsupported platform, `build` otherwise. `NO_RELEASE_FOR_CAPABILITY` is also `build`.
-  - `adapt` needs the buyer's files, so the bridge decides it.
-- `checkCatalog()` runs every rule below and reports all problems at once. A release that fails to load does not stop the checks on the others. It is read-only and independent of the clock. A test runs it on the committed catalog, and the server runs it before serving.
-- `packPayload(root, dir)` and `formatBundle(bundle)` build `bundle.json` from `payload/`.
-- `loadFixtures(root, problems)` and `FixtureCase` expose the compatibility cases to the resolver's golden tests and to the benchmark.
+See [Capability Releases](releases/README.md), [Provisional Overlay](releases.provisional/README.md), and [Compatibility Fixtures](fixtures/README.md) before authoring catalog data.
 
-## Rules `catalog:check` enforces
+## Author a release
 
-- Every `bundle.json` is exactly what its `payload/` packs to, and every file in `payload/files` and `payload/base` is named by an op. A release directory holds only `manifest.json`, `bundle.json` and `payload/`, and `payload/` only `ops.json`, `files/` and `base/`, so nothing unreviewed can ride along.
-- No symbolic links, special files, traversal or non-UTF-8 names anywhere under `releases/`, `releases.provisional/` or `fixtures/`: the whole tree is scanned, not only the files the loader reads. Every file is strict UTF-8 text except `payload/base/`, whose files are hashed as bytes, so a patch may modify or delete a binary file. One bad entry is reported without hiding its siblings. `releases/` and `fixtures/` must exist; only the overlay is optional.
-- Every dependency range, in supported profiles and in bundle dependency changes, parses with `semver` and is bounded above: every alternative (each side of `||`) has a `<`, `<=` or exact comparator. Dist-tags such as `latest` and open ranges such as `*`, `>=2` or `<2 || >=3` are refused, because they claim or install versions nobody has tested.
-- **Evidence ships as a new version.** Evidence sits inside the manifest, so attaching it changes `releaseDigest`.
-  - A version without build metadata carries no evidence.
-  - Evidence ships as `X+<benchmarkVersion>`, and every evidence entry names that benchmark version.
-  - Its `baseReleaseDigest` must equal that of `X` in `releases/`, so it differs from `X` only in version, evidence, price and dates. The price may follow the evidence because the measured saving does not depend on it.
-  - Outstanding offers and run records keep pointing at digests that still exist.
-- `releases/` never serves `probe-` or `provisional-` evidence.
-  - Public evidence also needs a verified benchmark report.
-  - Report verification arrives with the benchmark harness. Until then, no public release may carry evidence.
-- `releases.provisional/` holds only `X+provisional-N`. It exists because stage 5 needs an offer and stage 6's treatment arm must buy one before frozen evidence exists.
-  - Its evidence carries the stage-4 probe numbers at the pre-registered price.
-  - The server loads it only when explicitly allowed, and the public deployment never does.
-- **Prices.** An evidenced profile needs measured economics, a non-zero `payTo`, and a price within `[priceFloorAtomic, maxPriceFor(evidence, { chainCostAtomic })]`. The upper bound keeps the buyer at the 25% all-in target after gas (`docs/economic-gates.md`).
-- **Fixtures.**
-  - Every case replays through `resolve` at its pinned instant and must give exactly its expected decision, reasons, match and offer.
-  - Every release family (versions sharing a base) has an exact case.
-  - Every capability with a release has a near-miss case and an unsupported-language or unsupported-runtime case.
-  - Every case references a real release and profile. A capability without releases has only `no-release` cases, and one with releases has none: only a `no-release` case expects `NO_RELEASE_FOR_CAPABILITY`.
-  - A case's reasons must be an answer the resolver can give: a reuse is held back by one sale blocker at most, a decline names an unsupported platform, and a build names none.
+1. Choose a narrow capability id and supported repository profile.
+2. Record immutable GitHub provenance, a full source commit, and an SPDX license expression.
+3. Add reviewed file operations, base files, replacement files, dependency changes, and an acceptance recipe under `payload/`.
+4. Pack the payload and copy the reported digest into `manifest.json`.
+5. Add exact, boundary, near-miss, and unsupported fixtures with frozen expected outcomes.
+6. Run the catalog check and review every reported problem before committing.
 
-## Commands
+Commands:
 
-- `npm run catalog:check`: build, then validate the catalog. It exits 1 on any problem.
-- `npm run catalog:pack`: print each release's packed payload digest, and the suggested `maxPriceFor` for evidenced profiles.
-- `npm run catalog:pack -- --write`: also write `bundle.json`. The file is written through a temporary file and a rename, so a linked `bundle.json` is replaced, never written through. Copy the printed digest into the manifest's `payloadDigest` before committing a new version.
+```bash
+npm run catalog:pack
+npm run catalog:check
+```
 
-`.gitattributes` turns off line-ending conversion for catalog files, because payload and base files are hashed byte for byte.
+The packer's write mode replaces `bundle.json` through a temporary file and rename. Catalog content is hashed byte for byte, and `.gitattributes` disables line-ending conversion for those paths.
 
-## Current releases
+## Resolution behavior
 
-`mcp-server-payment-gating@0.1.0-skeleton` and `mcp-client-paying-client@0.1.0-skeleton` fix supported profiles, fixtures and acceptance recipes, so the resolver and preview path can be built. Their payloads are placeholders for the protocol lane to replace.
+`loadCatalog` parses every release and bundle. `buildIndex` precomputes releases by capability and digest, catalog interest sets, and base probes. `resolve` is pure: its clock, preview id, and payment settings are injected.
 
-They have no evidence, a zero price and a zero `payTo`, so they can be previewed but never sold. `node-service.add-payment-facilitator` has no release yet, which pins the `NO_RELEASE_FOR_CAPABILITY` answer.
+Every supported profile is checked. Matches are ordered by current sellability, expected net saving, semantic version, release id, digest, and profile index. A match becomes `reuse`; local drift becomes `adapt` later in the bridge. Without a match, unsupported platforms return `decline` and other gaps return `build`.
 
-## Workspace dependencies
+## Integrity gates
 
-- `@lemma/core` for schemas, digests and pricing.
-- Zod for catalog validation.
-- `semver` for dependency ranges and release ordering.
+`catalog:check` fails closed on:
 
-## Environment variables
+- schema, digest, version, directory-layout, or UTF-8 errors;
+- symbolic links, special files, traversal, undeclared payload files, or unsafe patch paths;
+- mutable provenance, unbounded dependency ranges, or dist-tags;
+- evidence that is not bound to a benchmark version and base release;
+- public provisional evidence or evidence without a verified report;
+- prices outside the measured floor and `maxPriceFor` ceiling;
+- missing fixture coverage or fixture results that differ from the resolver.
 
-None. A catalog build must be reproducible without network access or secrets.
+The complete economic gate is [Economic Gates and Iterations](../../docs/economic-gates.md).
 
-## Development and tests
+## Current catalog
 
-- `npm run build -w @lemma/catalog`
-- `npm run test -w @lemma/catalog` (includes `checkCatalog` on the committed catalog)
+- `mcp-server-payment-gating@0.1.0-skeleton`
+- `mcp-client-paying-client@0.1.0-skeleton`
 
-## Security constraints
+Both releases define profiles, fixtures, and acceptance recipes, but their payloads are placeholders and they cannot be sold. `node-service.add-payment-facilitator` intentionally has no release so the no-release path remains covered.
 
-- Require explicit license and provenance fields.
-- Reject mutable source references for publishable releases.
-- Hash every payload and acceptance recipe.
-- Forbid arbitrary command strings, remote downloads, absolute paths, and secret-bearing fixtures.
-- Keep benchmark evidence distinct from marketing claims.
+## Development
 
-## Later completion criteria
+```bash
+npm run build -w @lemma/catalog
+npm run test -w @lemma/catalog
+```
 
-The catalog is complete for the MVP when at least two releases have valid manifests, signed payload digests, exact and negative fixtures, deterministic acceptance recipes, provenance reviews, expiry rules, and frozen benchmark evidence.
+Catalog tests replay every fixture and run the committed catalog through the full integrity checker.

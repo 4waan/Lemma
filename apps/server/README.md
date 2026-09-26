@@ -1,149 +1,95 @@
 # Lemma Server
 
-## Purpose and economic role
+`@lemma/server` hosts the remote MCP endpoint, deterministic resolver, durable resolution state, dashboard APIs, and built web application. It receives typed repository profiles, not repository source.
 
-The server will convert a safe task and repository profile into a free preview or a paid Compatibility Resolution. It is the remote coordination boundary between the buyer bridge, the curated catalog, x402 settlement, warranty vouchers, adoption receipts, and the public dashboard.
+Free preview, recovery, persistence, read APIs, demand aggregation, and dashboard serving are implemented. The x402 facilitator and paid tool registrar remain pending.
 
-The server does not make open-source code scarce. It charges for a verified, context-specific integration route and the warranty attached to it.
+## Run locally
 
-## Responsibilities
+Start with an in-memory store:
 
-- Host the Streamable HTTP MCP endpoint.
-- Evaluate deterministic compatibility rules against the curated catalog.
-- Return free no-match and preview results.
-- Protect paid resolution tools with x402.
-- Host the Arbitrum Sepolia facilitator endpoints.
-- Persist previews, payment receipts, resolutions, warranty vouchers, and adoption receipts.
-- Serve read-only dashboard APIs and the built web assets.
-- Sign provider vouchers only after successful payment settlement.
-- Support idempotent recovery after a lost paid response.
+```bash
+npm run dev -w @lemma/server
+```
 
-## Outside this boundary
+Build and run the production entrypoint:
 
-- Reading the buyer's repository directly.
-- Holding the buyer private key.
-- Applying patches to a buyer workspace.
-- Executing arbitrary buyer repositories.
-- Letting a model authorize payment.
-- Adjudicating warranty failures with the provider signing key.
+```bash
+npm run build -w @lemma/server
+npm run start -w @lemma/server
+```
 
-## Interfaces
+Set `DATABASE_URL` to use Postgres. Apply migrations before starting a Postgres-backed server:
 
-Implemented:
+```bash
+npm run db:migrate -w @lemma/server
+```
 
-- `POST /mcp`: stateless Streamable HTTP with JSON responses. Each request gets a new MCP server and transport.
-  - `GET` and `DELETE` return 405, so no idle SSE stream is ever held.
-  - Requests with an `Origin` header come from a browser and are refused.
-  - Tools:
-    - `lemma_preview`: input `PreviewInput`, output `PreviewResult`. A preview that carries an offer is stored before it is returned. If storing fails, the tool returns a text-only error.
-    - `lemma_recover_resolution`: input `RecoverInput`, output `ResolutionDelivery`. It is free and registered even when paid tools are off (deployment.md rollback), and returns settled resolutions only.
-    - Paid tools are added by the payment work's registrar, and only with `PAID_TOOLS=on`.
-- `GET /api/v1/releases`: every release with its digest, base digest and source. `max-age=60`, because sellability changes with time.
-- `GET /api/v1/interest`: per-capability interest sets. The `ETag` is the catalog digest, so the bridge revalidates for free.
-- `GET /api/v1/releases/:digest`: one release manifest, from the catalog or, for a release a redeploy dropped, from the store. Immutable and cacheable forever; the bridge checks the digest itself and reads the acceptance recipe from it.
-- `GET /api/v1/releases/:digest/base-probe`: modify and delete targets with their base digests. They are immutable and cacheable forever.
-- `GET /api/v1/resolutions/:id`: a public view of a resolution (state, release, payload digest, terms, receipt outcome). It never includes the preview id, which is the recovery secret, the buyer, or the bundle.
-- `POST /api/v1/adoption-receipts`: body `{ receipt, previewId }`. The preview id is the recovery secret, known only to the buyer's bridge, so only the buyer can submit; a resolution id alone, which is public, is answered as unknown. Accepted only for a settled resolution, with `recordedAt` no more than five minutes before its creation or after the server's clock, and only once (first write wins). A receipt stays `verified: false` until the payment work checks its signature. A store failure answers 500, so the bridge retries.
-- `GET /api/v1/demand`: closed-day demand buckets with at least five distinct repositories and at least five distinct client addresses, each with its parsed key (core `DemandView`).
-- `GET /api/v1/catalog`: the dashboard's catalog (core `CatalogView`): per profile, whether it can be sold and why not, its evidence, the all-in reduction at the list price after chain cost, and `maxPriceFor`. Computed at request time, `max-age=60`.
-- `GET /api/v1/status`: network, catalog, whether purchases and provisional evidence are on, the economics status and the store (core `StatusView`).
-- `GET /healthz`
-- `GET /` and `GET /assets/:name`: the built dashboard (`apps/web/dist`), when present. Only regular files with Vite's hashed names and an allowlisted extension are served, never through a link. The page gets a CSP that allows only this origin's scripts, styles and API; every other response gets `default-src 'none'`.
+The server refuses to listen when configuration, catalog validation, provider ownership, production evidence policy, paid-tool registration, database schema, or catalog persistence is invalid.
 
-Planned:
+## MCP interface
 
-- `/facilitator/supported`, `/facilitator/verify` and `/facilitator/settle` (payment work)
+`POST /mcp` uses stateless Streamable HTTP with JSON responses. Each request receives a fresh MCP server and transport. Browser origins, batches, `GET`, and `DELETE` are rejected.
 
-## Persistence and the payment seam
+Implemented tools:
 
-`DATABASE_URL` selects Postgres (`PgStore`, drizzle over postgres.js). Without it, development uses a memory store. One contract suite runs against the memory store and PGlite. A CI job runs the race test on real Postgres.
+- `lemma_preview`: resolves `PreviewInput` and stores an offer-bearing preview before returning it.
+- `lemma_recover_resolution`: returns a settled `ResolutionDelivery` for the buyer holding the preview secret. It remains available when paid tools are disabled.
 
-| Table | Rule |
+The pending payment integration registers `lemma_buy_resolution` per request when `PAID_TOOLS=on`.
+
+## HTTP API
+
+| Route | Purpose |
 | --- | --- |
-| `releases`, `bundles`, `catalog_snapshots` | Immutable copies keyed by digest, upserted at startup, so a redeploy never strands an offer or a recovery. |
-| `previews` | Offer-bearing previews only. They are purged a day after expiry unless a settled resolution needs them. |
-| `resolutions` | One row per `deriveResolutionId(previewId, payer)`: `prepared → settled`, or `expired` by the reconciler, after which a new payment re-arms it. One authorization (payer and nonce) backs one row, and one settlement settles one row (unique indexes). Rows that expired unpaid are purged with their previews. |
-| `adoption_receipts` | One per settled resolution, submitted by the buyer, unverified until signed. |
-| `demand_seen`, `demand_salts`, `demand_daily` | Every preview adds its profile digest, salted with a daily secret, and its client address, keyed with `DEMAND_SOURCE_KEY` (held outside the database) and then salted, to its bucket. Recording and closing a day take a per-day advisory lock (shared and exclusive), so a close waits for in-flight writes and a later write sees the day closed: nothing is counted twice, and no salt is created for a closed day. When the day closes, each bucket collapses to two counts in one statement that deletes what it counts; the salt and digests are deleted. Each day closes on its own, with a five-minute statement limit instead of the five seconds requests get; a day too large to close in five minutes would fail on every hourly run and needs batching. |
+| `GET /api/v1/releases` | Release identities, digests, base digests, and provenance. |
+| `GET /api/v1/interest` | Dependency names the bridge may include for each capability. |
+| `GET /api/v1/releases/:digest` | Immutable release manifest used by bridge verification. |
+| `GET /api/v1/releases/:digest/base-probe` | Local drift targets and expected base digests. |
+| `GET /api/v1/resolutions/:id` | Public resolution state without buyer or recovery secret. |
+| `POST /api/v1/adoption-receipts` | First-write-wins outcome submission from the buyer. |
+| `GET /api/v1/demand` | Privacy-thresholded, closed-day demand buckets. |
+| `GET /api/v1/catalog` | Dashboard catalog with evidence and sellability. |
+| `GET /api/v1/status` | Network, catalog, economics, purchase, and store status. |
+| `GET /healthz` | Process health. |
+| `GET /` and `GET /assets/:name` | Built dashboard when `apps/web/dist` is present. |
 
-`ResolutionService` is the seam the payment work wraps x402 around:
+Planned facilitator routes are `/facilitator/supported`, `/facilitator/verify`, and `/facilitator/settle`.
 
-- `quote(previewId)` returns the stored offer's exact `PaymentTerms`, for building `accepts`.
-- `prepare(previewId, { payer, nonce, validBefore })` runs inside the paid tool's handler, with values from the verified payment payload, never from tool arguments.
-  - It writes one `prepared` row with a single conditional insert.
-  - A second payment for the same resolution gets `IN_FLIGHT` or `ALREADY_SETTLED`, and an authorization that already backs another resolution gets `PAYMENT_REUSED`. The wrapper must answer `isError`, which makes x402 cancel that settlement.
-- `commit(resolutionId, { nonce, settlementRef })` runs after settlement and never throws. It settles only the row that still holds that authorization.
-- `listUnsettled(before)` and `expire(resolutionId, nonce)` are for the settlement reconciler. `expire` takes the nonce the reconciler checked and changes nothing unless the row still holds it and its window has closed, so a stale decision never lands on a re-armed row.
-- `recover(previewId, buyer)` backs the free recovery tool.
+## Persistence lifecycle
 
-The payment work registers its paid tool through `createApp({ registerPaidTools })`: `(server, service, { message })` runs for every request on that request's new MCP server, with the request's parsed JSON-RPC message, so the registrar can read the preview id a paid call names and build `accepts` from `service.quote(previewId)`. It may be async: the server awaits it before dispatching the request, and a failure in it answers 500. Store failures reach it as a `StoreError` that carries only a code.
+Catalog objects are immutable and stored by digest so a deployment cannot strand an existing offer. Offer-bearing previews expire unless a settled resolution still needs them.
 
-`POST /api/v1/adoption-receipts` answers `ACCEPTED` (201) or `DUPLICATE` (409), both final; `NOT_SETTLED` (409) and `TOO_EARLY` (425, a `recordedAt` more than 5 minutes ahead of the server) are worth retrying later; `UNKNOWN_RESOLUTION` (404) and `MISMATCH` (422) never succeed.
+Resolutions move from `prepared` to `settled`, or to `expired` through reconciliation. Unique constraints prevent one payment authorization from backing multiple resolutions or one resolution from settling twice.
 
-Migrations live in `drizzle/`, generated from `src/db/schema.ts` with `npm run db:generate -w @lemma/server`. `npm run db:migrate -w @lemma/server` applies them. The server refuses to start while the database schema is behind the build.
+Adoption receipts are accepted only for settled resolutions and require the preview secret. They remain unverified until the payment lane checks the buyer signature.
 
-## Startup checks
-
-`src/main.ts` refuses to listen unless all of these hold:
-
-- the environment is valid (`src/config.ts`)
-- `checkCatalog()` reports no problem
-- every release that can be sold pays the configured `PROVIDER_ADDRESS`
-- `ALLOW_PROVISIONAL_EVIDENCE` is not set in production
-- paid tools are off, until the payment work's registrar is part of the build
+For the complete state transitions, locking rules, demand privacy model, and failure behavior, see [Server Runtime](../../docs/server-runtime.md).
 
 ## Configuration
 
-| Variable | Default | Meaning |
+| Variable | Default | Purpose |
 | --- | --- | --- |
 | `PORT` | `3000` | Listening port. |
-| `ARBITRUM_SEPOLIA_CHAIN_ID` | `421614` | Must be 421614. |
-| `USDC_ADDRESS` | Arbitrum Sepolia USDC | Must be that contract. Checksummed input is normalized. |
-| `PROVIDER_ADDRESS` | none | The only `payTo` the server quotes for. Required once any release can be sold. |
-| `PAID_TOOLS` | `off` | `on` registers the paid tools. |
-| `ALLOW_PROVISIONAL_EVIDENCE` | `false` | Loads the testnet-only provisional overlay. Refused in production. |
-| `OFFER_TTL_SECONDS` | `900` | Offer window, 60 to 3600. The offer is also capped by release expiry and evidence staleness. |
-| `PAYMENT_TIMEOUT_SECONDS` | `300` | x402 authorization window, 30 to 600. |
-| `DASHBOARD_ORIGIN` | none | The only origin allowed cross-origin reads of `/api/v1/*`. |
-| `TRUSTED_PROXY_HOPS` | `0` | Proxies that append to `X-Forwarded-For` (Railway: `1`). Rate limits key on the address the outermost trusted proxy appended. |
-| `RATE_LIMIT_PER_MINUTE` | `60` | Token bucket per client, on `/mcp` and `/api/v1/*`. |
-| `DATABASE_URL` | none | Required in production. Any `postgres://` or `postgresql://` connection string postgres.js accepts. |
-| `DEMAND_SOURCE_KEY` | random per process | Required in production: at least 32 characters, the same across restarts and replicas. Keys client addresses in demand counts; it is never stored in the database. |
+| `DATABASE_URL` | Memory store | Postgres connection; required in production. |
+| `ARBITRUM_SEPOLIA_CHAIN_ID` | `421614` | Fixed MVP chain. |
+| `USDC_ADDRESS` | Arbitrum Sepolia USDC | Fixed settlement asset. |
+| `PROVIDER_ADDRESS` | unset | Required when a release becomes sellable. |
+| `PAID_TOOLS` | `off` | Enables the registered paid tools. |
+| `ALLOW_PROVISIONAL_EVIDENCE` | `false` | Loads the testnet-only catalog overlay; refused in production. |
+| `OFFER_TTL_SECONDS` | `900` | Offer lifetime, bounded from 60 to 3600 seconds. |
+| `PAYMENT_TIMEOUT_SECONDS` | `300` | Payment authorization lifetime, bounded from 30 to 600 seconds. |
+| `DASHBOARD_ORIGIN` | unset | Sole allowed cross-origin reader of `/api/v1/*`. |
+| `TRUSTED_PROXY_HOPS` | `0` | Trusted `X-Forwarded-For` appenders. Use `1` on Railway. |
+| `RATE_LIMIT_PER_MINUTE` | `60` | Per-client token bucket for MCP and API routes. |
+| `DEMAND_SOURCE_KEY` | Random per process | Stable secret required in production for demand address keys. |
 
-## Workspace dependencies
+The payment lane will add RPC, facilitator, provider signing, and warranty-registry configuration. Server secrets must never enter browser-prefixed variables or API responses.
 
-- `@lemma/core` for shared schemas and identifiers.
-- `@lemma/catalog` for curated releases and fixtures.
-- Hono for HTTP routing.
-- MCP and x402 SDKs for paid tools.
-- viem for Arbitrum interactions.
-- Drizzle and Postgres for persistence.
+## Tests
 
-## Environment variables
+```bash
+npm run test -w @lemma/server
+```
 
-Server work will eventually require `DATABASE_URL`, `PUBLIC_BASE_URL`, `ARBITRUM_SEPOLIA_RPC_URL`, provider and facilitator roles, the USDC address, and the deployed warranty registry address.
-
-Never add private values to browser-prefixed variables or API responses.
-
-## Development and tests
-
-- `npm run dev -w @lemma/server` (watches `src/main.ts`)
-- `npm run build -w @lemma/server`, then `npm run start -w @lemma/server`
-- `npm run test -w @lemma/server`: a real MCP client drives the Hono app in-process, and every catalog fixture is replayed over HTTP. The persistence contract suite runs on memory and PGlite. `LEMMA_TEST_DATABASE_URL=postgres://… npx vitest run apps/server/test/postgres.test.ts` runs the concurrency test on real Postgres.
-
-Compilation and scaffold tests require no environment values.
-
-## Security constraints
-
-- Validate every request with explicit schemas and size limits.
-- Allow only the configured chain, token, payment scheme, amounts, and provider destination.
-- Use parameterized database operations.
-- Do not return internal stack traces in production.
-- Apply restrictive CORS, rate limits, timeouts, and security headers.
-- Store resolution identifiers as high-entropy values.
-- Treat settlement timeout as an indeterminate state that requires reconciliation.
-- Run a single facilitator replica until pending settlement state is moved to shared storage.
-
-## Later completion criteria
-
-This component is complete when a remote MCP client can preview for free, settle one bounded x402 payment, recover the same resolution without duplicate payment, obtain a provider-signed warranty voucher, and observe the corresponding records through a read-only API.
+The suite drives the Hono app through a real MCP client, replays every catalog fixture, and runs the persistence contract against memory and PGlite. Run the concurrency suite against Postgres with `LEMMA_TEST_DATABASE_URL` when validating database changes.

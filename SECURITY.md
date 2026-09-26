@@ -1,77 +1,107 @@
 # Security Policy
 
-Lemma handles payment authorization, private keys, repository metadata, generated patches, and eventually USDC bond accounting. Treat every boundary as hostile until it is validated.
+Lemma handles repository metadata, generated patches, acceptance commands, payment authorization, private keys, and eventually provider bond accounting. Treat every component boundary as hostile until typed validation and local policy approve the operation.
 
-## Scaffold status
+## Supported environment
 
-This repository is an unaudited scaffold. It does not currently process funds or expose production services. Do not use it with mainnet assets.
+Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, and benchmark surfaces are implemented. Real payment signing, the x402 facilitator, and the warranty contract are not complete.
+
+Do not use Lemma with mainnet assets or production signing keys. Use disposable Arbitrum Sepolia identities and public or synthetic repositories while developing the paid path.
+
+## Implemented controls
+
+### Repository access
+
+- The bridge reads an allowlist of package manifests and lockfiles to create a typed profile.
+- Catalog interest sets limit which dependency names leave the machine.
+- Paths are canonicalized and confined to the configured workspace.
+- Parent traversal, absolute paths, symbolic links, protected files, unsafe package paths, and unsupported binary writes are rejected.
+- Base probes detect local drift before purchase without uploading file contents.
+
+### Patch application
+
+- Release manifests and bundles are parsed and checked by digest.
+- Preview mode is the default and performs no writes.
+- Exact application uses a durable journal, staged content, base-file checks, and rollback.
+- A competing or unfinished apply blocks new work in the same lockfile-owning repository.
+- Dependency installs disable lifecycle scripts and remove wallet and Lemma secrets from their environment.
+- Acceptance recipes map to reviewed package scripts and safe argument arrays. They never execute catalog-provided shell strings.
+- Acceptance output is bounded and digested rather than returned to the model.
+
+See [Bridge Runtime](docs/bridge-runtime.md) for the process and crash-recovery model.
+
+### Server and browser
+
+- MCP, API, catalog, and persisted data cross strict schemas.
+- Request bodies, request duration, and per-client rate are bounded.
+- Browser origins are refused on the MCP endpoint. Dashboard API CORS uses a configured allowlist.
+- The server returns typed public views without buyer addresses, preview secrets, bundles, or internal errors.
+- Database access uses Drizzle and parameterized queries.
+- Security headers and a same-origin Content Security Policy protect the dashboard.
+- The dashboard parses every response and uses React escaping only. Outbound links are reconstructed from validated GitHub provenance.
+- The production bundle check rejects inline code, foreign assets, and source maps.
+
+### Catalog and evidence
+
+- Catalog startup fails on invalid schemas, mutable provenance, digest drift, unsafe files, unbounded dependency ranges, incomplete fixtures, or invalid pricing.
+- Public releases cannot carry provisional evidence.
+- Evidence is bound to a run-set digest and base release.
+- No-match and unsupported profiles cannot carry an offer.
+
+### Secrets and supply chain
+
+- CI typechecks source and tests, runs the test suite and production build, builds and tests Foundry, and scans Git history with gitleaks.
+- The local hook scans staged changes when gitleaks is installed.
+- GitHub Actions and the scanner are pinned.
+- Container builds exclude environment files, Git history, run records, local build output, and development dependencies.
+- Redaction helpers scrub credential-shaped values from errors and run records.
 
 ## Secret handling
 
-- Keep all private keys and service credentials in local environment files or the deployment secret manager.
-- Never expose server secrets through Vite environment variables, browser bundles, HTML, logs, errors, or source maps.
-- Use distinct keys for buyer, provider, facilitator, evaluator, and deployer roles.
-- Use throwaway testnet wallets during development.
-- Redact payment authorizations, signed transactions, salts, private keys, and full environment values from logs and run records.
-- Rotate a secret before removing it from Git history if it is ever committed.
+- Keep private keys and service credentials in a scoped secret manager or signer process.
+- Use separate buyer, provider, facilitator, evaluator, and deployer identities.
+- Never place credentials in prompts, MCP content, command arguments, browser variables, dashboard data, logs, benchmark records, source maps, catalog fixtures, or container layers.
+- Do not keep a buyer key in the bridge environment. Child installs and tests may read their ancestor's startup environment through operating-system process interfaces.
+- A file readable by the same user is not isolation from an acceptance test. Prefer a hardware signer, remote signer, or process running as another user.
+- Rotate a leaked secret before removing it from Git history.
 
-## Repository access
+## Pending payment controls
 
-The local bridge will default to reading only approved manifest and lock files. It must not upload source files, environment files, wallet files, SSH material, Git internals, or arbitrary directory content.
+The paid path must preserve these requirements before it is enabled:
 
-Any path supplied to the bridge must be canonicalized and verified to remain inside the configured workspace root. Reject absolute paths, parent traversal, symlinks, binary patch targets, and protected paths.
+- Accept only x402 v2 on `eip155:421614` with the configured Arbitrum Sepolia USDC contract and provider address.
+- Compare every payment challenge field with the stored quote.
+- Enforce the per-resolution cap, daily cap, authorization lifetime, and committed-spend reservation before signing.
+- Derive an EIP-3009 nonce from secret and public resolution inputs rather than using the public resolution id alone.
+- Treat settlement timeouts as indeterminate and reconcile before retrying.
+- Keep resolution preparation, settlement, delivery, and recovery idempotent.
+- Verify buyer receipt signatures before using them for compatibility history or warranty outcomes.
 
-## Patch application
+## Pending contract controls
 
-- Verify the provider signature and payload digest before previewing or applying a resolution.
-- Default to preview mode.
-- Require an explicit apply request for mutations.
-- Detect changes between the previewed base files and current workspace state.
-- Apply atomically or leave the workspace unchanged.
-- Never execute a command embedded as an arbitrary string in a catalog payload.
-- Map acceptance recipe identifiers to reviewed argument arrays and resource limits.
+The warranty registry must include EIP-712 domain separation, replay protection, expiry, pause controls, pull-based withdrawals, and reentrancy protection.
 
-## Web and API security
+Provider withdrawals cannot consume bond reserved for active resolutions. Release deactivation cannot invalidate an active warranty. The accounting invariant is:
 
-The server implementation must include strict input schemas, request and response size limits, timeouts, rate limits, secure error handling, a restrictive CORS allowlist, and security headers.
+```text
+USDC balance >= available bond + reserved bond + withdrawal credits
+```
 
-Planned headers include:
-
-- Content Security Policy with scripts and connections restricted to approved origins.
-- Strict Transport Security in production.
-- `X-Content-Type-Options: nosniff`.
-- `X-Frame-Options: DENY`.
-- `Referrer-Policy: strict-origin-when-cross-origin`.
-- `Cache-Control: no-store` for sensitive responses.
-
-All state-changing browser endpoints will require origin validation and CSRF protection if cookie authentication is introduced. Database access must use parameterized queries through the selected query layer.
-
-## Facilitator and payment safety
-
-- Accept only `eip155:421614`, the exact payment scheme, the configured USDC contract, approved destinations, and bounded amounts.
-- Enforce spending limits in bridge code before the buyer signs anything.
-- Treat settlement timeouts as indeterminate and reconcile them before retrying.
-- Make paid resolution creation and recovery idempotent.
-- Never derive payment permission from model text alone.
-
-## Contract safety
-
-The warranty contract must use domain-separated typed signatures, replay protection, expiry, pull-based withdrawals, reentrancy protection, pause controls, and an explicit solvency invariant.
-
-Provider bond accounting must prevent withdrawal of reserved funds. Release deactivation must not invalidate existing warranties.
+Unit, fuzz, and invariant tests must cover six-decimal accounting and the complete activation, pass, failure, expiry, and withdrawal state machine before deployment.
 
 ## Dependency and release checks
 
 Before a public release:
 
-1. Run the TypeScript, Vitest, Foundry, fuzz, and invariant suites.
-2. Audit runtime dependencies.
-3. Scan the full Git history and staged changes for secrets.
-4. Review generated container contents for credentials and development artifacts.
-5. Verify deployed bytecode and record contract addresses and compiler settings.
+1. Run `npm run verify`, catalog validation, and the Foundry unit, fuzz, and invariant suites.
+2. Run gitleaks over full history and staged changes.
+3. Audit runtime dependencies and review unresolved advisories.
+4. Inspect the final container and dashboard bundle for credentials and development artifacts.
+5. Verify deployed bytecode and publish compiler settings, constructor arguments, addresses, transaction hashes, and the source commit.
+6. Exercise free preview, payment, lost-response recovery, warranty activation, pass, failure refund, and withdrawal on testnet.
 
-The scaffold currently pins `@cursor/sdk@1.0.32` for benchmarks. Its transitive `undici@5.29.0` has published denial-of-service and HTTP parsing advisories with no compatible upstream fix reported by npm. The SDK is a development-only dependency and is pruned from the production image. Recheck and upgrade it before running benchmarks against untrusted endpoints.
+The benchmark SDK is a development-only dependency and is pruned from the production image. Run benchmarks only against trusted endpoints and review its transitive advisories before every measured experiment.
 
 ## Reporting a vulnerability
 
-Do not open a public issue containing exploit details or secrets. Contact the project maintainers privately with the affected component, reproduction steps, impact, and suggested containment. No formal bounty program exists during the scaffold phase.
+Do not open a public issue containing exploit details, repository data, or secrets. Contact the maintainers privately with the affected component, reproduction steps, impact, and suggested containment. Lemma does not currently offer a vulnerability bounty.

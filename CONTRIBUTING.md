@@ -25,7 +25,7 @@ Do not duplicate a schema independently across applications.
 
 ## Development workflow
 
-1. Install with Node 22 (`nvm use` reads `.nvmrc`), then run `npm install` and `npm run hooks:install` once per clone.
+1. Install with Node 22 (`nvm use` reads `.nvmrc`), then run `npm ci` and `npm run hooks:install` once per clone.
 2. Create a local `.env` only when a task requires it.
 3. Add or update tests with every behavior change.
 4. Run `npm run verify` (type checking, tests, and the production build) and the relevant Foundry checks.
@@ -41,7 +41,7 @@ Use one branch per pull request, named `<area>/<topic>` (for example `core/schem
 
 ## Documentation expectations
 
-When a public interface changes, update the owning component README and the relevant file under `docs`. Record economic claims with their evidence source and measurement date.
+When a public interface changes, update the owning component README and the cross-component document listed in `docs/README.md`. Record economic claims with their evidence source and measurement date. Keep the root README focused on product orientation, current status, and the developer entry path.
 
 ## Pull request checklist
 

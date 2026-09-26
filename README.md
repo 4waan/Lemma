@@ -1,140 +1,134 @@
 # Lemma
 
-Lemma is a compatibility and reuse layer for coding agents. It helps an agent decide whether verified prior integration work fits the repository in front of it, purchase the exact resolution through x402, and adopt it with evidence and bounded financial recourse.
+**Verified integration work for coding agents.**
 
-> Current status: compile-ready scaffold. Payment, matching, persistence, MCP tools, and warranty contracts are intentionally not implemented yet.
+Coding agents repeatedly solve the same integration problems, but copying an old implementation is not enough. The agent still needs to know whether that implementation fits the current repository, whether its dependencies are compatible, whether applying it is safe, and whether buying the result costs less than rebuilding it.
 
-## Product thesis
+Lemma turns reviewed integration work into compatibility-aware releases. An agent can request a free preview, receive a deterministic reuse decision, purchase a matching resolution through x402, apply it locally, and record whether it passed the release's acceptance test.
 
-Open-source code makes implementations available, but availability does not answer whether a release fits a specific repository, whether it still works with pinned dependencies, or whether adapting it will cost less than rebuilding it. Lemma sells that missing compatibility resolution.
+Lemma is for teams that run coding agents and want reuse to be measurable, bounded, and inspectable instead of another source of generated code.
 
-The product has three economic objects:
+## The product model
 
-1. **Capability Release:** A versioned reusable integration capability with supported profiles, evidence, provenance, license terms, acceptance tests, price, and expiry.
-2. **Compatibility Resolution:** A context-bound recommendation and executable integration bundle for one task, repository profile, buyer, and release.
-3. **Adoption Receipt:** A signed passed, failed, or abandoned outcome that updates compatibility history and can trigger warranty settlement.
+- A **Capability Release** packages a narrow integration, its supported repository profiles, provenance, patch bundle, acceptance recipe, price, evidence, and warranty terms.
+- A **Compatibility Resolution** binds one release to one task, repository profile, buyer, payment, and recoverable payload.
+- An **Adoption Receipt** records whether the applied resolution passed, failed, or was abandoned. Verified outcomes can inform compatibility history and warranty settlement.
 
-The buyer is not paying for ownership of open-source code. The buyer pays for verified applicability, a ready integration path, reduced agent work, and a bonded warranty for eligible failures.
+The code remains open. The paid product is the verified answer that a specific release applies here, together with a ready integration path and bounded recourse when an eligible failure is confirmed.
 
-## Planned flow
+## How Lemma works
 
-1. A user connects the local Lemma MCP bridge to a coding agent.
-2. The bridge reads a privacy-safe repository profile and requests a free preview.
-3. The resolver returns `reuse`, `adapt`, `build`, or `decline` with evidence and expected savings.
-4. A local spend policy decides whether a quoted resolution may be purchased.
-5. The bridge pays through x402 using Arbitrum Sepolia USDC.
-6. The server returns a signed Compatibility Resolution and recoverable patch bundle.
-7. The bridge previews or applies the patch and runs its pinned acceptance recipe.
-8. Adoption evidence is recorded. A confirmed eligible failure is refunded from the provider bond.
-
-## Architecture
-
-- `apps/server` will host the remote MCP server, deterministic resolver, x402 facilitator, receipt API, and dashboard API.
-- `apps/bridge` will be the local stdio MCP process. It will hold the buyer signer, scan safe repository metadata, enforce spending policy, and apply verified patches.
-- `apps/web` will present releases, resolutions, warranties, receipts, and benchmark evidence.
-- `packages/core` will own schemas, canonical hashing, identifiers, and shared policies.
-- `packages/catalog` will own curated Capability Release manifests and compatibility fixtures.
-- `packages/benchmark` will run the frozen control and treatment experiment through the Cursor agent SDK (`@cursor/sdk`).
-- `contracts` will contain the Arbitrum Sepolia warranty registry.
-- `docs` records the decisions that must remain consistent across those components.
-- `ops` contains the container and Railway deployment scaffold.
-
-## Repository map
-
-```text
-apps/       Deployable and locally executed applications
-packages/   Shared domain, catalog, and benchmark libraries
-contracts/  Isolated Foundry project for warranty settlement
-docs/       Architecture, economics, security, benchmark, and demo specifications
-ops/        Container and Railway configuration
+```mermaid
+flowchart LR
+    A[Coding agent] --> B[Local MCP bridge]
+    B -->|Safe repository profile| C[Lemma server]
+    C --> D[Deterministic catalog resolver]
+    D -->|Free preview| B
+    B -->|Policy-approved purchase| E[x402 and USDC on Arbitrum]
+    E --> C
+    C -->|Resolution and patch bundle| B
+    B -->|Preview, apply, verify| F[Buyer repository]
+    B -->|Adoption receipt| C
+    C --> G[Dashboard and evidence]
+    E -. warranty activation .-> H[Warranty registry]
 ```
 
-## Requirements
+The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. Repository source and buyer credentials do not belong on the hosted server.
+
+The server owns deterministic matching, recoverable resolution state, catalog and dashboard APIs, privacy-thresholded demand data, and the persistence seam that the paid path will wrap.
+
+## Why Arbitrum
+
+Lemma needs a cheap, programmable settlement layer because a resolution can cost less than a typical software subscription. Arbitrum Sepolia is the MVP network for three related actions:
+
+1. x402 payment in USDC for a Compatibility Resolution.
+2. Activation of a provider-funded warranty after settlement.
+3. An evaluator-confirmed pass or refundable failure outcome.
+
+The payment and warranty paths are not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that those paths must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+
+## Build status
+
+Lemma is an active MVP build. The compatibility path is substantially implemented; real payments and bonded warranties remain gated work.
+
+| Area | Status |
+| --- | --- |
+| Shared schemas, canonical digests, pricing, spending policy, and read models | Implemented and tested |
+| Catalog loader, integrity checks, fixtures, and deterministic resolver | Implemented with two preview-only skeleton releases |
+| Free MCP preview and resolution recovery | Implemented |
+| Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
+| Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
+| Dashboard views and production bundle checks | Implemented |
+| Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
+| x402 facilitator, paid MCP tool, signer integration, and settlement reconciliation | Pending |
+| Warranty registry, deployment scripts, and evaluator outcomes | Pending |
+| Public deployment, verified releases, benchmark evidence, and pilot | Pending |
+
+This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, deployed contract, or public revenue claim is made today.
+
+## Quickstart
+
+Requirements:
 
 - Node.js 22 or newer
 - npm 10 or newer
 - Foundry for Solidity builds and tests
-- Docker or another Compose-compatible runtime for local Postgres
-- An Arbitrum Sepolia RPC URL when chain work begins
+- Docker or another Compose-compatible runtime when testing Postgres
 
-## Install and verify
-
-From this directory:
+Install and run the repository checks:
 
 ```bash
-npm install
-npm run typecheck
-npm test
-npm run build
+npm ci
+npm run verify
+npm run catalog:check
 npm run contracts:build
 npm run contracts:test
 ```
 
-The initial scaffold does not require environment variables for compilation or tests.
+`npm run verify` typechecks source and tests, runs Vitest, builds every TypeScript workspace, and validates the production web bundle. Some process-isolation tests require Linux facilities such as `/proc` and network namespaces.
 
-## Common scripts
+Start the implemented applications in separate terminals:
 
-- `npm run build`: Compile every TypeScript project and produce the Vite bundle.
-- `npm run typecheck`: Validate all TypeScript project references.
-- `npm test`: Run all scaffold tests with Vitest.
-- `npm run dev:server`: Watch the server scaffold.
-- `npm run dev:bridge`: Watch the local bridge scaffold.
-- `npm run dev:web`: Start the Vite development server.
-- `npm run benchmark`: Run the compiled benchmark entrypoint after the harness exists.
-- `npm run contracts:build`: Build the isolated Foundry package.
-- `npm run contracts:test`: Run Foundry tests.
+```bash
+npm run dev:server
+npm run dev:web
+npm run dev:bridge
+```
 
-## Environment setup
+The server uses an in-memory store when `DATABASE_URL` is absent. Copy `.env.example` to `.env` only when a workflow needs configured infrastructure. Never use the example database password outside local development.
 
-Copy `.env.example` to `.env` locally and fill only the roles needed for the component you are running. Never commit `.env`.
+## Repository map
 
-The planned system uses separate buyer, provider, facilitator, evaluator, and deployer roles. A production deployment must not reuse one private key across those roles. Browser code must never receive private keys, database credentials, RPC secrets, or the Cursor SDK key.
+```text
+apps/bridge/        Local stdio MCP server and repository authority boundary
+apps/server/        Hosted MCP endpoint, resolver APIs, persistence, and dashboard host
+apps/web/           Read-only React dashboard
+packages/core/      Versioned schemas, identifiers, pricing, policy, and read models
+packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
+packages/benchmark/ Controlled agent experiments and evidence derivation
+contracts/          Foundry project for the pending warranty registry
+docs/               Architecture, protocol, economics, security, and delivery decisions
+ops/                Container and Railway configuration
+```
 
-Local Postgres can be started from `compose.yaml`. The included username and password are public local-development defaults and must not be used outside a developer machine.
+Each workspace README explains how to develop that component. Start with the [documentation guide](docs/README.md) when changing behavior across more than one boundary.
 
-## MVP boundary
+## Roadmap to submission
 
-The hackathon MVP will include:
+The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
 
-- A curated catalog of TypeScript MCP and x402 integration releases.
-- A deterministic compatibility resolver.
-- A local MCP bridge with code-enforced spending limits.
-- A self-hosted x402 facilitator for Arbitrum Sepolia.
-- USDC resolution payments and a bonded warranty contract.
-- A dashboard and a paired benchmark run through the Cursor agent SDK.
-
-It will not include:
-
-- A tradable token or NFT.
-- Open provider registration.
-- Auctions, dynamic pricing, or retroactive rewards.
-- A Jev runtime dependency.
-- Uploading private repository source by default.
-- Arbitrary remote execution of buyer repositories.
-- Production custody or claims of production security.
-
-## Planned capability releases
-
-The first catalog will cover:
-
-1. Adding x402 payment gating to a TypeScript MCP server.
-2. Adding an x402-paying MCP client with hard spending limits.
-3. Adding an Arbitrum Sepolia x402 facilitator to a Node and Hono service.
-
-Only profiles backed by a compatible fixture and acceptance recipe may be sold. Unsupported profiles must return a free no-match decision.
-
-## Hackathon build sequence
-
-1. Freeze shared schemas, repository profiles, and capability fixtures.
-2. Implement the deterministic resolver and the first two releases.
-3. Implement and test the warranty registry.
-4. Implement the facilitator and paid remote MCP path.
-5. Implement the local bridge, spend controls, recovery, and patch safety.
-6. Add adoption verification and evaluator attestations.
-7. Deploy the contract, server, database, and dashboard.
-8. Run the frozen benchmark and one public-repository pilot.
-9. Publish evidence and record the final demo.
+1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
+2. Complete the x402 purchase path, idempotent settlement recovery, signer integration, and facilitator.
+3. Implement and test the warranty registry, including one pass and one refunded failure on Arbitrum Sepolia.
+4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
+5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
+6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.
 
 ## Documentation
 
-Start with [docs/README.md](docs/README.md). Security-sensitive work must also follow [SECURITY.md](SECURITY.md) and [docs/security-model.md](docs/security-model.md).
+- [Documentation guide](docs/README.md)
+- [Architecture](docs/architecture.md)
+- [Protocol](docs/protocol.md)
+- [Economics](docs/economics.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)

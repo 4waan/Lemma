@@ -13,6 +13,12 @@ bytecode_hash = "none"
 # Remappings come from remappings.txt only, so nested submodules of a dependency
 # (OpenZeppelin carries its own forge-std) can never change what an import resolves to.
 auto_detect_remappings = false
+# The deploy script reads build metadata and its own broadcast, and writes one record.
+fs_permissions = [
+    { access = "read", path = "./out" },
+    { access = "read", path = "./broadcast" },
+    { access = "read-write", path = "./deployments" },
+]
 
 [rpc_endpoints]
 arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"

@@ -26,7 +26,8 @@
     "catalog:check": "npm run catalog:check -w @lemma/catalog",
     "catalog:pack": "npm run catalog:pack -w @lemma/catalog --",
     "contracts:build": "cd contracts && forge build",
-    "contracts:test": "cd contracts && FOUNDRY_OFFLINE=true forge test"
+    "contracts:test": "cd contracts && FOUNDRY_OFFLINE=true forge test",
+    "contracts:rehearse": "bash contracts/script/rehearse-deploy.sh"
   },
   "devDependencies": {
     "@types/node": "26.6.2",

@@ -257,6 +257,36 @@ describe("the activator", () => {
     expect(w.chain.logs.filter((l) => l.name === "ResolutionActivated")).toHaveLength(1);
   });
 
+  it("reads a resend's nonce, checks the registry and sends inside the sender's queue, so another job's send cannot take the nonce in between", async () => {
+    const w = await warrantyWorld();
+    const b = await w.buy();
+    w.chain.mineOnSend = false;
+    w.chain.pendingVisible = false;
+    await w.jobs.activator.runOnce();
+    w.advance(30);
+    const order: string[] = [];
+    const nonces = w.chain.nonces.bind(w.chain);
+    let other: Promise<unknown> | undefined;
+    w.chain.nonces = async (sender) => {
+      order.push("resend reads its nonce");
+      // Another job (the expirer, say) sends from the same account right now.
+      const action = await w.store.getWarrantyAction(b.id, "activate");
+      other ??= w.chain
+        .send({ fn: "activateResolution", voucher: WarrantyVoucher.parse(action?.payload), signature: action?.signature as `0x${string}` }, { notAfter: new Date(8.64e15), clock: () => new Date(0) })
+        .then(() => order.push("other job sends"));
+      return nonces(sender);
+    };
+    const send = w.chain.send.bind(w.chain);
+    w.chain.send = async (call, options) => {
+      if (options.nonce !== undefined) order.push("resend sends");
+      return send(call, options);
+    };
+    expect(await w.jobs.activator.runOnce()).toMatchObject({ sent: 1 });
+    await other;
+    expect(w.chain.exclusiveCalls).toContain("provider");
+    expect(order).toEqual(["resend reads its nonce", "resend sends", "other job sends"]);
+  });
+
   it("backs off while the registry is paused and activates after", async () => {
     const w = await warrantyWorld();
     const b = await w.buy();

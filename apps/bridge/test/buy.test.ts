@@ -241,6 +241,24 @@ describe("lemma_buy_resolution in the bridge", () => {
     expect(w.signerLedger.entries()).toHaveLength(1);
   });
 
+  it("claims a buyer pass once a purchase settled, and sends it with later previews so demand counts this bridge as a buyer", async () => {
+    const w = await world();
+    await w.preview();
+    expect(w.inbox.buyerPass()).toBeUndefined();
+    await w.buy();
+    await w.preview();
+    const pass = w.inbox.buyerPass();
+    expect(pass).toMatch(/^0x[0-9a-f]{64}$/);
+    // Kept, and sent again without asking for it again.
+    const before = w.remote.requests;
+    await w.preview();
+    expect(w.inbox.buyerPass()).toBe(pass);
+    expect(w.remote.requests - before).toBeLessThanOrEqual(2);
+    await w.store.closeDemandDaysBefore("2099-01-01");
+    // One repository, previewed before and after buying: one profile, and one buyer from the previews that carried the pass.
+    expect((await w.store.demandBuckets(1)).map((b) => [b.profiles, b.buyers])).toEqual([[1, 1]]);
+  });
+
   it("recovers a lost answer for free and never pays twice", async () => {
     let drop = true;
     const w = await world({

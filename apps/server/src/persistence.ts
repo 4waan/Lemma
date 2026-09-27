@@ -57,6 +57,8 @@ export interface DemandBucket {
   readonly profiles: number;
   /** Distinct salted client addresses: a caller can make up profiles, but not as easily addresses. */
   readonly sources: number;
+  /** Distinct salted buyer passes: bridges that have bought before, which a caller cannot make up without paying. */
+  readonly buyers: number;
 }
 
 /** What re-arming an expired resolution did. */
@@ -383,9 +385,14 @@ export interface LemmaStore extends PreviewStore {
 
   /**
    * Adds one salted profile digest and one salted source to a bucket for its
-   * day. A day that is already closed is not reopened: a late write is dropped.
+   * day, and one salted buyer pass when the preview carried a valid one. A
+   * day that is already closed is not reopened: a late write is dropped.
    */
-  recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string): Promise<void>;
+  recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: string): Promise<void>;
+  /** Records a buyer pass by its digest; issuing the same pass again changes nothing. */
+  addBuyerPass(passDigest: Hex32): Promise<void>;
+  /** Whether a pass with this digest was ever issued. */
+  hasBuyerPass(passDigest: Hex32): Promise<boolean>;
   /**
    * Collapses every open day before `today` into counts and discards its salt
    * and digests. Safe to run twice or concurrently: each digest is counted by
@@ -493,7 +500,8 @@ export class MemoryStore implements LemmaStore {
   private events: RegistryEventRow[] = [];
   private readonly eventKeys = new Set<string>();
   private readonly salts = new Map<string, string>();
-  private readonly seen = new Map<string, { profiles: Set<string>; sources: Set<string> }>();
+  private readonly seen = new Map<string, { profiles: Set<string>; sources: Set<string>; buyers: Set<string> }>();
+  private readonly passes = new Set<string>();
   private readonly daily = new Map<string, DemandBucket>();
 
   private readonly newSalt: () => string;
@@ -653,7 +661,7 @@ export class MemoryStore implements LemmaStore {
     return true;
   }
 
-  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string): Promise<void> {
+  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: string): Promise<void> {
     if ([...this.daily.values()].some((b) => b.day === day)) return;
     let salt = this.salts.get(day);
     if (salt === undefined) {
@@ -661,10 +669,19 @@ export class MemoryStore implements LemmaStore {
       this.salts.set(day, salt);
     }
     const key = `${day}\n${bucket}`;
-    const sets = this.seen.get(key) ?? { profiles: new Set<string>(), sources: new Set<string>() };
+    const sets = this.seen.get(key) ?? { profiles: new Set<string>(), sources: new Set<string>(), buyers: new Set<string>() };
     sets.profiles.add(saltedDigest(salt, profileDigest));
     sets.sources.add(saltedDigest(salt, `source:${source}`));
+    if (buyer !== undefined) sets.buyers.add(saltedDigest(salt, `buyer:${buyer}`));
     this.seen.set(key, sets);
+  }
+
+  async addBuyerPass(passDigest: Hex32): Promise<void> {
+    this.passes.add(passDigest);
+  }
+
+  async hasBuyerPass(passDigest: Hex32): Promise<boolean> {
+    return this.passes.has(passDigest);
   }
 
   async closeDemandDaysBefore(today: string): Promise<number> {
@@ -674,7 +691,7 @@ export class MemoryStore implements LemmaStore {
       if (day >= today) continue;
       days.add(day);
       const existing = this.daily.get(key);
-      this.daily.set(key, { day, bucket, profiles: (existing?.profiles ?? 0) + sets.profiles.size, sources: (existing?.sources ?? 0) + sets.sources.size });
+      this.daily.set(key, { day, bucket, profiles: (existing?.profiles ?? 0) + sets.profiles.size, sources: (existing?.sources ?? 0) + sets.sources.size, buyers: (existing?.buyers ?? 0) + sets.buyers.size });
       this.seen.delete(key);
     }
     for (const day of days) this.salts.delete(day);

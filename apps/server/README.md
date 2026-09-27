@@ -35,6 +35,7 @@ Implemented tools:
 
 - `lemma_preview`: resolves `PreviewInput` and stores an offer-bearing preview before returning it. For a matched release whose capability has a cached ERC-8004 record, the result's `_meta["lemma/reputation"]` (core `REPUTATION_META_KEY`) is `{ passBps, count }`. `PreviewResult` itself does not change.
 - `lemma_recover_resolution`: returns a settled `ResolutionDelivery` for the buyer holding the preview secret. It remains available when paid tools are disabled.
+- `lemma_claim_buyer_pass`: input `{ previewId, buyer }` like recovery; for a settled purchase it returns `{ buyerPass }`, the same pass every time. `lemma_preview` accepts it as `buyerPass`, and demand counts such previews as a buyer's. Answers `NOT_FOUND`, `IN_FLIGHT` or `UNAVAILABLE` as errors.
 - `lemma_buy_resolution` (paid, registered per request only with `PAID_TOOLS=on`): input core `BuyInput` `{ previewId, claimHash }`, paid with x402 in `_meta["x402/payment"]`. It answers the `ResolutionDelivery` as JSON text and declares no output schema. A call that cannot be sold answers a refusal code and charges nothing.
 
 ## HTTP API
@@ -48,7 +49,7 @@ Implemented tools:
 | `GET /api/v1/resolutions/:id` | Public resolution state and its warranty (core `WarrantyView`, from the indexed registry events; null while the warranty pipeline is off), without the buyer, recovery secret, claim, or payment reference, and dated to the day only. `no-store`. |
 | `POST /api/v1/adoption-receipts` | First-write-wins outcome submission from the buyer: `{ receipt, previewId, agentId? }`, where `agentId` is the buyer's opted-in ERC-8004 agent. |
 | `POST /api/v1/warranty/withdrawals` | Credit relay from the buyer's bridge: core `WarrantyWithdrawalRequest` `{ resolutionId, claimSecret, to }`. Answers 202 with `{ resolutionId, state }`, the same for the same request, or a 4xx code that queues nothing. Refuses browser requests; rate limited, `no-store`. |
-| `GET /api/v1/demand` | Privacy-thresholded, closed-day demand buckets. |
+| `GET /api/v1/demand` | Privacy-thresholded, closed-day demand buckets, with profile, source and buyer counts. |
 | `GET /api/v1/catalog` | Dashboard catalog with evidence, sellability, compatibility confidence, each release's cached ERC-8004 record, and the distinct buyers behind both (from three up, else null). |
 | `GET /api/v1/status` | Network, catalog, economics, purchase, and store status, and the chain: the explorer base (`EXPLORER_BASE_URL`), USDC, the warranty registry and its engine, the ERC-8004 registries, and the provider's agent id, each null while unused. |
 | `GET /api/v1/agent/registration.json`, `GET /.well-known/agent-registration.json` | Lemma's ERC-8004 agent registration file. 404 without `PUBLIC_BASE_URL`. |

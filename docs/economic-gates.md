@@ -92,7 +92,7 @@ Items marked **done** are implemented in schema v1. The rest are ordered by how 
 9. **Data-driven taxonomy.** Capability ids, frameworks and per-capability options should move into validated catalog data, so a new capability doesn't need a core release. Consider CAIP-19 asset ids and per-asset spend limits for multiple chains.
 10. **Cheaper evidence.** Sequential designs that stop once the interval clears the threshold, shared control arms across releases for the same task, and occasional shadow-control runs for high-volume releases reduce `K` without weakening the claim.
 
-**Demand as a roadmap input.** Every preview, offer or not, is counted per UTC day in a bucket of capability, decision, matched release or reasons, and coarse repository class (`GET /api/v1/demand`, buckets with at least five repositories from at least five client addresses).
+**Demand as a roadmap input.** Every preview, offer or not, is counted per UTC day in a bucket of capability, decision, matched release or reasons, and coarse repository class (`GET /api/v1/demand`, buckets with at least five repositories from at least five client addresses). Each bucket also counts distinct buyers: bridges that sent a buyer pass, which the server hands out only after a settled purchase. The "what to build next" ranking orders by buyer-days first and repository-days second, so previews from addresses that never bought cannot lift a group above one with more buyers; each extra buyer costs a real purchase at or above the price floor.
 - No-match and unsellable buckets, weighted by the control cost `C` from probes, rank which release to build or benchmark next.
 - Offer buckets divided by resolutions give conversion.
 

@@ -48,7 +48,9 @@ The jobs read the chain through an injected `PaymentChain` and `SignatureVerifie
 
 Every preview contributes to a daily demand bucket. Repository profiles and client addresses are keyed and salted before storage. Closed days collapse into counts and delete their salts and raw digests.
 
-The public demand API exposes only buckets with at least five distinct repositories and five distinct client addresses. Closing and recording coordinate through per-day database locks so no preview is counted twice or added after closure.
+A preview may carry a buyer pass. `lemma_claim_buyer_pass` gives one to the bridge that holds a settled purchase's preview secret and buyer. The pass is an HMAC of the resolution id under `DEMAND_SOURCE_KEY`, so each purchase yields the same single pass. The `buyer_passes` table keeps only its SHA-256, with no resolution, wallet or time next to it. A preview's pass counts only if its digest is stored, and it is then keyed and salted like a client address into `demand_buyers_seen`, which closes into `demand_daily.buyers`.
+
+The public demand API exposes only buckets with at least five distinct repositories and five distinct client addresses; each carries its buyer count. Closing and recording coordinate through per-day database locks so no preview is counted twice or added after closure.
 
 ## Catalog compatibility confidence
 

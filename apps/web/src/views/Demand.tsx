@@ -11,10 +11,12 @@ export function Demand({ view }: { view: DemandView }) {
   return (
     <>
       <PageHead eyebrow="Demand" title="Unmet demand">
-        <p className="lead">What agents asked for that Lemma could not sell, ranked by how many repositories asked. It is the list of what to build next.</p>
+        <p className="lead">
+          What agents asked for that Lemma could not sell, ranked by how many bridges that have bought before asked, then by how many repositories asked. It is the list of what to build next.
+        </p>
         <p className="small muted">
           Each preview counts once per repository and day, through a salted digest that is discarded when the day closes. A group is published only with at least {view.minProfiles}{" "}
-          repositories, and it carries a coarse class, never dependency names.
+          repositories, and it carries a coarse class, never dependency names. A buyer is a bridge carrying a pass from an earlier purchase, so previews from addresses that never bought cannot lift a group above one with more buyers.
         </p>
       </PageHead>
       {ranked.length === 0 ? (
@@ -29,6 +31,9 @@ export function Demand({ view }: { view: DemandView }) {
                 <th scope="col">Capability</th>
                 <th scope="col">Answer</th>
                 <th scope="col">Why</th>
+                <th scope="col" className="num">
+                  Buyer-days
+                </th>
                 <th scope="col" className="num">
                   Repository-days
                 </th>
@@ -50,6 +55,7 @@ export function Demand({ view }: { view: DemandView }) {
                     <Badge tone={DECISION_TONE[d.decision] ?? "neutral"}>{d.decision}</Badge>
                   </td>
                   <td>{d.reasons.length === 0 ? "–" : d.reasons.map(reasonText).join("; ")}</td>
+                  <td className="num">{d.buyerDays}</td>
                   <td className="num">{d.profileDays}</td>
                   <td className="num">{d.days}</td>
                 </tr>

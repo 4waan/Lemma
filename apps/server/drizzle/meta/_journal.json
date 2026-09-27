@@ -29,6 +29,13 @@
       "when": 1790518713504,
       "tag": "0003_warranty_pipeline",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790542447961,
+      "tag": "0004_buyer_passes",
+      "breakpoints": true
     }
   ]
 }

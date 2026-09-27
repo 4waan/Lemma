@@ -1,4 +1,4 @@
-import { CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
+import { type BuyerPass, CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
@@ -205,12 +205,33 @@ async function previewFor(
   cwd: string,
 ): Promise<{ preview: Preview; reputation: ReleaseReputation | null; packageDir: string; incomplete: boolean }> {
   let interest = await deps.remote.interest();
+  const buyerPass = await buyerPassFor(deps);
   for (let attempt = 0; ; attempt++) {
     const { profile, notes } = deps.scanner.scan({ root: deps.root, cwd, interest: interest.capabilities[capability] ?? [], runningNodeMajor: deps.runningNodeMajor });
-    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile });
+    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile, ...(buyerPass === undefined ? {} : { buyerPass }) });
     if (preview.catalogDigest === interest.catalogDigest || attempt > 0) {
       return { preview, reputation, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
     }
     interest = await deps.remote.interest(true);
+  }
+}
+
+/**
+ * This bridge's buyer pass: the stored one, or, once a purchase is in the
+ * inbox, one claimed for it (demand then counts this bridge as one that has
+ * bought). Never fails a preview: a pass the server cannot hand out yet is
+ * asked for again on the next one.
+ */
+async function buyerPassFor(deps: BridgeDeps): Promise<BuyerPass | undefined> {
+  const stored = deps.inbox.buyerPass();
+  if (stored !== undefined) return stored;
+  const [bought] = deps.inbox.resolutions();
+  if (bought === undefined) return undefined;
+  try {
+    const pass = await deps.remote.claimBuyerPass(bought.previewId, bought.buyer);
+    if (pass !== undefined) deps.inbox.putBuyerPass(pass);
+    return pass;
+  } catch {
+    return undefined;
   }
 }

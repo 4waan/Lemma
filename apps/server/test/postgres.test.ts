@@ -28,7 +28,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
   });
 
   it("lets exactly one of many concurrent payments for one resolution prepare", async () => {
-    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts, warranty_actions, registry_events, chain_cursors`);
+    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_buyers_seen, demand_daily, buyer_passes, reputation_posts, warranty_actions, registry_events, chain_cursors`);
     const store = new PgStore(db);
     const index = sellableIndex();
     await store.saveCatalog(index, NOW);
@@ -48,7 +48,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
   });
 
   it("lets one authorization back exactly one of many concurrently prepared resolutions", async () => {
-    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts, warranty_actions, registry_events, chain_cursors`);
+    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_buyers_seen, demand_daily, buyer_passes, reputation_posts, warranty_actions, registry_events, chain_cursors`);
     const store = new PgStore(db);
     const index = sellableIndex();
     await store.saveCatalog(index, NOW);
@@ -74,7 +74,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
     const stores = Array.from({ length: 4 }, () => new PgStore(drizzle(postgres(url as string, { max: 3, onnotice: () => {} }))));
     const digest = (i: number) => `0x${i.toString(16).padStart(64, "0")}` as const;
     for (let trial = 0; trial < 10; trial++) {
-      await db.execute(sql`truncate demand_salts, demand_seen, demand_daily`);
+      await db.execute(sql`truncate demand_salts, demand_seen, demand_buyers_seen, demand_daily`);
       for (const i of [1, 2, 3, 4, 5]) await stores[0]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`);
       // Closes race writes of pairs that are already counted: before the per-day lock, a write that
       // landed after a close's snapshot was added by a later close (5 became 6).
@@ -83,7 +83,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
         ...[1, 2, 3, 4, 5].map((i) => stores[i % 4]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`)),
       ]);
       await Promise.all(stores.map((s) => s.closeDemandDaysBefore("2026-10-01")));
-      expect(await stores[0]?.demandBuckets(1), `trial ${trial}`).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 5, sources: 5 }]);
+      expect(await stores[0]?.demandBuckets(1), `trial ${trial}`).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 5, sources: 5, buyers: 0 }]);
       // No salt survives a closed day: a late write never re-creates one.
       await stores[1]?.recordDemand("2026-09-30", "bucket", digest(6), "10.0.0.6");
       expect(await db.execute(sql`select day from demand_salts where day = '2026-09-30'`)).toHaveLength(0);
@@ -95,18 +95,18 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
     const digest = (i: number) => `0x${i.toString(16).padStart(64, "0")}` as const;
     const pool = new PgStore(drizzle(postgres(url as string, { max: 20, onnotice: () => {} })));
     for (let round = 0; round < 10; round++) {
-      await db.execute(sql`truncate demand_salts, demand_seen, demand_daily`);
+      await db.execute(sql`truncate demand_salts, demand_seen, demand_buyers_seen, demand_daily`);
       await Promise.all(Array.from({ length: 16 }, (_, i) => pool.recordDemand("2026-09-30", "bucket", digest(i + 1), `10.0.0.${i + 1}`)));
       expect(await db.execute(sql`select 1 from demand_seen`), `round ${round}`).toHaveLength(16);
     }
     // A first write that rolls back (here: an invalid bucket) must leave nothing a later write would reuse.
-    await db.execute(sql`truncate demand_salts, demand_seen, demand_daily`);
+    await db.execute(sql`truncate demand_salts, demand_seen, demand_buyers_seen, demand_daily`);
     const a = new PgStore(db, () => "salt-a");
     const b = new PgStore(db, () => "salt-b");
     await expect(a.recordDemand("2026-09-30", "bad\u0000bucket", digest(1), "10.0.0.1")).rejects.toThrow();
     await b.recordDemand("2026-09-30", "bucket", digest(1), "10.0.0.1");
     await a.recordDemand("2026-09-30", "bucket", digest(1), "10.0.0.1");
     await a.closeDemandDaysBefore("2026-10-01");
-    expect(await a.demandBuckets(1)).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 1, sources: 1 }]);
+    expect(await a.demandBuckets(1)).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 1, sources: 1, buyers: 0 }]);
   });
 });

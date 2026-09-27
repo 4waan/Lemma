@@ -147,9 +147,21 @@ export const demandSeen = pgTable(
   (t) => [primaryKey({ columns: [t.day, t.bucket, t.saltedDigest, t.saltedSource] })],
 );
 
+/** Salted buyer passes per demand bucket, for open days only: previews from bridges that have bought before. */
+export const demandBuyersSeen = pgTable(
+  "demand_buyers_seen",
+  {
+    day: date("day", { mode: "string" }).notNull(),
+    bucket: text("bucket").notNull(),
+    saltedBuyer: text("salted_buyer").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.day, t.bucket, t.saltedBuyer] })],
+);
+
 /**
- * Closed days: distinct profiles and distinct sources per bucket. Only buckets
- * with at least k of each are ever published.
+ * Closed days: distinct profiles, distinct sources and distinct buyer passes
+ * per bucket. Only buckets with at least k profiles and k sources are ever
+ * published.
  */
 export const demandDaily = pgTable(
   "demand_daily",
@@ -158,9 +170,20 @@ export const demandDaily = pgTable(
     bucket: text("bucket").notNull(),
     profiles: integer("profiles").notNull(),
     sources: integer("sources").notNull(),
+    buyers: integer("buyers").notNull().default(0),
   },
   (t) => [primaryKey({ columns: [t.day, t.bucket] })],
 );
+
+/**
+ * Buyer passes the server handed out, by their SHA-256 only: no resolution,
+ * wallet or time next to them, so the table cannot say who bought what. A
+ * pass is issued once a purchase settled, and is the same for the same
+ * resolution, so each pass cost one purchase.
+ */
+export const buyerPasses = pgTable("buyer_passes", {
+  passDigest: text("pass_digest").primaryKey(),
+});
 
 export const warrantyActionKind = pgEnum("warranty_action_kind", ["activate", "finalize", "expire", "withdraw"]);
 export const warrantyActionState = pgEnum("warranty_action_state", ["review", "queued", "sent", "done", "skipped", "abandoned"]);

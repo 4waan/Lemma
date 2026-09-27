@@ -1,4 +1,4 @@
-import { DemandView, LEMMA_TOOLS, PreviewResult, ResolutionDelivery, deriveResolutionId } from "@lemma/core";
+import { ClaimBuyerPassResult, DemandView, LEMMA_TOOLS, PreviewResult, ResolutionDelivery, deriveResolutionId } from "@lemma/core";
 import { describe, expect, it } from "vitest";
 
 import { MemoryStore, ResolutionService, silentLogger } from "../src/index.js";
@@ -28,6 +28,26 @@ describe("paid path seam over HTTP", () => {
     await service.commit(deriveResolutionId(preview.previewId, BUYER), { nonce: "0x01", settlementRef: "0xsettlement" });
     const delivery = ResolutionDelivery.parse((await recover()).structuredContent);
     expect(delivery.resolution.buyer).toBe(BUYER);
+    await client.close();
+  });
+
+  it("hands a settled buyer one pass, and counts previews carrying it as a buyer's, never a made-up one", async () => {
+    const { client, store, service, preview } = await sellableApp();
+    const claim = () => client.callTool({ name: LEMMA_TOOLS.claimBuyerPass, arguments: { previewId: preview.previewId, buyer: BUYER } });
+    expect(await claim()).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("NOT_FOUND") }] });
+    await service.prepare(preview.previewId, { payer: BUYER, nonce: "0x01", validBefore: new Date(NOW.getTime() + 300_000) });
+    expect(await claim()).toMatchObject({ isError: true, content: [{ text: expect.stringContaining("IN_FLIGHT") }] });
+    await service.commit(deriveResolutionId(preview.previewId, BUYER), { nonce: "0x01", settlementRef: "0xsettlement" });
+    const { buyerPass } = ClaimBuyerPassResult.parse((await claim()).structuredContent);
+    // The same resolution always gives the same pass: one purchase, one pass.
+    expect(ClaimBuyerPassResult.parse((await claim()).structuredContent).buyerPass).toBe(buyerPass);
+    const made = `0x${"cd".repeat(32)}`;
+    const ask = (i: number, pass?: string) =>
+      client.callTool({ name: LEMMA_TOOLS.preview, arguments: { task: gatingTask, profile: { ...matchingProfile, frameworks: [], dependencies: { ...matchingProfile.dependencies, [`dep-${i}`]: "1.0.0" } }, ...(pass === undefined ? {} : { buyerPass: pass }) } });
+    for (let i = 0; i < 5; i++) expect((await ask(i, i < 2 ? buyerPass : made)).isError).not.toBe(true);
+    await store.closeDemandDaysBefore("2099-01-01");
+    // Six repositories (the first preview had no pass), one caller address, and one buyer: the made-up pass counts as none.
+    expect((await store.demandBuckets(1)).map((d) => [d.profiles, d.sources, d.buyers])).toEqual([[6, 1, 1]]);
     await client.close();
   });
 

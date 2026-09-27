@@ -3,7 +3,7 @@ import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, 
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { Address, AdoptionReceipt, CapabilityId, CapabilityRelease, Hex32, IsoTimestamp, type Resolution, ResolutionDelivery, WarrantyClaim, releaseDigest } from "@lemma/core";
+import { Address, AdoptionReceipt, BuyerPass, CapabilityId, CapabilityRelease, Hex32, IsoTimestamp, type Resolution, ResolutionDelivery, WarrantyClaim, releaseDigest } from "@lemma/core";
 import { z } from "zod";
 
 import { ReceiptAnswer } from "./remote.js";
@@ -303,6 +303,16 @@ export class ResolutionInbox {
       const parsed = WarrantyClaim.safeParse(this.read(join("claims", name)));
       return parsed.success && name === `${parsed.data.resolutionId}.json` ? [parsed.data] : [];
     });
+  }
+
+  /** The buyer pass the server handed out after a settled purchase, sent with previews; undefined before the first one. */
+  buyerPass(): BuyerPass | undefined {
+    const parsed = BuyerPass.safeParse(this.read("buyer-pass.json"));
+    return parsed.success ? parsed.data : undefined;
+  }
+
+  putBuyerPass(pass: BuyerPass): void {
+    this.write("buyer-pass.json", BuyerPass.parse(pass));
   }
 
   /** Where apply keeps its journal and backups, outside every workspace. */

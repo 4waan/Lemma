@@ -7,7 +7,7 @@ import {
   CatalogView,
   ChainView,
   CompatibilitySource,
-  type DemandView,
+  DemandView,
   MIN_PUBLISHED_BUYERS,
   ProfileCompatibility,
   ReleaseSummary,
@@ -147,18 +147,31 @@ describe("rankUnmetDemand", () => {
     const view: DemandView = {
       minProfiles: 5,
       buckets: [
-        { day: "2026-09-29", profiles: 5, sources: 5, key: key({}) },
-        { day: "2026-09-30", profiles: 7, sources: 7, key: key({ class: { packageManager: "pnpm", moduleSystem: "cjs", nodeMajor: 20, frameworks: ["express"] } }) },
-        { day: "2026-09-30", profiles: 9, sources: 9, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) },
-        { day: "2026-09-30", profiles: 40, sources: 40, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: [], offer: true }) },
-        { day: "2026-09-30", profiles: 6, sources: 6, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: ["PROFILE_NOT_BENCHMARKED"] }) },
+        { day: "2026-09-29", profiles: 5, sources: 5, buyers: 0, key: key({}) },
+        { day: "2026-09-30", profiles: 7, sources: 7, buyers: 0, key: key({ class: { packageManager: "pnpm", moduleSystem: "cjs", nodeMajor: 20, frameworks: ["express"] } }) },
+        { day: "2026-09-30", profiles: 9, sources: 9, buyers: 0, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) },
+        { day: "2026-09-30", profiles: 40, sources: 40, buyers: 30, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: [], offer: true }) },
+        { day: "2026-09-30", profiles: 6, sources: 6, buyers: 0, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: ["PROFILE_NOT_BENCHMARKED"] }) },
       ],
     };
     expect(rankUnmetDemand(view)).toEqual([
-      { capability: "mcp-server.add-payment-gating", decision: "build", reasons: ["MISSING_DEPENDENCY"], profileDays: 12, days: 2 },
-      { capability: "node-service.add-payment-facilitator", decision: "build", reasons: ["NO_RELEASE_FOR_CAPABILITY"], profileDays: 9, days: 1 },
-      { capability: "mcp-server.add-payment-gating", decision: "reuse", reasons: ["PROFILE_NOT_BENCHMARKED"], profileDays: 6, days: 1 },
+      { capability: "mcp-server.add-payment-gating", decision: "build", reasons: ["MISSING_DEPENDENCY"], buyerDays: 0, profileDays: 12, days: 2 },
+      { capability: "node-service.add-payment-facilitator", decision: "build", reasons: ["NO_RELEASE_FOR_CAPABILITY"], buyerDays: 0, profileDays: 9, days: 1 },
+      { capability: "mcp-server.add-payment-gating", decision: "reuse", reasons: ["PROFILE_NOT_BENCHMARKED"], buyerDays: 0, profileDays: 6, days: 1 },
     ]);
+  });
+
+  it("ranks by bridges that have bought before, so previews from addresses that never bought cannot lift a group above one with more buyers", () => {
+    const bought = { day: "2026-09-30", profiles: 5, sources: 5, buyers: 2, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) };
+    const flooded = { day: "2026-09-30", profiles: 5000, sources: 5000, buyers: 1, key: key({}) };
+    expect(rankUnmetDemand({ minProfiles: 5, buckets: [flooded, bought] }).map((d) => [d.capability, d.buyerDays, d.profileDays])).toEqual([
+      ["node-service.add-payment-facilitator", 2, 5],
+      ["mcp-server.add-payment-gating", 1, 5000],
+    ]);
+  });
+
+  it("refuses a published bucket without its buyer count", () => {
+    expect(DemandView.safeParse({ minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 5, sources: 5, key: key({}) }] }).success).toBe(false);
   });
 });
 

@@ -343,14 +343,32 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
     for (const i of [1, 2, 3, 4, 5]) await store.recordDemand("2026-09-30", "sybil", digest(i), "10.9.9.9");
     await store.recordDemand("2026-10-01", bucket, digest(9), "10.0.0.9");
     expect(await store.closeDemandDaysBefore("2026-10-01")).toBe(1);
-    expect(await store.demandBuckets(5)).toEqual([{ day: "2026-09-30", bucket: "other", profiles: 5, sources: 5 }]);
-    expect(await store.demandBuckets(1)).toContainEqual({ day: "2026-09-30", bucket, profiles: 4, sources: 4 });
-    expect(await store.demandBuckets(1)).toContainEqual({ day: "2026-09-30", bucket: "sybil", profiles: 5, sources: 1 });
+    expect(await store.demandBuckets(5)).toEqual([{ day: "2026-09-30", bucket: "other", profiles: 5, sources: 5, buyers: 0 }]);
+    expect(await store.demandBuckets(1)).toContainEqual({ day: "2026-09-30", bucket, profiles: 4, sources: 4, buyers: 0 });
+    expect(await store.demandBuckets(1)).toContainEqual({ day: "2026-09-30", bucket: "sybil", profiles: 5, sources: 1, buyers: 0 });
     expect(await store.closeDemandDaysBefore("2026-10-01")).toBe(0);
     // A late write for a closed day does not reopen it.
     await store.recordDemand("2026-09-30", "other", digest(6), "10.0.0.6");
     await store.closeDemandDaysBefore("2026-10-01");
-    expect(await store.demandBuckets(5)).toEqual([{ day: "2026-09-30", bucket: "other", profiles: 5, sources: 5 }]);
+    expect(await store.demandBuckets(5)).toEqual([{ day: "2026-09-30", bucket: "other", profiles: 5, sources: 5, buyers: 0 }]);
+  });
+
+  it("counts distinct buyers per bucket and day apart from profiles and sources, and keeps passes by digest only", async () => {
+    const digest = (i: number) => `0x${i.toString(16).padStart(64, "0")}` as Hex32;
+    // One buyer previewing from five addresses is one buyer; a preview without a pass adds none.
+    for (const i of [1, 2, 3, 4, 5]) await store.recordDemand("2026-09-30", "wanted", digest(i), `10.0.0.${i}`, "buyer-a");
+    await store.recordDemand("2026-09-30", "wanted", digest(6), "10.0.0.6", "buyer-b");
+    await store.recordDemand("2026-09-30", "wanted", digest(7), "10.0.0.7");
+    for (const i of [1, 2, 3, 4, 5]) await store.recordDemand("2026-09-30", "raw", digest(i), `10.0.1.${i}`);
+    await store.closeDemandDaysBefore("2026-10-01");
+    expect(await store.demandBuckets(5)).toEqual([
+      { day: "2026-09-30", bucket: "raw", profiles: 5, sources: 5, buyers: 0 },
+      { day: "2026-09-30", bucket: "wanted", profiles: 7, sources: 7, buyers: 2 },
+    ]);
+    expect(await store.hasBuyerPass(digest(42))).toBe(false);
+    await store.addBuyerPass(digest(42));
+    await store.addBuyerPass(digest(42));
+    expect(await store.hasBuyerPass(digest(42))).toBe(true);
   });
 
   it("purges long-expired offers unless a settled resolution needs them, and expired resolutions with them", async () => {

@@ -2,8 +2,10 @@ import {
   AdoptionReceipt,
   type Address,
   AgentId,
+  type BuyerPass,
   BuyInput,
   CapabilityRelease,
+  ClaimBuyerPassResult,
   Hex32,
   LEMMA_TOOLS,
   PatchPath,
@@ -292,6 +294,16 @@ export class LemmaRemote {
     const code = /^([A-Z][A-Z_]{1,39}): /.exec(text)?.[1];
     if (code !== undefined) return { kind: "refused", code };
     throw new RemoteError("the purchase answer carried no code");
+  }
+
+  /**
+   * The buyer pass for a settled purchase (server tool `lemma_claim_buyer_pass`);
+   * undefined while it is not settled, or when the server hands out none.
+   */
+  async claimBuyerPass(previewId: Hex32, buyer: Address): Promise<BuyerPass | undefined> {
+    const result = await (await this.mcp()).callTool({ name: LEMMA_TOOLS.claimBuyerPass, arguments: { previewId, buyer } }, undefined, { timeout: this.timeoutMs });
+    if (result.isError === true) return undefined;
+    return ClaimBuyerPassResult.parse(result.structuredContent).buyerPass;
   }
 
   /** Free recovery of a settled resolution (server tool `lemma_recover_resolution`). */

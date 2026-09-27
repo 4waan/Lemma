@@ -16,9 +16,12 @@ import type { Logger } from "./log.js";
 import { type PaidToolRegistrar, buildMcpServer } from "./mcp.js";
 import { TokenBuckets } from "./rate-limit.js";
 import { DEMAND_MIN_PROFILES, DemandRecorder } from "./demand.js";
-import { DASHBOARD_CSP, serveDashboard } from "./dashboard.js";
+import { DASHBOARD_CSP, dashboardIconPath, serveDashboard } from "./dashboard.js";
 import type { LemmaStore } from "./persistence.js";
 import { describeError } from "./errors.js";
+import { WELL_KNOWN_REGISTRATION_PATH } from "./reputation/registration.js";
+import { registerReputationRoutes } from "./reputation/routes.js";
+import type { ReputationReader } from "./reputation/summary.js";
 import { ReceiptSubmission, type ResolutionService } from "./service.js";
 
 export const MAX_BODY_BYTES = 256 * 1024;
@@ -46,6 +49,8 @@ export interface AppDeps {
   readonly webRoot?: string | undefined;
   /** Finalized adoption outcomes for the catalog's compatibility confidence, read from memory. Absent: none yet. */
   readonly outcomes?: OutcomeSource | undefined;
+  /** Cached ERC-8004 adoption records for previews and the catalog (src/reputation); absent while reputation is off. */
+  readonly reputation?: ReputationReader | undefined;
 }
 
 /**
@@ -77,6 +82,7 @@ export function createApp(deps: AppDeps): Hono {
     newPreviewId: deps.newPreviewId,
     logger: deps.logger,
     registerPaidTools: deps.registerPaidTools,
+    reputation: deps.reputation,
   };
 
   app.onError((error, c) => {
@@ -130,6 +136,7 @@ export function createApp(deps: AppDeps): Hono {
   );
   app.use("/mcp", limit);
   app.use("/api/v1/*", limit);
+  app.use(WELL_KNOWN_REGISTRATION_PATH, limit);
   app.use("/api/v1/*", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "request body too large" }, 413) }));
 
   app.post(
@@ -236,7 +243,14 @@ export function createApp(deps: AppDeps): Hono {
       economics: { status: economics.status, chainCostUsdc: economics.chainCostAtomic, priceFloorUsdc: economics.priceFloorAtomic },
       releases: deps.index.releases.map((r) =>
         summarizeRelease(
-          { release: r.release, releaseDigest: r.releaseDigest, baseReleaseDigest: r.baseReleaseDigest, provisional: r.source === "provisional" },
+          {
+            release: r.release,
+            releaseDigest: r.releaseDigest,
+            baseReleaseDigest: r.baseReleaseDigest,
+            provisional: r.source === "provisional",
+            // Cached only: the catalog never waits on the chain.
+            reputation: deps.reputation?.current(r.release.capability) ?? null,
+          },
           { chainCostAtomic: BigInt(economics.chainCostAtomic) },
           now,
           compatibility.forRelease(r.release, r.releaseDigest, now),
@@ -275,7 +289,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: "expected a JSON receipt submission" }, 400);
     }
     const submission = ReceiptSubmission.safeParse(body);
-    if (!submission.success) return c.json({ error: "expected { receipt: AdoptionReceipt, previewId }" }, 400);
+    if (!submission.success) return c.json({ error: "expected { receipt: AdoptionReceipt, previewId, agentId? }" }, 400);
     // A store failure is not the client's fault: it reaches onError, is logged, and answers 500 so the bridge retries.
     const result = await deps.service.acceptReceipt(submission.data);
     const status = { ACCEPTED: 201, DUPLICATE: 409, NOT_SETTLED: 409, TOO_EARLY: 425, UNKNOWN_RESOLUTION: 404, MISMATCH: 422 } as const;
@@ -294,6 +308,14 @@ export function createApp(deps: AppDeps): Hono {
     // Set only once the answer exists, so a failure is never cached.
     c.header("Cache-Control", "public, max-age=300");
     return c.json(view);
+  });
+
+  // ERC-8004: the agent registration file and the evidence file behind each feedback.
+  registerReputationRoutes(app, {
+    config: deps.config.reputation,
+    paidTools: deps.config.paidTools && deps.registerPaidTools !== undefined,
+    store: deps.store,
+    imagePath: deps.webRoot === undefined ? undefined : dashboardIconPath(deps.webRoot),
   });
 
   if (deps.webRoot !== undefined) serveDashboard(app, deps.webRoot);

@@ -16,6 +16,7 @@ import { PgStore } from "./db/store.js";
 import { jsonLogger } from "./log.js";
 import { type PaymentPath, startPaymentPath } from "./payments/index.js";
 import { type LemmaStore, MemoryStore } from "./persistence.js";
+import { noOutcomes, startReputation } from "./reputation/index.js";
 import { ResolutionService } from "./service.js";
 import { startupProblems } from "./startup.js";
 
@@ -121,6 +122,17 @@ if (config.paidTools) {
   logger.log("info", "startup.paid_tools", { network: config.payment.network, facilitator: config.chain.facilitatorAddress });
 }
 
+// ERC-8004 reputation: jobs start only when configured, and no request waits on them. The outcome pipeline
+// supplies the finalized-outcome feed; until then there is nothing to attest.
+const reputation = startReputation({
+  config: config.reputation,
+  store,
+  feed: noOutcomes,
+  capabilities: [...new Set(index.releases.map((r) => r.release.capability))],
+  clock,
+  logger,
+});
+
 const app = createApp({
   config,
   index,
@@ -134,6 +146,7 @@ const app = createApp({
   webRoot: dashboardRoot(),
   socketAddress: (c) => getConnInfo(c).remote.address,
   registerPaidTools: payments?.registerPaidTools,
+  reputation: reputation.summaries,
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -146,6 +159,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     logger.log("info", "shutdown", { signal });
     payments?.stop();
+    reputation.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 10_000).unref();
   });

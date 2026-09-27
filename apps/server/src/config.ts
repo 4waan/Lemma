@@ -3,6 +3,8 @@ import type { Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { z } from "zod";
 
+import { type ReputationConfig, loadReputationConfig } from "./reputation/config.js";
+
 // `.env.example` leaves unset values empty (`PROVIDER_ADDRESS=`); treat them as absent.
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
 
@@ -124,6 +126,8 @@ export interface ServerConfig {
   /** How many proxies in front of the server append to X-Forwarded-For (Railway: 1). */
   readonly trustedProxyHops: number;
   readonly rateLimitPerMinute: number;
+  /** ERC-8004 reputation (src/reputation/config.ts); all optional, off when unset. */
+  readonly reputation: ReputationConfig;
 }
 
 export class ConfigError extends Error {
@@ -159,6 +163,13 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
       throw new ConfigError("FACILITATOR_PRIVATE_KEY is not a valid secp256k1 private key; its value is not shown");
     }
   }
+  let reputation: ReputationConfig;
+  try {
+    reputation = loadReputationConfig(env);
+  } catch (error) {
+    // Its messages name variables and problems only, never a key or an RPC URL.
+    throw new ConfigError(error instanceof Error ? error.message : "invalid reputation settings");
+  }
   return {
     env: e.NODE_ENV,
     port: e.PORT,
@@ -177,5 +188,6 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     dashboardOrigin: e.DASHBOARD_ORIGIN === undefined ? undefined : new URL(e.DASHBOARD_ORIGIN).origin,
     trustedProxyHops: e.TRUSTED_PROXY_HOPS,
     rateLimitPerMinute: e.RATE_LIMIT_PER_MINUTE,
+    reputation,
   };
 }

@@ -92,6 +92,7 @@ describe("the outcome pipeline on a local chain", () => {
     EVALUATOR_FAILURES: "auto",
     WARRANTY_ACTIVATION_JITTER_SECONDS: "0",
     WARRANTY_ACTIVATION_BATCH_SECONDS: "0",
+    BUYER_COUNTS_REFRESH_SECONDS: "0",
     // A shallow depth, so the run waits seconds rather than the minute 64 blocks of anvil's one-second blocks take.
     WARRANTY_INDEXER_CONFIRMATIONS: "2",
     EXPLORER_BASE_URL: "",

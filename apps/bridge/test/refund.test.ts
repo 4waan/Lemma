@@ -195,6 +195,7 @@ async function world(options: { readonly test?: string; readonly pipeline?: bool
             failures: "auto",
             activationJitterSeconds: 0,
             activationBatchSeconds: 0,
+            buyerCountsRefreshSeconds: 0,
             indexerConfirmations: 0n,
           },
           store,

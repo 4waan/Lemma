@@ -127,6 +127,7 @@ const Env = z.object({
   EVALUATOR_FAILURES: optional(z.enum(["review", "auto"])),
   WARRANTY_ACTIVATION_JITTER_SECONDS: optional(z.coerce.number().int().min(0).max(86_400)),
   WARRANTY_ACTIVATION_BATCH_SECONDS: optional(z.coerce.number().int().min(0).max(86_400)),
+  BUYER_COUNTS_REFRESH_SECONDS: optional(z.coerce.number().int().min(0).max(604_800)),
   WARRANTY_INDEXER_CONFIRMATIONS: optional(z.string().regex(/^(0|[1-9][0-9]{0,5})$/, "expected a number of blocks, 0 to 999999")),
 });
 
@@ -152,6 +153,8 @@ export interface WarrantyConfig {
   readonly activationJitterSeconds: number;
   /** `WARRANTY_ACTIVATION_BATCH_SECONDS` (default 3600: activations go out together each hour; 0 turns batches off and uses the jitter). */
   readonly activationBatchSeconds: number;
+  /** `BUYER_COUNTS_REFRESH_SECONDS` (default 86400: published distinct-buyer counts move once a day; 0 publishes them live). */
+  readonly buyerCountsRefreshSeconds: number;
   /** `WARRANTY_INDEXER_CONFIRMATIONS`: how many blocks behind the latest one the indexer stops (default 64). */
   readonly indexerConfirmations: bigint;
 }
@@ -322,6 +325,7 @@ function warrantyConfig(e: z.infer<typeof Env>, facilitator: Address | undefined
     failures: e.EVALUATOR_FAILURES ?? "review",
     activationJitterSeconds: e.WARRANTY_ACTIVATION_JITTER_SECONDS ?? 300,
     activationBatchSeconds: e.WARRANTY_ACTIVATION_BATCH_SECONDS ?? 3600,
+    buyerCountsRefreshSeconds: e.BUYER_COUNTS_REFRESH_SECONDS ?? 86_400,
     indexerConfirmations: e.WARRANTY_INDEXER_CONFIRMATIONS === undefined ? INDEXER_CONFIRMATIONS : BigInt(e.WARRANTY_INDEXER_CONFIRMATIONS),
   };
 }

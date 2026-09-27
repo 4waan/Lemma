@@ -39,12 +39,12 @@ describe("warranty configuration", () => {
   it("leaves the pipeline off, and nothing else changed, when none of it is set", () => {
     expect(loadConfig({ NODE_ENV: "test" }).warranty).toBeUndefined();
     // .env.example's empty placeholders are unset.
-    const placeholders = { RESOLUTION_WARRANTY_REGISTRY_ADDRESS: "", PROVIDER_PRIVATE_KEY: "", EVALUATOR_PRIVATE_KEY: "", WARRANTY_REGISTRY_START_BLOCK: "", EVALUATOR_FAILURES: "", WARRANTY_ACTIVATION_JITTER_SECONDS: "", WARRANTY_ACTIVATION_BATCH_SECONDS: "" };
+    const placeholders = { RESOLUTION_WARRANTY_REGISTRY_ADDRESS: "", PROVIDER_PRIVATE_KEY: "", EVALUATOR_PRIVATE_KEY: "", WARRANTY_REGISTRY_START_BLOCK: "", EVALUATOR_FAILURES: "", WARRANTY_ACTIVATION_JITTER_SECONDS: "", WARRANTY_ACTIVATION_BATCH_SECONDS: "", BUYER_COUNTS_REFRESH_SECONDS: "" };
     expect(loadConfig({ ...paid(), ...placeholders }).warranty).toBeUndefined();
   });
 
   it("turns it on with everything it needs, keeping both keys secret", () => {
-    const env = { ...warrantyEnv(), WARRANTY_REGISTRY_START_BLOCK: "123456", EVALUATOR_FAILURES: "auto", WARRANTY_ACTIVATION_JITTER_SECONDS: "0", WARRANTY_ACTIVATION_BATCH_SECONDS: "0" };
+    const env = { ...warrantyEnv(), WARRANTY_REGISTRY_START_BLOCK: "123456", EVALUATOR_FAILURES: "auto", WARRANTY_ACTIVATION_JITTER_SECONDS: "0", WARRANTY_ACTIVATION_BATCH_SECONDS: "0", BUYER_COUNTS_REFRESH_SECONDS: "0" };
     const c = loadConfig(env);
     expect(c.warranty).toMatchObject({
       registry: REGISTRY,
@@ -54,12 +54,13 @@ describe("warranty configuration", () => {
       failures: "auto",
       activationJitterSeconds: 0,
       activationBatchSeconds: 0,
+      buyerCountsRefreshSeconds: 0,
     });
     expect(c.warranty?.providerKey.reveal()).toBe(env.PROVIDER_PRIVATE_KEY);
     const printed = JSON.stringify(c, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
     for (const key of [env.PROVIDER_PRIVATE_KEY, env.EVALUATOR_PRIVATE_KEY]) expect(printed).not.toContain(key.slice(2));
     // Defaults: review, hourly batches (300 seconds of jitter when they are off), block 0, 64 confirmations.
-    expect(loadConfig(warrantyEnv()).warranty).toMatchObject({ failures: "review", activationJitterSeconds: 300, activationBatchSeconds: 3600, startBlock: 0n, indexerConfirmations: 64n });
+    expect(loadConfig(warrantyEnv()).warranty).toMatchObject({ failures: "review", activationJitterSeconds: 300, activationBatchSeconds: 3600, buyerCountsRefreshSeconds: 86_400, startBlock: 0n, indexerConfirmations: 64n });
     expect(loadConfig({ ...warrantyEnv(), WARRANTY_INDEXER_CONFIRMATIONS: "0" }).warranty?.indexerConfirmations).toBe(0n);
     expect(loadConfig({ ...warrantyEnv(), WARRANTY_INDEXER_CONFIRMATIONS: "240" }).warranty?.indexerConfirmations).toBe(240n);
     expect(loadConfig({ ...warrantyEnv(), WARRANTY_INDEXER_CONFIRMATIONS: "" }).warranty?.indexerConfirmations).toBe(64n);
@@ -102,7 +103,7 @@ describe("warranty configuration", () => {
       expect((error as Error).message).not.toContain(env.PROVIDER_PRIVATE_KEY.slice(2));
     }
     expect(loadConfig({ ...env, PROVIDER_ADDRESS: env.PROVIDER_ADDRESS.toLowerCase() }).warranty?.providerAddress).toBe(env.PROVIDER_ADDRESS.toLowerCase());
-    for (const bad of [{ WARRANTY_INDEXER_CONFIRMATIONS: "-1" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1.5" }, { WARRANTY_INDEXER_CONFIRMATIONS: "safe" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1000000" }, { EVALUATOR_FAILURES: "sometimes" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "86401" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "-1" }, { WARRANTY_ACTIVATION_BATCH_SECONDS: "86401" }, { WARRANTY_ACTIVATION_BATCH_SECONDS: "-1" }, { WARRANTY_REGISTRY_START_BLOCK: "1.5" }, { RESOLUTION_WARRANTY_REGISTRY_ADDRESS: "0x4C454D4D41000000000000000000000000000001" }]) {
+    for (const bad of [{ WARRANTY_INDEXER_CONFIRMATIONS: "-1" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1.5" }, { WARRANTY_INDEXER_CONFIRMATIONS: "safe" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1000000" }, { EVALUATOR_FAILURES: "sometimes" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "86401" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "-1" }, { WARRANTY_ACTIVATION_BATCH_SECONDS: "86401" }, { WARRANTY_ACTIVATION_BATCH_SECONDS: "-1" }, { BUYER_COUNTS_REFRESH_SECONDS: "604801" }, { WARRANTY_REGISTRY_START_BLOCK: "1.5" }, { RESOLUTION_WARRANTY_REGISTRY_ADDRESS: "0x4C454D4D41000000000000000000000000000001" }]) {
       expect(() => loadConfig({ ...warrantyEnv(), ...bad }), JSON.stringify(bad)).toThrow(ConfigError);
     }
   });
@@ -120,6 +121,7 @@ async function pipelineOf(w: World, over: Partial<WarrantyConfig> = {}): Promise
     failures: "auto",
     activationJitterSeconds: 0,
     activationBatchSeconds: 0,
+    buyerCountsRefreshSeconds: 0,
     // The fake chain makes a block only per transaction: read up to its head.
     indexerConfirmations: 0n,
     ...over,
@@ -130,7 +132,7 @@ async function pipelineOf(w: World, over: Partial<WarrantyConfig> = {}): Promise
 describe("starting the pipeline", () => {
   it("refuses a registry that is not the one this server signs for", async () => {
     const w = await warrantyWorld();
-    const settings: WarrantyConfig = { registry: REGISTRY, startBlock: 0n, providerKey: new Secret("x"), providerAddress: w.chain.provider, evaluatorKey: new Secret("x"), evaluatorAddress: w.chain.evaluator, failures: "review", activationJitterSeconds: 0, activationBatchSeconds: 0, indexerConfirmations: 0n };
+    const settings: WarrantyConfig = { registry: REGISTRY, startBlock: 0n, providerKey: new Secret("x"), providerAddress: w.chain.provider, evaluatorKey: new Secret("x"), evaluatorAddress: w.chain.evaluator, failures: "review", activationJitterSeconds: 0, activationBatchSeconds: 0, buyerCountsRefreshSeconds: 0, indexerConfirmations: 0n };
     const usdc = "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d";
     const code = async (run: () => Promise<void>) => run().then(() => "OK", (e: unknown) => (e instanceof WarrantyStartupError ? e.code : String(e)));
     expect(await code(() => checkRegistry(w.chain, settings, usdc))).toBe("OK");
@@ -165,7 +167,7 @@ describe("starting the pipeline", () => {
     const w = await warrantyWorld();
     const b = await w.buy();
     const pipeline = await startWarrantyPipeline({
-      config: { registry: REGISTRY, startBlock: 0n, providerKey: new Secret("x"), providerAddress: w.chain.provider, evaluatorKey: new Secret("x"), evaluatorAddress: w.chain.evaluator, failures: "auto", activationJitterSeconds: 0, activationBatchSeconds: 0, indexerConfirmations: 0n },
+      config: { registry: REGISTRY, startBlock: 0n, providerKey: new Secret("x"), providerAddress: w.chain.provider, evaluatorKey: new Secret("x"), evaluatorAddress: w.chain.evaluator, failures: "auto", activationJitterSeconds: 0, activationBatchSeconds: 0, buyerCountsRefreshSeconds: 0, indexerConfirmations: 0n },
       store: w.store,
       index: w.index,
       chain: w.chain,

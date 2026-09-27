@@ -55,6 +55,10 @@ export class RegistrySnapshot {
   private fed: readonly Finalization[] = [];
   private fedPayers = new Map<CapabilityId, number>();
   private current: Address | null = null;
+  // The distinct-buyer counts the reads publish: the live ones as they stood at the start of the current period.
+  private publishedPeriod: number | undefined;
+  private publishedRecordedPayers = new Map<string, number>();
+  private publishedFedPayers = new Map<CapabilityId, number>();
 
   constructor(
     private readonly deps: {
@@ -64,6 +68,16 @@ export class RegistrySnapshot {
       readonly logger: Logger;
       /** Rows read per store query (default 1000). */
       readonly pageSize?: number;
+      /**
+       * How often the published distinct-buyer counts move, in milliseconds
+       * (`BUYER_COUNTS_REFRESH_SECONDS`; 0, the default here, publishes them
+       * live). The counts are taken at the first read in each period of this
+       * length since the Unix epoch and held for the rest of it, so a new
+       * outcome that leaves the count unchanged does not show that its buyer
+       * bought before.
+       */
+      readonly buyersRefreshMs?: number;
+      readonly clock?: () => Date;
     },
   ) {}
 
@@ -192,7 +206,7 @@ export class RegistrySnapshot {
   }
 
   recordedBuyers(releaseDigest: Hex32, profileIndex: number): number {
-    return this.recordedPayers.get(keyOf(releaseDigest, profileIndex)) ?? 0;
+    return this.publishedBuyers().recorded.get(keyOf(releaseDigest, profileIndex)) ?? 0;
   }
 
   /** PASSED and FAILED finalizations with a weight, in chain order, after `after`. */
@@ -201,7 +215,20 @@ export class RegistrySnapshot {
   }
 
   fedBuyers(capability: CapabilityId): number {
-    return this.fedPayers.get(capability) ?? 0;
+    return this.publishedBuyers().fed.get(capability) ?? 0;
+  }
+
+  /** The distinct-buyer counts to publish: live without a refresh period, else as taken at the period's first read. */
+  private publishedBuyers(): { readonly recorded: ReadonlyMap<string, number>; readonly fed: ReadonlyMap<CapabilityId, number> } {
+    const every = this.deps.buyersRefreshMs ?? 0;
+    if (every <= 0) return { recorded: this.recordedPayers, fed: this.fedPayers };
+    const period = Math.floor((this.deps.clock ?? (() => new Date()))().getTime() / every);
+    if (period !== this.publishedPeriod) {
+      this.publishedPeriod = period;
+      this.publishedRecordedPayers = this.recordedPayers;
+      this.publishedFedPayers = this.fedPayers;
+    }
+    return { recorded: this.publishedRecordedPayers, fed: this.publishedFedPayers };
   }
 
   /** The engine the registry records into now (the last `EngineSet`), or null when none is set. */

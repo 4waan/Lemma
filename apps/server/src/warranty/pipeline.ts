@@ -109,7 +109,7 @@ export async function checkRegistry(chain: WarrantyChain, config: WarrantyConfig
 export async function startWarrantyPipeline(deps: WarrantyPipelineDeps): Promise<WarrantyPipeline> {
   const { config, store, index, chain, clock, logger } = deps;
   await checkRegistry(chain, config, deps.usdc);
-  const snapshot = new RegistrySnapshot({ store, index, logger });
+  const snapshot = new RegistrySnapshot({ store, index, logger, clock, buyersRefreshMs: config.buyerCountsRefreshSeconds * 1000 });
   try {
     // What earlier runs indexed, before the first new run: the catalog shows it at once.
     await snapshot.refresh();

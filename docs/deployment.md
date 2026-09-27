@@ -183,6 +183,6 @@ On the buyer's machine, as the user that should hold the key (ideally not the us
 
 1. `lemma-signer init` creates the key file (mode 0600) and prints the buyer address. Fund it with test USDC on Arbitrum Sepolia; it needs no ETH.
 2. Start `lemma-signer serve` with `LEMMA_MAX_USDC_PER_RESOLUTION` and `LEMMA_DAILY_USDC_CAP` (atomic USDC) and `LEMMA_ALLOWED_PAY_TO` set. Set `LEMMA_SIGNER_KEY_FILE` only in the signer's environment.
-3. Start the bridge with the same policy variables, and either the signer's `LEMMA_STATE_DIR` (both then use `<state>/signer/signer.sock`) or `LEMMA_SIGNER_SOCKET` pointing at the signer's socket. Purchases stay off, and the bridge says why on stderr, until the policy variables parse and the signer answers.
+3. Start the bridge with the same policy variables, `LEMMA_REFUND_TO` (an address you control other than the buyer's), and either the signer's `LEMMA_STATE_DIR` (both then use `<state>/signer/signer.sock`) or `LEMMA_SIGNER_SOCKET` pointing at the signer's socket. Purchases stay off, and the bridge says why on stderr, until the policy variables and `LEMMA_REFUND_TO` parse and the signer answers.
 
 For a signer run as another user, give the two users a shared group and set `LEMMA_SIGNER_SOCKET_MODE=660` for the signer. Put its socket (`LEMMA_SIGNER_SOCKET`) in a directory the signer's user owns and the group can enter but not write to, such as mode 0750; the signer creates a missing directory as 0700. The signer and the bridge both refuse a socket directory its group or others can write to, such as `/tmp`.

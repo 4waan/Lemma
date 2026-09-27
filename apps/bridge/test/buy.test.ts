@@ -419,7 +419,7 @@ describe("lemma_buy_resolution in the bridge", () => {
   });
 
   it("is registered by main.ts only with a reachable signer and a valid policy", async () => {
-    const env = { LEMMA_MAX_USDC_PER_RESOLUTION: "250000", LEMMA_DAILY_USDC_CAP: "1000000", LEMMA_ALLOWED_PAY_TO: PROVIDER };
+    const env = { LEMMA_MAX_USDC_PER_RESOLUTION: "250000", LEMMA_DAILY_USDC_CAP: "1000000", LEMMA_ALLOWED_PAY_TO: PROVIDER, LEMMA_REFUND_TO: "0x00000000000000000000000000000000000000c3" };
     // The start environment is fixed, so a wallet secret in this machine's own environment cannot change the answers.
     const deps = { stateDir: temp("lemma-state-"), root: temp("lemma-root-"), clock: () => NOW, startEnv: {} };
     // Without LEMMA_SIGNER_SOCKET the bridge looks where lemma-signer serve listens by default: <state>/signer/signer.sock.
@@ -441,14 +441,19 @@ describe("lemma_buy_resolution in the bridge", () => {
     expect(noPolicy.signReceipt).toBeDefined();
     const on = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock" }, { ...deps, signerFor });
     expect(on.registerPaidTools).toBeDefined();
-    // Credits would go to the buyer's own address, which a withdrawal shows next to the resolution id: the bridge says so.
-    expect(on.note).toMatch(/^Warranty credits go to the buyer's own address.*LEMMA_REFUND_TO/);
+    expect(on.note).toBeUndefined();
+    // Purchases need a refund address other than the paying wallet, which a withdrawal would show next to the resolution id.
+    const { LEMMA_REFUND_TO: _unset, ...noRefund } = env;
+    const unset = await paymentsFromEnv({ ...noRefund, LEMMA_SIGNER_SOCKET: "/unused.sock" }, { ...deps, signerFor });
+    expect(unset.registerPaidTools).toBeUndefined();
+    expect(unset.signReceipt).toBeDefined();
+    expect(unset.note).toMatch(/^purchases are off: LEMMA_REFUND_TO is not set/);
+    const ownRefund = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_REFUND_TO: await signer.address() }, { ...deps, signerFor });
+    expect(ownRefund.registerPaidTools).toBeUndefined();
+    expect(ownRefund.note).toMatch(/^purchases are off: LEMMA_REFUND_TO is the buyer's own address/);
     const warned = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", ["BUYER" + "_PRIVATE_KEY"]: "set" }, { ...deps, signerFor });
     expect(warned.note).toContain("remove it");
-    // LEMMA_REFUND_TO is optional, but a malformed or zero address turns purchases off rather than losing credits.
-    const refunded = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_REFUND_TO: "0x00000000000000000000000000000000000000c3" }, { ...deps, signerFor });
-    expect(refunded.registerPaidTools).toBeDefined();
-    expect(refunded.note).toBeUndefined();
+    // A malformed or zero LEMMA_REFUND_TO turns purchases off rather than losing credits (checked below).
     // LEMMA_BUYER_ADDRESS pins the signer: one answering another address is not used, for purchases or receipts.
     const own = await signer.address();
     const pinned = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_BUYER_ADDRESS: own, LEMMA_REFUND_TO: "0x00000000000000000000000000000000000000c3" }, { ...deps, signerFor });

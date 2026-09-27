@@ -120,11 +120,11 @@ lemma-signer serve
 | `LEMMA_DAILY_USDC_CAP` | unset | Most spent in a rolling 24 hours, in atomic USDC. |
 | `LEMMA_ALLOWED_PAY_TO` | unset | Comma-separated recipient addresses the buyer will pay. |
 | `LEMMA_BUYER_ADDRESS` | unset | The address `lemma-signer init` printed. When set, a signer that answers another address is not used for purchases or receipts, so a socket another local user put in its place is refused. |
-| `LEMMA_REFUND_TO` | Buyer address | Where warranty credits are paid. Withdrawing a credit shows this address next to the public resolution id on chain. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
+| `LEMMA_REFUND_TO` | unset (required for purchases) | Where warranty credits are paid: an address you control other than the buyer's. Withdrawing a credit shows this address next to the public resolution id on chain, so purchases stay off while it is unset or is the buyer's own address. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
 
 The state directory must be absolute and outside the workspace. Empty values count as unset.
 
-Purchases need a signer and all three policy variables; decimal amounts are refused. The network and asset are fixed to Arbitrum Sepolia USDC, and authorizations to at most 600 seconds. The signer reads the same policy variables, plus `LEMMA_SIGNER_KEY_FILE` (default `<state>/signer/key`) and `LEMMA_SIGNER_SOCKET_MODE` (`600`, or `660` for a signer run as another user). Set those two only in the signer's environment.
+Purchases need a signer, all three policy variables, and `LEMMA_REFUND_TO`; decimal amounts are refused. The network and asset are fixed to Arbitrum Sepolia USDC, and authorizations to at most 600 seconds. The signer reads the same policy variables, plus `LEMMA_SIGNER_KEY_FILE` (default `<state>/signer/key`) and `LEMMA_SIGNER_SOCKET_MODE` (`600`, or `660` for a signer run as another user). Set those two only in the signer's environment.
 
 `LEMMA_AGENT_ID` opts the agent into public, task-specific reputation: once an outcome is finalized, Lemma's attester gives the agent the same feedback it gives the provider, at no cost to the buyer and with no extra tool step. The server posts to the agent only when the address that paid owns it or is its ERC-8004 agent wallet. So opting in publishes, on chain and for good, that the paying wallet adopted each resolution. Without it, no receipt names an agent. It is the buyer agent's id, not the server's `LEMMA_AGENT_ID` (the provider's): set it only in the bridge's MCP configuration.
 

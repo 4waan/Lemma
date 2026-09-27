@@ -39,7 +39,7 @@ A provider with many wallets can still pass the damper. The distinct-buyer count
 Anyone can read on chain:
 
 - The registry's events: each activation (resolution id, release digest, profile index, amount, payment reference, and claim deadline), each outcome (verdict, weight, and evidence hash), each expiry and credit withdrawal (amount), and each engine change. Activation calldata also shows the voucher's claim hash and `activateBy`.
-- A credit withdrawal's refund address and claim secret, in its calldata and USDC transfer, next to the resolution id. The secret is spent by then. A buyer that wants its purchase to stay unlinkable commits to a fresh refund address (the bridge's `LEMMA_REFUND_TO`).
+- A credit withdrawal's refund address and claim secret, in its calldata and USDC transfer, next to the resolution id. The secret is spent by then. The bridge buys only with a refund address other than the paying wallet (`LEMMA_REFUND_TO`); a fresh one per purchase keeps purchases unlinked from each other too.
 - The senders: the provider activates and expires, and the evaluator finalizes and relays withdrawals.
 - The engine's records, and each ERC-8004 feedback with its public feedback file.
 

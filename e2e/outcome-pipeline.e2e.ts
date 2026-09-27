@@ -146,7 +146,8 @@ describe("the outcome pipeline on a local chain", () => {
     return b;
   };
   const bridgeFor = async (key: Hex, variant: "pass" | "fail", refundTo?: Address, signer = inProcessSigner(key, roles.provider.address, tmp)) => {
-    const b = await startBridge({ apiUrl: server.url, signer, provider: roles.provider.address, variant, dir: tmp, ...(refundTo === undefined ? {} : { refundTo }) });
+    // Purchases need a refund address apart from the paying wallet: a fresh one unless the scenario names it.
+    const b = await startBridge({ apiUrl: server.url, signer, provider: roles.provider.address, variant, dir: tmp, refundTo: refundTo ?? runtimeKey().address });
     bridges.push(b);
     return b;
   };

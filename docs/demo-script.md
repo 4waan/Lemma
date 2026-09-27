@@ -44,7 +44,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 - Spending policy is enforced by local code outside the model.
 - Unsupported and unbenchmarked profiles remain free.
 - Eligible failure costs the provider's bond, and the buyer collects it without holding ETH.
-- Every warranty, outcome, and refund is a public record on Arbitrum Sepolia. No warranty or outcome record names the buyer; a refund shows only the refund address the buyer chose, which `LEMMA_REFUND_TO` keeps apart from the paying wallet.
+- Every warranty, outcome, and refund is a public record on Arbitrum Sepolia. No warranty or outcome record names the buyer; a refund shows only the refund address the buyer chose, which `LEMMA_REFUND_TO` must keep apart from the paying wallet before the bridge will buy.
 - One buyer cannot inflate a release's record: after three weighted outcomes on a profile in 30 days, its next ones weigh nothing.
 - The paired benchmark measures all-in cost-to-green against the same acceptance standard.
 

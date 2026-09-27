@@ -6,7 +6,8 @@ Use this page to find the document that owns a decision. Component READMEs cover
 
 - [Root README](../README.md): product, current implementation, quickstart, repository map, and submission roadmap.
 - [Economics](economics.md): what Lemma sells, why a resolution has value, pricing, warranties, and the business model.
-- [Arbitrum](arbitrum.md): why Lemma settles on Arbitrum, what is built on it, the integration options, and what past winners and facilitators show.
+- [Arbitrum](arbitrum.md): why Lemma settles on Arbitrum, what is built on it, the integration options, what past winners and facilitators show, and an analysis of using Arbitrum beyond payments (ERC-8004 reputation, bounded spending, a Stylus confidence engine, ZK proofs) with verdicts and UX rules.
+- [Arbitrum roadmap](arbitrum-roadmap.md): the two roadmap items from that analysis in depth, bounded spending with ERC-7715 and ERC-7710 and zero-knowledge compatibility proofs, each with its UX gaps and a checklist for starting.
 - [Demo Script](demo-script.md): the final three-minute narrative and claims that require evidence.
 
 ## Understand the system

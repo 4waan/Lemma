@@ -5,10 +5,14 @@ libs = ["lib"]
 test = "test"
 script = "script"
 solc = "0.8.30"
-evm_version = "shanghai"
+# Cancun: OpenZeppelin v5.6 uses MCOPY. Arbitrum has run Cancun opcodes since ArbOS 20.
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 bytecode_hash = "none"
+# Remappings come from remappings.txt only, so nested submodules of a dependency
+# (OpenZeppelin carries its own forge-std) can never change what an import resolves to.
+auto_detect_remappings = false
 
 [rpc_endpoints]
 arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"

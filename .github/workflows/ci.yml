@@ -71,6 +71,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # OpenZeppelin Contracts and forge-std, pinned by gitlink (contracts/README.md). Top
+          # level only: OpenZeppelin's own nested submodules are never compiled
+          # (foundry.toml turns off remapping auto-detection).
+          submodules: true
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       - run: forge build
         working-directory: contracts

@@ -45,7 +45,7 @@ Lemma needs a cheap, programmable settlement layer because a resolution can cost
 2. Activation of a provider-funded warranty after settlement.
 3. An evaluator-confirmed pass or refundable failure outcome.
 
-The payment and warranty paths are not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that those paths must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+The payment path is not implemented yet. The warranty registry contract is written and tested but not deployed, and the off-chain warranty steps are pending. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that those paths must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
 
 ## Build status
 
@@ -61,7 +61,8 @@ Lemma is an active MVP build. The compatibility path is substantially implemente
 | Dashboard views and production bundle checks | Implemented |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
 | x402 facilitator, paid MCP tool, signer integration, and settlement reconciliation | Pending |
-| Warranty registry, deployment scripts, and evaluator outcomes | Pending |
+| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; not deployed |
+| Registry deployment, voucher signing, and evaluator outcomes | Pending |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 
 This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, deployed contract, or public revenue claim is made today.
@@ -78,6 +79,7 @@ Requirements:
 Install and run the repository checks:
 
 ```bash
+git submodule update --init
 npm ci
 npm run verify
 npm run catalog:check
@@ -106,7 +108,7 @@ apps/web/           Read-only React dashboard
 packages/core/      Versioned schemas, identifiers, pricing, policy, and read models
 packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
 packages/benchmark/ Controlled agent experiments and evidence derivation
-contracts/          Foundry project for the pending warranty registry
+contracts/          Foundry project for the warranty registry, its tests, and its deploy script
 docs/               Architecture, protocol, economics, security, and delivery decisions
 ops/                Container and Railway configuration
 ```
@@ -119,7 +121,7 @@ The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs
 
 1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
 2. Complete the x402 purchase path, idempotent settlement recovery, signer integration, and facilitator.
-3. Implement and test the warranty registry, including one pass and one refunded failure on Arbitrum Sepolia.
+3. Deploy the tested warranty registry and demonstrate one pass and one refunded failure on Arbitrum Sepolia.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
 5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
 6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.

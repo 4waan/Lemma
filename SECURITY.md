@@ -4,7 +4,7 @@ Lemma handles repository metadata, generated patches, acceptance commands, payme
 
 ## Supported environment
 
-Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, and benchmark surfaces are implemented. Real payment signing, the x402 facilitator, and the warranty contract are not complete.
+Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, and benchmark surfaces are implemented. Real payment signing and the x402 facilitator are not complete. The warranty contract is tested but not deployed or audited.
 
 Do not use Lemma with mainnet assets or production signing keys. Use disposable Arbitrum Sepolia identities and public or synthetic repositories while developing the paid path.
 
@@ -77,9 +77,9 @@ The paid path must preserve these requirements before it is enabled:
 - Keep resolution preparation, settlement, delivery, and recovery idempotent.
 - Verify buyer receipt signatures before using them for compatibility history or warranty outcomes.
 
-## Pending contract controls
+## Contract controls
 
-The warranty registry must include EIP-712 domain separation, replay protection, expiry, pause controls, pull-based withdrawals, and reentrancy protection.
+The warranty registry includes EIP-712 domain separation, replay protection, expiry, pause controls, pull-based withdrawals, and reentrancy protection. It is not deployed or audited yet; its limits are listed in the [contracts guide](contracts/README.md#limits).
 
 Provider withdrawals cannot consume bond reserved for active resolutions. Release deactivation cannot invalidate an active warranty. The accounting invariant is:
 
@@ -87,7 +87,7 @@ Provider withdrawals cannot consume bond reserved for active resolutions. Releas
 USDC balance >= available bond + reserved bond + withdrawal credits
 ```
 
-Unit, fuzz, and invariant tests must cover six-decimal accounting and the complete activation, pass, failure, expiry, and withdrawal state machine before deployment.
+Unit, fuzz, and invariant tests cover six-decimal accounting and the complete activation, pass, failure, expiry, and withdrawal state machine, and must keep passing before deployment.
 
 ## Dependency and release checks
 

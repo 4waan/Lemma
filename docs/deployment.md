@@ -1,6 +1,6 @@
 # Deployment
 
-This runbook describes the target Arbitrum Sepolia submission environment. The server and container are implemented; payment, warranty, and public deployment remain pending.
+This runbook describes the target Arbitrum Sepolia submission environment. The server, container, and warranty registry contract are implemented. Payment, voucher signing, evaluator outcomes, and public deployment, including the registry's, remain pending.
 
 ## Target environment
 
@@ -14,7 +14,8 @@ This runbook describes the target Arbitrum Sepolia submission environment. The s
 
 Create distinct testnet identities for:
 
-- deployer and contract administrator;
+- contract deployer;
+- registry owner, which administers the contract (a multisig or a key other than the deployer is recommended);
 - capability provider and x402 recipient;
 - facilitator transaction signer;
 - outcome evaluator;
@@ -27,11 +28,14 @@ Record public addresses in the deployment evidence. Keep keys in scoped local or
 Run from a clean checkout:
 
 ```bash
+git submodule update --init
 npm ci
 npm run verify
 npm run catalog:check
 npm run contracts:build
 npm run contracts:test
+npm run contracts:abi -- --check
+npm run contracts:rehearse
 npm run secrets:scan
 ```
 
@@ -39,7 +43,7 @@ Production releases must not load `packages/catalog/releases.provisional`. Publi
 
 ## Deployment order
 
-1. Deploy and verify the warranty registry with the expected USDC contract and separated roles.
+1. Deploy and verify the warranty registry with the expected USDC contract and separated roles, using the two steps of `contracts/script/DeployRegistry.s.sol` (Deploy in the [contracts guide](../contracts/README.md#deploy)). The script refuses the wrong chain, the wrong USDC, or a zero owner, and reads the key only from `DEPLOYER_PRIVATE_KEY`. Its second, key-free step writes the deployment record.
 2. Create Postgres with a database-scoped user and apply the migration from the release image.
 3. Configure the server with the provider, network, demand, database, payment, and verified registry values.
 4. Deploy one Railway replica from `ops/Dockerfile` with `TRUSTED_PROXY_HOPS=1`.
@@ -81,7 +85,7 @@ Keep paid tools off while verifying a new build. Enable them only after free pre
 
 If settlement, voucher signing, or accounting behaves unexpectedly:
 
-1. Set `PAID_TOOLS=off` and stop new warranty activations.
+1. Set `PAID_TOOLS=off` and pause the registry to stop new warranty activations. A pause also stops finalization and expiry and adds the paused time to every running claim deadline, so no buyer's warranty runs out during the incident. Unreserved bond and buyer credits stay withdrawable.
 2. Preserve free preview, read-only resolution recovery, and buyer withdrawal access.
 3. Reconcile every prepared or uncertain settlement before redeploying.
 4. Preserve failed evidence and incident records.

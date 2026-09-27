@@ -196,6 +196,11 @@ describe("lemma_buy_resolution over x402 (real facilitator, fake USDC)", () => {
     // x402 accepts any window that has not closed; the handler holds it to the quoted 300 seconds plus 60 of slack.
     const tooLong = await paymentPayload(buyer, termsOf(preview), nonceFor(preview.previewId), BigInt(nowSeconds + 300 + 61));
     expect(await h.buy({ previewId: preview.previewId, claimHash }, tooLong)).toMatchObject({ isError: true, text: expect.stringMatching(/^UNSUPPORTED_PAYMENT: /) });
+    // So is a window past the last instant a Date can hold, which x402 accepts as a window that has not closed.
+    for (const beyondDates of [8_640_000_000_001n, 999_999_999_999_999n]) {
+      const payload = await paymentPayload(buyer, termsOf(preview), nonceFor(preview.previewId), beyondDates);
+      expect(await h.buy({ previewId: preview.previewId, claimHash }, payload)).toMatchObject({ isError: true, text: expect.stringMatching(/^UNSUPPORTED_PAYMENT: /) });
+    }
     expect(h.usdc.transfers).toEqual([]);
     expect(await h.store.getResolution(deriveResolutionId(preview.previewId, BUYER))).toBeUndefined();
     const edge = await paymentPayload(buyer, termsOf(preview), nonceFor(preview.previewId), BigInt(nowSeconds + 300 + 60));

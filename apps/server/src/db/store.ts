@@ -1,9 +1,20 @@
 import type { CatalogIndex } from "@lemma/catalog";
 import { type Address, AdoptionReceipt, CapabilityRelease, type Hex32, PatchBundle, type Preview } from "@lemma/core";
-import { and, asc, eq, gte, lt, ne, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, gt, gte, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
-import { type DemandBucket, type LemmaStore, type RearmResult, type ResolutionRow, decodePreview, decodeResolution, encode, saltedDigest } from "../persistence.js";
+import {
+  type DemandBucket,
+  type LemmaStore,
+  type RearmResult,
+  type ResolutionRow,
+  type UncheckedReceipt,
+  type UnsettledCursor,
+  decodePreview,
+  decodeResolution,
+  encode,
+  saltedDigest,
+} from "../persistence.js";
 import * as t from "./schema.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -75,6 +86,7 @@ export class PgStore implements LemmaStore {
         nonce: row.nonce,
         validBefore: row.validBefore,
         settlementRef: null,
+        claimHash: row.claimHash,
         body: encode(row.resolution),
         createdAt: now,
         updatedAt: now,
@@ -84,11 +96,11 @@ export class PgStore implements LemmaStore {
     return inserted.length === 1;
   }
 
-  async rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, now: Date): Promise<RearmResult> {
+  async rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, now: Date, claimHash: Hex32 | null): Promise<RearmResult> {
     try {
       const updated = await this.db
         .update(t.resolutions)
-        .set({ state: "prepared", nonce, validBefore, updatedAt: now })
+        .set({ state: "prepared", nonce, validBefore, claimHash, updatedAt: now })
         .where(and(eq(t.resolutions.resolutionId, resolutionId), eq(t.resolutions.state, "expired")))
         .returning({ id: t.resolutions.resolutionId });
       return updated.length === 1 ? "REARMED" : "NOT_EXPIRED";
@@ -105,18 +117,12 @@ export class PgStore implements LemmaStore {
   }
 
   async markSettled(resolutionId: Hex32, nonce: string, settlementRef: string, now: Date): Promise<boolean> {
-    try {
-      const updated = await this.db
-        .update(t.resolutions)
-        .set({ state: "settled", settlementRef, updatedAt: now })
-        .where(and(eq(t.resolutions.resolutionId, resolutionId), eq(t.resolutions.nonce, nonce), ne(t.resolutions.state, "settled")))
-        .returning({ id: t.resolutions.resolutionId });
-      return updated.length === 1;
-    } catch (error) {
-      // This settlement already settled another resolution (resolutions_settlement_idx).
-      if (sqlState(error) === UNIQUE_VIOLATION) return false;
-      throw error;
-    }
+    const updated = await this.db
+      .update(t.resolutions)
+      .set({ state: "settled", settlementRef, updatedAt: now })
+      .where(and(eq(t.resolutions.resolutionId, resolutionId), eq(t.resolutions.nonce, nonce), ne(t.resolutions.state, "settled")))
+      .returning({ id: t.resolutions.resolutionId });
+    return updated.length === 1;
   }
 
   async markExpired(resolutionId: Hex32, nonce: string, now: Date): Promise<boolean> {
@@ -128,12 +134,20 @@ export class PgStore implements LemmaStore {
     return updated.length === 1;
   }
 
-  async listUnsettled(before: Date, limit: number): Promise<ResolutionRow[]> {
+  async listUnsettled(before: Date, limit: number, after?: UnsettledCursor): Promise<ResolutionRow[]> {
     const rows = await this.db
       .select()
       .from(t.resolutions)
-      .where(and(eq(t.resolutions.state, "prepared"), lt(t.resolutions.validBefore, before)))
-      .orderBy(asc(t.resolutions.validBefore))
+      .where(
+        and(
+          eq(t.resolutions.state, "prepared"),
+          lt(t.resolutions.validBefore, before),
+          after === undefined
+            ? undefined
+            : or(gt(t.resolutions.validBefore, after.validBefore), and(eq(t.resolutions.validBefore, after.validBefore), gt(t.resolutions.resolutionId, after.resolutionId))),
+        ),
+      )
+      .orderBy(asc(t.resolutions.validBefore), asc(t.resolutions.resolutionId))
       .limit(limit);
     return rows.map(toRow);
   }
@@ -150,6 +164,34 @@ export class PgStore implements LemmaStore {
   async getReceipt(resolutionId: Hex32) {
     const [row] = await this.db.select().from(t.adoptionReceipts).where(eq(t.adoptionReceipts.resolutionId, resolutionId)).limit(1);
     return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified };
+  }
+
+  async listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]> {
+    const rows = await this.db
+      .select({ body: t.adoptionReceipts.body, receiptDigest: t.adoptionReceipts.receiptDigest })
+      .from(t.adoptionReceipts)
+      .where(isNull(t.adoptionReceipts.checkedAt))
+      .orderBy(asc(t.adoptionReceipts.receivedAt))
+      .limit(limit);
+    return rows.map((r) => ({ receipt: AdoptionReceipt.parse(JSON.parse(r.body)), receiptDigest: r.receiptDigest as Hex32 }));
+  }
+
+  async markReceiptVerified(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean> {
+    return this.verdict(resolutionId, receiptDigest, now, true);
+  }
+
+  async markReceiptChecked(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean> {
+    return this.verdict(resolutionId, receiptDigest, now, false);
+  }
+
+  /** One conditional update: a verdict lands once, and only on the receipt it was reached for. */
+  private async verdict(resolutionId: Hex32, receiptDigest: Hex32, now: Date, verified: boolean): Promise<boolean> {
+    const updated = await this.db
+      .update(t.adoptionReceipts)
+      .set({ verified, checkedAt: now })
+      .where(and(eq(t.adoptionReceipts.resolutionId, resolutionId), eq(t.adoptionReceipts.receiptDigest, receiptDigest), isNull(t.adoptionReceipts.checkedAt)))
+      .returning({ id: t.adoptionReceipts.resolutionId });
+    return updated.length === 1;
   }
 
   async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string): Promise<void> {
@@ -248,6 +290,7 @@ function toRow(row: typeof t.resolutions.$inferSelect): ResolutionRow {
     nonce: row.nonce,
     validBefore: row.validBefore,
     settlementRef: row.settlementRef,
+    claimHash: row.claimHash as Hex32 | null,
     resolution: decodeResolution(row.body),
   };
 }

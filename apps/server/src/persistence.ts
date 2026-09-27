@@ -14,7 +14,19 @@ export interface ResolutionRow {
   readonly nonce: string;
   readonly validBefore: Date;
   readonly settlementRef: string | null;
+  /**
+   * The buyer's warranty credit commitment (core `warrantyClaimHash`), sent
+   * with the paid call; null when the purchase carried none. The server never
+   * learns the secret or the refund address behind it.
+   */
+  readonly claimHash: Hex32 | null;
   readonly resolution: Resolution;
+}
+
+/** A stored receipt the signature check has not reached a verdict on. */
+export interface UncheckedReceipt {
+  readonly receipt: AdoptionReceipt;
+  readonly receiptDigest: Hex32;
 }
 
 export interface DemandBucket {
@@ -28,6 +40,19 @@ export interface DemandBucket {
 
 /** What re-arming an expired resolution did. */
 export type RearmResult = "REARMED" | "NOT_EXPIRED" | "PAYMENT_REUSED";
+
+/** Where a page of `listUnsettled` ended: the last row's window end and resolution id. */
+export interface UnsettledCursor {
+  readonly validBefore: Date;
+  readonly resolutionId: Hex32;
+}
+
+/** The order `listUnsettled` pages in: by window end, then resolution id. */
+export function compareUnsettled(a: UnsettledCursor, b: UnsettledCursor): number {
+  const byTime = a.validBefore.getTime() - b.validBefore.getTime();
+  if (byTime !== 0) return byTime;
+  return a.resolutionId < b.resolutionId ? -1 : a.resolutionId > b.resolutionId ? 1 : 0;
+}
 
 /**
  * Everything the server persists. `MemoryStore` serves development and tests;
@@ -48,13 +73,18 @@ export interface LemmaStore extends PreviewStore {
    * authorization can back one resolution only).
    */
   insertPrepared(row: ResolutionRow, now: Date): Promise<boolean>;
-  /** Re-arms an expired row with a new authorization, unless that authorization already backs another row. */
-  rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, now: Date): Promise<RearmResult>;
+  /**
+   * Re-arms an expired row with a new authorization (and the claim hash sent
+   * with it), unless that authorization already backs another row.
+   */
+  rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, now: Date, claimHash: Hex32 | null): Promise<RearmResult>;
   getResolution(resolutionId: Hex32): Promise<ResolutionRow | undefined>;
   /**
    * Marks a row settled by the authorization that settled it; false when there
    * is no such row, it is already settled, or its nonce is another
    * authorization's (a stale settlement must not land on a re-armed row).
+   * `settlementRef` is the transaction that used the authorization; one
+   * transaction may use several authorizations, so it may settle several rows.
    */
   markSettled(resolutionId: Hex32, nonce: string, settlementRef: string, now: Date): Promise<boolean>;
   /**
@@ -63,12 +93,30 @@ export interface LemmaStore extends PreviewStore {
    * otherwise (a stale decision never lands on a re-armed row).
    */
   markExpired(resolutionId: Hex32, nonce: string, now: Date): Promise<boolean>;
-  /** Prepared rows whose authorization ended before `before`, oldest first. */
-  listUnsettled(before: Date, limit: number): Promise<ResolutionRow[]>;
+  /**
+   * Prepared rows whose authorization ended before `before`, oldest window
+   * first (then by resolution id), starting after `after` when given, so a
+   * caller can page through all of them.
+   */
+  listUnsettled(before: Date, limit: number, after?: UnsettledCursor): Promise<ResolutionRow[]>;
 
   /** Stores a receipt; false when one already exists for the resolution (first write wins). */
   insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date): Promise<boolean>;
   getReceipt(resolutionId: Hex32): Promise<{ receipt: AdoptionReceipt; verified: boolean } | undefined>;
+  /** Receipts whose signature check has not reached a verdict yet, oldest first. */
+  listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]>;
+  /**
+   * Records that the receipt's signature is the resolution buyer's: sets
+   * `verified`. False unless the stored receipt has this digest and has no
+   * verdict yet, so a verdict is never recorded twice or for another receipt.
+   */
+  markReceiptVerified(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean>;
+  /**
+   * Records a verdict that leaves the receipt unverified (unsigned, or a
+   * signature that is not the buyer's), so it is not checked again. Same
+   * conditions as `markReceiptVerified`.
+   */
+  markReceiptChecked(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean>;
 
   /**
    * Adds one salted profile digest and one salted source to a bucket for its
@@ -121,7 +169,7 @@ export class MemoryStore implements LemmaStore {
   private readonly snapshots = new Map<string, string>();
   private readonly previews = new Map<string, { body: string; validUntil: Date }>();
   private readonly resolutions = new Map<string, ResolutionRow>();
-  private readonly receipts = new Map<string, { body: string; verified: boolean }>();
+  private readonly receipts = new Map<string, { body: string; digest: Hex32; verified: boolean; receivedAt: Date; checkedAt: Date | null }>();
   private readonly salts = new Map<string, string>();
   private readonly seen = new Map<string, { profiles: Set<string>; sources: Set<string> }>();
   private readonly daily = new Map<string, DemandBucket>();
@@ -181,11 +229,11 @@ export class MemoryStore implements LemmaStore {
     return true;
   }
 
-  async rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, _now?: Date): Promise<RearmResult> {
+  async rearmExpired(resolutionId: Hex32, nonce: string, validBefore: Date, _now: Date, claimHash: Hex32 | null): Promise<RearmResult> {
     const row = this.resolutions.get(resolutionId);
     if (row?.state !== "expired") return "NOT_EXPIRED";
     if (this.nonceHeld(row.payer, nonce, resolutionId)) return "PAYMENT_REUSED";
-    this.resolutions.set(resolutionId, { ...row, state: "prepared", nonce, validBefore });
+    this.resolutions.set(resolutionId, { ...row, state: "prepared", nonce, validBefore, claimHash });
     return "REARMED";
   }
 
@@ -200,7 +248,6 @@ export class MemoryStore implements LemmaStore {
   async markSettled(resolutionId: Hex32, nonce: string, settlementRef: string, _now?: Date): Promise<boolean> {
     const row = this.resolutions.get(resolutionId);
     if (row === undefined || row.state === "settled" || row.nonce !== nonce) return false;
-    if ([...this.resolutions.values()].some((r) => r.settlementRef === settlementRef)) return false;
     this.resolutions.set(resolutionId, { ...row, state: "settled", settlementRef });
     return true;
   }
@@ -212,22 +259,45 @@ export class MemoryStore implements LemmaStore {
     return true;
   }
 
-  async listUnsettled(before: Date, limit: number) {
+  async listUnsettled(before: Date, limit: number, after?: UnsettledCursor) {
     return [...this.resolutions.values()]
-      .filter((r) => r.state === "prepared" && r.validBefore < before)
-      .sort((a, b) => a.validBefore.getTime() - b.validBefore.getTime())
+      .filter((r) => r.state === "prepared" && r.validBefore < before && (after === undefined || compareUnsettled(r, after) > 0))
+      .sort(compareUnsettled)
       .slice(0, limit);
   }
 
-  async insertReceipt(receipt: AdoptionReceipt, _receiptDigest?: Hex32, _now?: Date): Promise<boolean> {
+  async insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date): Promise<boolean> {
     if (this.receipts.has(receipt.resolutionId)) return false;
-    this.receipts.set(receipt.resolutionId, { body: encode(receipt), verified: false });
+    this.receipts.set(receipt.resolutionId, { body: encode(receipt), digest: receiptDigest, verified: false, receivedAt: now, checkedAt: null });
     return true;
   }
 
   async getReceipt(resolutionId: Hex32) {
     const row = this.receipts.get(resolutionId);
     return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified };
+  }
+
+  async listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]> {
+    return [...this.receipts.values()]
+      .filter((r) => r.checkedAt === null)
+      .sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime())
+      .slice(0, limit)
+      .map((r) => ({ receipt: AdoptionReceipt.parse(JSON.parse(r.body)), receiptDigest: r.digest }));
+  }
+
+  async markReceiptVerified(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean> {
+    return this.verdict(resolutionId, receiptDigest, now, true);
+  }
+
+  async markReceiptChecked(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean> {
+    return this.verdict(resolutionId, receiptDigest, now, false);
+  }
+
+  private verdict(resolutionId: Hex32, receiptDigest: Hex32, now: Date, verified: boolean): boolean {
+    const row = this.receipts.get(resolutionId);
+    if (row === undefined || row.digest !== receiptDigest || row.checkedAt !== null) return false;
+    this.receipts.set(resolutionId, { ...row, verified, checkedAt: now });
+    return true;
   }
 
   async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string): Promise<void> {

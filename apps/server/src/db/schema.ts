@@ -1,4 +1,4 @@
-import { isNotNull } from "drizzle-orm";
+import { isNull } from "drizzle-orm";
 import { boolean, date, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
@@ -45,8 +45,12 @@ export const resolutionState = pgEnum("resolution_state", ["prepared", "settled"
  * One row per `deriveResolutionId(previewId, payer)`. `prepared` is written
  * before settlement, `settled` after it. `expired` is set by the payment
  * reconciler once an authorization can no longer settle; a new payment may then
- * re-arm the row. One authorization (payer and nonce) backs at most one row,
- * and one settlement settles at most one row.
+ * re-arm the row. One authorization (payer and nonce) backs at most one row
+ * and settles it once. `settlement_ref` is the transaction that used the row's
+ * authorization. It is not unique: anyone may submit EIP-3009 authorizations,
+ * and one transaction can use several, each a payment of its own.
+ * `claim_hash` is the buyer's warranty credit commitment (core
+ * `warrantyClaimHash`), null for resolutions bought without one.
  */
 export const resolutions = pgTable(
   "resolutions",
@@ -58,6 +62,7 @@ export const resolutions = pgTable(
     nonce: text("nonce").notNull(),
     validBefore: timestamp("valid_before", { withTimezone: true, mode: "date" }).notNull(),
     settlementRef: text("settlement_ref"),
+    claimHash: text("claim_hash"),
     body: text("body").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
@@ -66,18 +71,27 @@ export const resolutions = pgTable(
     index("resolutions_preview_idx").on(t.previewId),
     index("resolutions_unsettled_idx").on(t.state, t.validBefore),
     uniqueIndex("resolutions_authorization_idx").on(t.payer, t.nonce),
-    uniqueIndex("resolutions_settlement_idx").on(t.settlementRef).where(isNotNull(t.settlementRef)),
   ],
 );
 
-/** One receipt per settled resolution; the first accepted write wins. `verified` is set by the signature check. */
-export const adoptionReceipts = pgTable("adoption_receipts", {
-  resolutionId: text("resolution_id").primaryKey(),
-  receiptDigest: text("receipt_digest").notNull(),
-  body: text("body").notNull(),
-  verified: boolean("verified").notNull().default(false),
-  receivedAt: timestamp("received_at", { withTimezone: true, mode: "date" }).notNull(),
-});
+/**
+ * One receipt per settled resolution; the first accepted write wins. The
+ * signature check sets `checked_at` when it reaches a verdict, and `verified`
+ * only when the signature is the resolution buyer's. A check that could not
+ * run (the chain was unreachable) leaves both, so it runs again.
+ */
+export const adoptionReceipts = pgTable(
+  "adoption_receipts",
+  {
+    resolutionId: text("resolution_id").primaryKey(),
+    receiptDigest: text("receipt_digest").notNull(),
+    body: text("body").notNull(),
+    verified: boolean("verified").notNull().default(false),
+    receivedAt: timestamp("received_at", { withTimezone: true, mode: "date" }).notNull(),
+    checkedAt: timestamp("checked_at", { withTimezone: true, mode: "date" }),
+  },
+  (t) => [index("adoption_receipts_unchecked_idx").on(t.receivedAt).where(isNull(t.checkedAt))],
+);
 
 /** A daily secret that salts profile digests for distinct counting; deleted when its day closes. */
 export const demandSalts = pgTable("demand_salts", {

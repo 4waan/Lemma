@@ -1,0 +1,24 @@
+{
+  "name": "@lemma/confidence",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "typecheck": "tsc -b",
+    "test": "vitest run --root ../.. packages/confidence/test",
+    "wasm": "node scripts/build-wasm.mjs",
+    "wasm:check": "node scripts/build-wasm.mjs --check"
+  },
+  "devDependencies": {
+    "fast-check": "4.10.2"
+  }
+}

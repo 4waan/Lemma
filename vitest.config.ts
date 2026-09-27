@@ -12,6 +12,7 @@ export default defineConfig({
     // Tests exercise workspace sources, not whatever was last built into dist/.
     alias: {
       "@lemma/core": src("packages/core"),
+      "@lemma/confidence": src("packages/confidence"),
       "@lemma/catalog": src("packages/catalog"),
       "@lemma/benchmark": src("packages/benchmark"),
       "@lemma/server": src("apps/server"),

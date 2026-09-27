@@ -64,7 +64,7 @@ Selects the newest applicable local purchase for the capability and package.
 
 ### `lemma_verify_adoption`
 
-Runs the release's acceptance recipe only when the resolution is present and the package still fits the purchased profile. The command runs without a shell, with bounded output, a timeout, a fresh home directory, and wallet-secret checks.
+Runs the release's acceptance recipe only when the resolution is present and the package still fits the purchased profile. The command runs without a shell, with bounded output, a timeout, a fresh home directory, and wallet-secret checks. On Linux it also runs in a sandbox that hides the Lemma state directory and the signer from the tests and ends every process they start (see `LEMMA_ACCEPTANCE_CONFINE`).
 
 The first started run produces the receipt that counts. Retryable delivery failures are kept in the local inbox and sent again later. `lemma-signer` signs the receipt when it answers; without a signer, the receipt is sent unsigned and the server keeps it unverified. The receipt carries `LEMMA_AGENT_ID` when it is set.
 
@@ -113,6 +113,7 @@ lemma-signer serve
 | `LEMMA_WORKSPACE` | Current directory | Repository boundary for scans and writes. |
 | `LEMMA_STATE_DIR` | `$XDG_STATE_HOME/lemma` or `~/.local/state/lemma` | Private inbox, manifests, receipts, journals, exports, and recovery data. |
 | `LEMMA_ACCEPTANCE_OFFLINE` | unset | Set to `1` on Linux to run acceptance in a network namespace. |
+| `LEMMA_ACCEPTANCE_CONFINE` | on where it works | Set to `0` to run acceptance tests without the Linux sandbox (user, mount and PID namespaces) that hides the state directory and the signer socket's directory from them. Where unprivileged user namespaces are unavailable, tests run unconfined and the bridge warns at startup. |
 | `LEMMA_BRIDGE_TRACE` | unset | Benchmark-only path for minimal tool-call tracing. |
 | `LEMMA_AGENT_ID` | unset | This agent's own ERC-8004 agent id, a decimal number. Opt-in: sent as `agentId` with every adoption receipt. An invalid value stops the bridge at startup. |
 | `LEMMA_SIGNER_SOCKET` | `<state>/signer/signer.sock` | Socket of `lemma-signer`. Purchases stay off while no signer answers there. |

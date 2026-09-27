@@ -56,6 +56,12 @@ export interface AdoptionDeps {
   readonly offlineAcceptance: boolean;
   /** Longest a dependency install may take. */
   readonly installTimeoutSec: number;
+  /**
+   * Directories acceptance tests must not see (the signer's socket directory,
+   * when it is outside the state directory); the state directory is always
+   * among them. False runs tests unconfined (LEMMA_ACCEPTANCE_CONFINE=0).
+   */
+  readonly acceptanceHidden?: readonly string[] | false;
   /** The payment work's signing hook: the receipt's signature, or null to send it unsigned. */
   readonly signReceipt?: ((receipt: AdoptionReceipt, previewId: Hex32) => Promise<AdoptionReceipt["signature"]>) | undefined;
 }
@@ -185,7 +191,9 @@ async function verify(deps: AdoptionDeps, ctx: PaidToolContext, capability: Capa
   const command = { manager, script: release.acceptanceRecipe.script };
   // Without the script the recipe runs, the package manager fails before any test: that is no result either.
   if (acceptanceScriptMissing(packageDir, release.acceptanceRecipe.script)) return notStartedText(command, "script-missing");
-  const run = await runAcceptance(acceptanceArgv(release.acceptanceRecipe, manager), { cwd: packageDir, recipe: release.acceptanceRecipe, offline: deps.offlineAcceptance });
+  // Confined where it works: the tests cannot read the purchase's preview id and claim, or reach the signer, so they cannot sign or post a receipt first.
+  const hide = deps.acceptanceHidden === false ? [] : [deps.inbox.dir, ...(deps.acceptanceHidden ?? [])];
+  const run = await runAcceptance(acceptanceArgv(release.acceptanceRecipe, manager), { cwd: packageDir, recipe: release.acceptanceRecipe, offline: deps.offlineAcceptance, hide });
   if (!run.started) return notStartedText(command, run.notStarted);
 
   // A failed receipt that counts, on a purchase under warranty, gets the line naming the refund tool.

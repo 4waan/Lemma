@@ -7,6 +7,8 @@ import type { Readable } from "node:stream";
 
 import { type AcceptanceRecipe, type AdoptionReceipt, type Hex32, fileDigest } from "@lemma/core";
 
+import { type ConfineTools, confineTools, confinedArgv, confinedNotStarted, confinementAvailable, hiddenDirs } from "./confine.js";
+
 /** Acceptance output kept for its digest; beyond this, output is drained and dropped. */
 export const MAX_ACCEPTANCE_OUTPUT = 1024 * 1024;
 const MAX_DURATION_MS = 24 * 3600 * 1000;
@@ -14,7 +16,7 @@ const MAX_DURATION_MS = 24 * 3600 * 1000;
 const MANAGER_CHECK_MS = 20_000;
 
 /** Why an acceptance run did not start: no test ran, so there is no result and no receipt. */
-export type NotStarted = "command-not-found" | "manager-unusable" | "offline-unavailable";
+export type NotStarted = "command-not-found" | "manager-unusable" | "offline-unavailable" | "confinement-failed";
 
 export interface AcceptanceRun {
   /** False when the command never ran: that is no test result, and no receipt. */
@@ -27,6 +29,8 @@ export interface AcceptanceRun {
   /** Digest of the first MAX_ACCEPTANCE_OUTPUT bytes of stdout and stderr as they arrived; null if nothing ran. */
   readonly outputDigest: Hex32 | null;
   readonly truncated: boolean;
+  /** Whether the tests ran confined: the hidden directories covered, no process outside visible (see `runAcceptance`). */
+  readonly confined: boolean;
 }
 
 /** The PATH an acceptance run gets: the Node running the bridge, the package manager's own directory, then the usual system directories. */
@@ -141,16 +145,42 @@ export function offlineAvailable(tools: OfflineTools | undefined = offlineTools(
   return probe.status === 0 && String(probe.output[3] ?? "") === "nx";
 }
 
+/** How a run is wrapped: the argv that starts a command inside it, and why a wrapper that never reported "x" did not start it. */
+interface Wrapper {
+  argv(command: readonly string[]): string[];
+  notStarted(marks: string): NotStarted;
+  readonly confined: boolean;
+}
+
+/**
+ * The wrapper a run gets: confined (`confinedArgv`) when there is something
+ * to hide and confinement works here, with the network namespace too when
+ * offline; else offline only (`offlineArgv`) when asked; else none. Undefined
+ * as the second element when offline was asked and cannot be had.
+ */
+async function wrapperFor(options: { offline?: boolean; host?: NodeJS.ProcessEnv; tools?: OfflineTools; hide?: readonly string[]; confine?: ConfineTools | false; cwd: string }): Promise<{ wrap: Wrapper | undefined; unavailable?: NotStarted }> {
+  const offline = options.offline === true;
+  const hide = hiddenDirs(options.hide ?? [], options.cwd);
+  const confine = options.confine === false || hide.length === 0 ? undefined : (options.confine ?? confineTools(options.host?.["PATH"]));
+  if (confine !== undefined && (await confinementAvailable(confine)) && (!offline || confine.ip !== undefined)) {
+    return { wrap: { argv: (command) => confinedArgv(command, confine, { hide, offline }), notStarted: (marks) => confinedNotStarted(marks, offline), confined: true } };
+  }
+  if (!offline) return { wrap: undefined };
+  const tools = options.tools ?? offlineTools(options.host?.["PATH"]);
+  if (tools === undefined || !offlineAvailable(tools)) return { wrap: undefined, unavailable: "offline-unavailable" };
+  return { wrap: { argv: (command) => offlineArgv(command, tools), notStarted: offlineNotStarted, confined: false } };
+}
+
 /**
  * Whether the package manager runs at all in the acceptance environment
  * (`<manager> --version`, inside the namespace too when the tests will be). A
  * corepack shim for a version corepack has not downloaded, for example, fails
  * here rather than as a failed test.
  */
-function managerRuns(manager: string, cwd: string, env: Record<string, string>, tools: OfflineTools | undefined): Promise<"ok" | NotStarted> {
-  const [file, ...args] = tools === undefined ? [manager, "--version"] : offlineArgv([manager, "--version"], tools);
+function managerRuns(manager: string, cwd: string, env: Record<string, string>, wrap: Wrapper | undefined): Promise<"ok" | NotStarted> {
+  const [file, ...args] = wrap === undefined ? [manager, "--version"] : wrap.argv([manager, "--version"]);
   return new Promise((resolve) => {
-    const child = spawn(file as string, args, { cwd, env, shell: false, detached: true, stdio: tools === undefined ? "ignore" : ["ignore", "ignore", "ignore", "pipe"] });
+    const child = spawn(file as string, args, { cwd, env, shell: false, detached: true, stdio: wrap === undefined ? "ignore" : ["ignore", "ignore", "ignore", "pipe"] });
     let marks = "";
     (child.stdio[3] as Readable | null | undefined)?.on("data", (chunk: Buffer) => (marks += chunk.toString()));
     const timer = setTimeout(() => {
@@ -166,7 +196,7 @@ function managerRuns(manager: string, cwd: string, env: Record<string, string>, 
     });
     child.on("close", (code) => {
       clearTimeout(timer);
-      if (tools !== undefined && !marks.includes("x")) resolve(offlineNotStarted(marks));
+      if (wrap !== undefined && !marks.includes("x")) resolve(wrap.notStarted(marks));
       else resolve(code === 0 ? "ok" : "manager-unusable");
     });
   });
@@ -190,28 +220,38 @@ function managerRuns(manager: string, cwd: string, env: Record<string, string>, 
  * could still call out. Either way the tests run as this user and can read
  * what this user can, including the bridge's environment in /proc: keep
  * wallet keys out of it.
+ *
+ * `hide` (Linux, where unprivileged user namespaces work) confines the run:
+ * it gets its own user, mount and PID namespaces, an empty tmpfs over each
+ * hidden directory (the bridge's state directory and the signer's socket
+ * directory: purchases, preview ids, claims and the signer are out of
+ * reach), and a /proc that shows only its own processes, so it cannot reach
+ * those through another process either. Nothing it starts outlives it.
+ * Where confinement does not work, or `confine` is false, the run is not
+ * confined, as before, and `confined` says so. A confined run whose
+ * namespace fails at the run itself did not start (`confinement-failed`).
  */
 export async function runAcceptance(
   argv: readonly string[],
-  /** `tools`: the offline tools to use, found on this system by default. */
-  options: { cwd: string; recipe: AcceptanceRecipe; offline?: boolean; host?: NodeJS.ProcessEnv; checkManager?: boolean; tools?: OfflineTools },
+  /** `tools`: the offline tools to use, found on this system by default; `confine`: the confinement tools, or false for none. */
+  options: { cwd: string; recipe: AcceptanceRecipe; offline?: boolean; host?: NodeJS.ProcessEnv; checkManager?: boolean; tools?: OfflineTools; hide?: readonly string[]; confine?: ConfineTools | false },
 ): Promise<AcceptanceRun> {
-  const notStarted = (reason: NotStarted): AcceptanceRun => ({ started: false, notStarted: reason, exitCode: null, timedOut: false, durationMs: 0, outputDigest: null, truncated: false });
-  const tools = options.offline === true ? (options.tools ?? offlineTools(options.host?.["PATH"])) : undefined;
-  if (options.offline === true && (tools === undefined || !offlineAvailable(tools))) return notStarted("offline-unavailable");
+  const notStarted = (reason: NotStarted): AcceptanceRun => ({ started: false, notStarted: reason, exitCode: null, timedOut: false, durationMs: 0, outputDigest: null, truncated: false, confined: false });
+  const { wrap, unavailable } = await wrapperFor(options);
+  if (unavailable !== undefined) return notStarted(unavailable);
   // The package manager is run by the absolute path found on the bridge's PATH, so nothing earlier on the acceptance PATH (the Node directory) can stand in for it.
   const managerDir = argv[0] === undefined || argv[0].includes("/") ? undefined : commandDir(argv[0], options.host?.["PATH"] ?? process.env["PATH"]);
   const command = managerDir === undefined ? [...argv] : [join(managerDir, argv[0] as string), ...argv.slice(1)];
   const home = mkdtempSync(join(tmpdir(), "lemma-acceptance-"));
   const env = acceptanceEnv(options.recipe, home, options.host, minimalPath(undefined, managerDir === undefined ? [] : [managerDir]));
   if (options.checkManager !== false && command[0] !== undefined) {
-    const runs = await managerRuns(command[0], options.cwd, env, tools);
+    const runs = await managerRuns(command[0], options.cwd, env, wrap);
     if (runs !== "ok") {
       removeQuietly(home);
       return notStarted(runs);
     }
   }
-  const [file, ...args] = tools === undefined ? command : offlineArgv(command, tools);
+  const [file, ...args] = wrap === undefined ? command : wrap.argv(command);
   const started = performance.now();
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
@@ -220,7 +260,7 @@ export async function runAcceptance(
     let timedOut = false;
     let settled = false;
     let marks = "";
-    const child = spawn(file as string, args, { cwd: options.cwd, env, shell: false, detached: true, stdio: tools === undefined ? ["ignore", "pipe", "pipe"] : ["ignore", "pipe", "pipe", "pipe"] });
+    const child = spawn(file as string, args, { cwd: options.cwd, env, shell: false, detached: true, stdio: wrap === undefined ? ["ignore", "pipe", "pipe"] : ["ignore", "pipe", "pipe", "pipe"] });
     (child.stdio[3] as Readable | null | undefined)?.on("data", (chunk: Buffer) => (marks += chunk.toString()));
     const keep = (chunk: Buffer) => {
       const room = MAX_ACCEPTANCE_OUTPUT - kept;
@@ -251,13 +291,13 @@ export async function runAcceptance(
       settled = true;
       clearTimeout(timer);
       killGroup();
-      // Offline, the tests ran only if the wrapper reported starting them; an exit before that is the wrapper's, not a test result.
+      // Wrapped, the tests ran only if the wrapper reported starting them; an exit before that is the wrapper's, not a test result.
       if (!ran) resolve(notStarted("command-not-found"));
-      else if (tools !== undefined && !marks.includes("x")) resolve(notStarted(offlineNotStarted(marks)));
+      else if (wrap !== undefined && !marks.includes("x")) resolve(notStarted(wrap.notStarted(marks)));
       else {
         // Measured on the monotonic clock: a wall-clock step never makes a duration negative.
         const durationMs = Math.min(MAX_DURATION_MS, Math.max(0, Math.round(performance.now() - started)));
-        resolve({ started: true, notStarted: null, exitCode: timedOut ? null : exitCode, timedOut, durationMs, outputDigest: fileDigest(Buffer.concat(chunks)), truncated });
+        resolve({ started: true, notStarted: null, exitCode: timedOut ? null : exitCode, timedOut, durationMs, outputDigest: fileDigest(Buffer.concat(chunks)), truncated, confined: wrap?.confined ?? false });
       }
       removeQuietly(home);
     };

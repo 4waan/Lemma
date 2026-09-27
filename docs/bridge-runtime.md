@@ -82,7 +82,9 @@ The acceptance command runs without a shell, in its own process group, with a fr
 
 The bridge refuses to start an acceptance run when its current or startup environment contains a wallet-secret variable. The buyer key lives in `lemma-signer`, not the bridge, but a key file readable by the operating-system user remains readable by the test process. Production buyer signing should therefore run the signer as another user, or use a hardware or remote signer.
 
-On Linux, optional offline mode creates a new network namespace with loopback enabled. If namespace setup cannot be verified, no test starts and no receipt is recorded.
+On Linux, the run is confined by default: new user, mount and PID namespaces, with an empty tmpfs over the state directory and the signer socket's directory, a fresh `/proc`, and the command in a nested user and mount namespace so the tests cannot unmount the covers. A wrapper shell reports on fd 3 how far setup got, so a failed setup reports `confinement-failed` and never counts as a test result. The bridge probes once, asynchronously, whether this works; where it does not (no unprivileged user namespaces, or no `unshare` or `mount`), runs are unconfined and the bridge warns at startup. `LEMMA_ACCEPTANCE_CONFINE=0` turns confinement off. See [Security Model](security-model.md#receipts-from-acceptance-tests).
+
+Optional offline mode (`LEMMA_ACCEPTANCE_OFFLINE=1`) adds a network namespace with loopback enabled, inside the same sandbox when it is on. If namespace setup cannot be verified, no test starts and no receipt is recorded.
 
 ## Receipt delivery
 

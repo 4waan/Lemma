@@ -105,7 +105,7 @@ Core's `warranty` module holds the registry's EIP-712 layouts and the objects si
 | `failed` | FAILED | 2 | The reserved amount becomes the buyer's credit, and the engine records a failure. | 10000, or 0 under the damper |
 | `abandoned` | VOID | 3 | The bond returns to the release, and nothing is recorded. | 0 |
 
-A failed receipt becomes FAILED on its own only with `EVALUATOR_FAILURES=auto`; by default an operator decides FAILED or VOID. An unverified or missing receipt is never finalized, and its warranty expires. The registry calls the engine's `record` only for a PASSED or FAILED verdict with a weight above zero while an engine is set, so a zero weight keeps an outcome out of every record without changing its warranty. The damper gives a payer's outcomes weight 0 beyond three weighted ones per release digest and profile index in 30 days (see [the damper](reputation-and-confidence.md#the-damper)).
+A failed receipt becomes FAILED on its own only with `EVALUATOR_FAILURES=auto`; by default an operator decides FAILED or VOID. An unverified or missing receipt is never finalized, and its warranty expires. The registry calls the engine's `record` only for a PASSED or FAILED verdict with a weight above zero while an engine is set, so a zero weight keeps an outcome out of every record without changing its warranty. [The damper](reputation-and-confidence.md#the-damper) decides which PASSED and FAILED outcomes get weight 0.
 
 ### Outbox and relay objects
 

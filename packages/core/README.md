@@ -68,7 +68,7 @@ Core holds no keys and signs nothing, but it fixes every value both sides of a p
 
 ## Warranty pieces
 
-`warranty` holds the warranty registry's EIP-712 layouts and the objects signed with them. The layouts belong to the protocol owner: they are copied exactly from `contracts/src/ResolutionWarrantyRegistry.sol`, and a test reproduces the registry's own vectors. Core still holds no keys and signs nothing. [Protocol](../../docs/protocol.md#vouchers-and-outcomes) says how the server fills and signs each one:
+[Protocol](../../docs/protocol.md#vouchers-and-outcomes) describes each piece of the `warranty` module:
 
 - `WARRANTY_DOMAIN_NAME`, `WARRANTY_DOMAIN_VERSION`, `WARRANTY_VOUCHER_TYPES`, `WARRANTY_OUTCOME_TYPES`, `warrantyDomain`, and `WarrantyRegistryRef`: the registry's domain and types, for a chain id and registry address.
 - `warrantyVoucherTypedData(voucher, registry)` and `warrantyOutcomeTypedData(outcome, registry)`: viem-ready typed data.

@@ -29,7 +29,9 @@ Do not duplicate a schema independently across applications.
 2. Create a local `.env` only when a task requires it.
 3. Add or update tests with every behavior change.
 4. Run `npm run verify` (type checking, tests, and the production build) and the relevant Foundry checks.
-5. Review logs and generated artifacts for secrets before committing. The pre-commit hook runs gitleaks on staged changes when it is installed locally, `npm run secrets:scan` scans your history, and CI scans every commit.
+5. `npm test` runs from a fresh clone, before any build: tests that start a child process run it with `node --conditions=source --import tsx`, and each workspace's `source` export condition points that child at `src/`, never at a stale `dist/`.
+6. Linux is the reference platform, and CI runs every test there. On macOS or in a sandbox, tests that need Linux (`/proc`, network and pid namespaces, `unshare` and `ip` for offline acceptance, byte file names the filesystem refuses, or a `ps` that can see other processes) are skipped with a comment saying why; variables the OS adds to every process (macOS `__CF_USER_TEXT_ENCODING`) are ignored in exact environment checks.
+7. Review logs and generated artifacts for secrets before committing. The pre-commit hook runs gitleaks on staged changes when it is installed locally, `npm run secrets:scan` scans your history, and CI scans every commit.
 
 ## Continuous integration
 

@@ -1,12 +1,32 @@
 import { resolve } from "@lemma/catalog";
-import { type AdoptionReceipt, type Hex32, type Preview, ResolutionDelivery, adoptionReceiptDigest, deriveResolutionId } from "@lemma/core";
+import {
+  type Address,
+  type AdoptionReceipt,
+  type Hex32,
+  type Preview,
+  ResolutionDelivery,
+  type WarrantyOutcome,
+  type WarrantyVoucher,
+  adoptionReceiptDigest,
+  deriveResolutionId,
+} from "@lemma/core";
 import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { type LemmaStore, MIGRATIONS_FOLDER, MemoryStore, PgStore, ResolutionService, demandBucket, schemaIsCurrent, silentLogger } from "../src/index.js";
+import {
+  type LemmaStore,
+  MIGRATIONS_FOLDER,
+  MemoryStore,
+  PgStore,
+  type RegistryEventRow,
+  ResolutionService,
+  demandBucket,
+  schemaIsCurrent,
+  silentLogger,
+} from "../src/index.js";
 import { BUYER, NOW, PROVIDER, gatingTask, matchingProfile, nextPreviewId, sellableIndex } from "./helpers.js";
 
 const OTHER_BUYER = "0x00000000000000000000000000000000000000c1";
@@ -35,7 +55,7 @@ const stores: Array<[string, () => Promise<LemmaStore>]> = [
   [
     "postgres (PGlite)",
     async () => {
-      await pgDb.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts`);
+      await pgDb.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts, warranty_actions, registry_events, chain_cursors`);
       return new PgStore(pgDb);
     },
   ],
@@ -396,5 +416,281 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
     expect(await store.markReceiptChecked(otherId, adoptionReceiptDigest(unsigned), LATER)).toBe(true);
     expect(await store.listUncheckedReceipts(10)).toEqual([]);
     expect(await store.getReceipt(otherId)).toEqual({ receipt: unsigned, verified: false, buyerAgentId: null });
+  });
+});
+
+describe.each(stores)("the warranty outbox and registry index on the %s store", (_name, makeStore) => {
+  let store: LemmaStore;
+  let service: ResolutionService;
+  const index = sellableIndex();
+  const releaseDigest = index.releases[0]!.releaseDigest;
+  const DAY = 86_400_000;
+
+  beforeEach(async () => {
+    store = await makeStore();
+    service = new ResolutionService(store, () => LATER, silentLogger);
+    await store.saveCatalog(index, NOW);
+  });
+
+  let nonce = 0;
+  /** A settled resolution of `payer`, bought from a fresh offer, with a claim hash unless `claimHash` is null. */
+  async function settledResolution(payer: Address = BUYER, claimHash: Hex32 | null = `0x${"c1".repeat(32)}`): Promise<{ id: Hex32; previewId: Hex32 }> {
+    const offer = resolve({ task: gatingTask, profile: matchingProfile }, index, {
+      now: NOW,
+      previewId: nextPreviewId(),
+      payment: { network: "eip155:421614", asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", maxTimeoutSeconds: 300 },
+      offerTtlSeconds: 900,
+    });
+    await store.saveOffer(offer);
+    const n = `0x${(++nonce).toString(16).padStart(4, "0")}`;
+    const prepared = await service.prepare(offer.previewId, payment(payer, n), LATER, claimHash);
+    if (!prepared.ok) throw new Error(prepared.reason);
+    const id = deriveResolutionId(offer.previewId, payer);
+    expect(await service.commit(id, settled(n, `0x${"5e".repeat(32)}`))).toBe("COMMITTED");
+    return { id, previewId: offer.previewId };
+  }
+
+  const voucher = (resolutionId: Hex32, over: Partial<WarrantyVoucher> = {}): WarrantyVoucher => ({
+    schemaVersion: "1",
+    resolutionId,
+    releaseDigest,
+    profileIndex: 0,
+    amount: "250000",
+    paymentRef: `0x${"7e".repeat(32)}`,
+    claimHash: `0x${"c1".repeat(32)}`,
+    activateBy: 1_790_000_000,
+    ...over,
+  });
+  const outcome = (resolutionId: Hex32, over: Partial<WarrantyOutcome> = {}): WarrantyOutcome => ({
+    schemaVersion: "1",
+    resolutionId,
+    verdict: "passed",
+    weightBps: 10_000,
+    evidenceHash: `0x${"ee".repeat(32)}`,
+    validUntil: 1_790_003_600,
+    ...over,
+  });
+  const txOf = (n: number) => `0x${n.toString(16).padStart(64, "0")}` as Hex32;
+  const event = (over: Partial<RegistryEventRow> & Pick<RegistryEventRow, "name" | "blockNumber" | "logIndex">): RegistryEventRow => ({
+    txHash: txOf(Number(over.blockNumber) * 100 + over.logIndex),
+    blockTime: new Date(NOW.getTime() + Number(over.blockNumber) * 1000),
+    resolutionId: null,
+    releaseDigest: null,
+    profileIndex: null,
+    verdict: null,
+    weightBps: null,
+    evidenceHash: null,
+    amount: null,
+    claimDeadline: null,
+    engine: null,
+    ...over,
+  });
+  const activated = (resolutionId: Hex32, blockNumber: bigint, claimDeadline: bigint, profileIndex = 0) =>
+    event({ name: "ResolutionActivated", blockNumber, logIndex: 0, resolutionId, releaseDigest, profileIndex, amount: "250000", claimDeadline });
+  const finalized = (resolutionId: Hex32, blockNumber: bigint, verdict: number, weightBps = 10_000, blockTime?: Date) =>
+    event({ name: "OutcomeFinalized", blockNumber, logIndex: 1, resolutionId, releaseDigest, verdict, weightBps, evidenceHash: `0x${"ee".repeat(32)}`, ...(blockTime === undefined ? {} : { blockTime }) });
+  let cursor: bigint | undefined;
+  /** Stores events as the indexer does, moving the cursor on. */
+  async function index_(events: RegistryEventRow[]): Promise<void> {
+    const next = (cursor ?? 0n) + 100n;
+    expect(await store.advanceChainCursor("warranty-registry", cursor, next, events, NOW)).toBe(true);
+    cursor = next;
+  }
+  beforeEach(() => {
+    cursor = undefined;
+  });
+
+  it("keeps one action per resolution and kind, changed only by the job that read its state and attempts", async () => {
+    const id = `0x${"a1".repeat(32)}` as Hex32;
+    const due = new Date(NOW.getTime() + 60_000);
+    expect(await store.insertWarrantyAction({ resolutionId: id, kind: "activate", payload: voucher(id), signature: null, state: "queued", nextAttemptAt: due }, NOW)).toBe(true);
+    // The same kind again keeps the first; another kind is its own row.
+    expect(await store.insertWarrantyAction({ resolutionId: id, kind: "activate", payload: voucher(id, { amount: "1" }), signature: null, state: "queued", nextAttemptAt: NOW }, NOW)).toBe(false);
+    expect(await store.insertWarrantyAction({ resolutionId: id, kind: "finalize", payload: outcome(id), signature: null, state: "review", nextAttemptAt: NOW }, NOW)).toBe(true);
+    expect(await store.getWarrantyAction(id, "activate")).toEqual({
+      resolutionId: id,
+      kind: "activate",
+      payload: voucher(id),
+      signature: null,
+      state: "queued",
+      attempts: 0,
+      nextAttemptAt: due,
+      txHash: null,
+      sentAt: null,
+      lastCode: null,
+      createdAt: NOW,
+      updatedAt: NOW,
+    });
+    expect(await store.getWarrantyAction(id, "expire")).toBeUndefined();
+
+    // Due only once its time has come, by kind; an action in review never is.
+    expect(await store.dueWarrantyActions("activate", NOW, 10)).toEqual([]);
+    expect((await store.dueWarrantyActions("activate", due, 10)).map((a) => a.resolutionId)).toEqual([id]);
+    expect(await store.dueWarrantyActions("finalize", due, 10)).toEqual([]);
+    expect((await store.listWarrantyActions({ state: "review" }, 10)).map((a) => [a.resolutionId, a.kind])).toEqual([[id, "finalize"]]);
+    expect(await store.listWarrantyActions({ kind: "activate", state: "review" }, 10)).toEqual([]);
+
+    // Claiming an attempt: only for the state and attempts read, so two jobs never both send it.
+    const signature = `0x${"ab".repeat(65)}`;
+    const lease = new Date(NOW.getTime() + 300_000);
+    const claim = { state: "sent" as const, attempts: 1, payload: voucher(id, { activateBy: 1_790_000_900 }), signature, nextAttemptAt: lease };
+    expect(await store.updateWarrantyAction(id, "activate", { state: "queued", attempts: 1 }, claim, LATER)).toBe(false);
+    expect(await store.updateWarrantyAction(id, "activate", { state: "sent", attempts: 0 }, claim, LATER)).toBe(false);
+    expect(await store.updateWarrantyAction(id, "activate", { state: "queued", attempts: 0 }, claim, LATER)).toBe(true);
+    expect(await store.updateWarrantyAction(id, "activate", { state: "queued", attempts: 0 }, claim, LATER)).toBe(false);
+    const tx = txOf(7);
+    expect(await store.updateWarrantyAction(id, "activate", { state: "sent", attempts: 1 }, { txHash: tx, sentAt: LATER }, LATER)).toBe(true);
+    expect(await store.getWarrantyAction(id, "activate")).toMatchObject({ state: "sent", attempts: 1, payload: voucher(id, { activateBy: 1_790_000_900 }), signature, txHash: tx, sentAt: LATER, nextAttemptAt: lease, updatedAt: LATER });
+    // A sent action is due again at its lease's end, for the checks before any resend.
+    expect((await store.dueWarrantyActions("activate", lease, 10)).map((a) => a.state)).toEqual(["sent"]);
+
+    // Final states never change.
+    expect(await store.updateWarrantyAction(id, "activate", { state: "sent", attempts: 1 }, { state: "done", lastCode: null }, LATER)).toBe(true);
+    expect(await store.updateWarrantyAction(id, "activate", { state: "done", attempts: 1 }, { state: "queued" }, LATER)).toBe(false);
+    expect(await store.dueWarrantyActions("activate", new Date(lease.getTime() + DAY), 10)).toEqual([]);
+    expect((await store.getWarrantyAction(id, "activate"))?.state).toBe("done");
+  });
+
+  it("refuses a payload that does not fit its action, and keeps a withdrawal's claim only until it is over", async () => {
+    const id = `0x${"a2".repeat(32)}` as Hex32;
+    const other = `0x${"a3".repeat(32)}` as Hex32;
+    await expect(store.insertWarrantyAction({ resolutionId: id, kind: "activate", payload: voucher(other), signature: null, state: "queued", nextAttemptAt: NOW }, NOW)).rejects.toThrow();
+    await expect(store.insertWarrantyAction({ resolutionId: id, kind: "expire", payload: voucher(id), signature: null, state: "queued", nextAttemptAt: NOW }, NOW)).rejects.toThrow();
+    await expect(store.insertWarrantyAction({ resolutionId: id, kind: "finalize", payload: outcome(id), signature: "0x12", state: "queued", nextAttemptAt: NOW }, NOW)).rejects.toThrow();
+    expect(await store.getWarrantyAction(id, "activate")).toBeUndefined();
+
+    const claim = { schemaVersion: "1" as const, resolutionId: id, claimSecret: `0x${"5c".repeat(32)}` as Hex32, to: "0x00000000000000000000000000000000000000d9" };
+    expect(await store.insertWarrantyAction({ resolutionId: id, kind: "withdraw", payload: claim, signature: null, state: "queued", nextAttemptAt: NOW }, NOW)).toBe(true);
+    expect((await store.getWarrantyAction(id, "withdraw"))?.payload).toEqual(claim);
+    expect(await store.updateWarrantyAction(id, "withdraw", { state: "queued", attempts: 0 }, { state: "done", payload: { schemaVersion: "1", resolutionId: id } }, LATER)).toBe(true);
+    const done = await store.getWarrantyAction(id, "withdraw");
+    expect(done?.payload).toEqual({ schemaVersion: "1", resolutionId: id });
+    expect(JSON.stringify(done)).not.toContain("5c5c5c");
+  });
+
+  it("stores each registry log once, and moves the cursor only with the rows, only from where it was", async () => {
+    const a = `0x${"b1".repeat(32)}` as Hex32;
+    expect(await store.getChainCursor("warranty-registry")).toBeUndefined();
+    const first = [activated(a, 10n, 1_790_100_000n), event({ name: "EngineSet", blockNumber: 5n, logIndex: 3, engine: "0x00000000000000000000000000000000000000e9" })];
+    expect(await store.advanceChainCursor("warranty-registry", undefined, 11n, first, NOW)).toBe(true);
+    expect(await store.getChainCursor("warranty-registry")).toBe(11n);
+    // A second reader that read the same range: its cursor is stale, so nothing changes.
+    expect(await store.advanceChainCursor("warranty-registry", undefined, 12n, [finalized(a, 11n, 1)], NOW)).toBe(false);
+    expect(await store.advanceChainCursor("warranty-registry", 5n, 12n, [finalized(a, 11n, 1)], NOW)).toBe(false);
+    expect(await store.listRegistryEvents({}, 10)).toHaveLength(2);
+    // The same log again (a re-read after a crash) is kept once.
+    expect(await store.advanceChainCursor("warranty-registry", 11n, 21n, [first[0]!, finalized(a, 11n, 1), event({ name: "Paused", blockNumber: 20n, logIndex: 0 })], NOW)).toBe(true);
+    const all = await store.listRegistryEvents({}, 10);
+    expect(all.map((e) => [e.name, e.blockNumber, e.logIndex])).toEqual([
+      ["EngineSet", 5n, 3],
+      ["ResolutionActivated", 10n, 0],
+      ["OutcomeFinalized", 11n, 1],
+      ["Paused", 20n, 0],
+    ]);
+    expect(all[1]).toEqual(first[0]);
+    expect(all[0]?.engine).toBe("0x00000000000000000000000000000000000000e9");
+    expect(await store.listRegistryEvents({ after: { blockNumber: 10n, logIndex: 0 } }, 10)).toEqual(all.slice(2));
+    expect(await store.listRegistryEvents({ after: { blockNumber: 10n, logIndex: 0 } }, 1)).toEqual(all.slice(2, 3));
+    expect((await store.listRegistryEvents({ resolutionId: a }, 10)).map((e) => e.name)).toEqual(["ResolutionActivated", "OutcomeFinalized"]);
+    expect((await store.listRegistryEvents({ names: ["Paused", "EngineSet"] }, 10)).map((e) => e.name)).toEqual(["EngineSet", "Paused"]);
+    expect(await store.listRegistryEvents({ names: [] }, 10)).toEqual([]);
+    // A row that could never be read back is refused, and nothing moves.
+    await expect(store.advanceChainCursor("warranty-registry", 21n, 31n, [{ ...finalized(a, 25n, 1), txHash: "0xAB" as Hex32 }], NOW)).rejects.toThrow();
+    expect(await store.getChainCursor("warranty-registry")).toBe(21n);
+    expect(await store.listRegistryEvents({}, 10)).toHaveLength(4);
+  });
+
+  it("lists settled resolutions bought with a claim until an activation covers them", async () => {
+    const withClaim = await settledResolution(BUYER);
+    const second = await settledResolution(OTHER_BUYER);
+    await settledResolution(BUYER, null);
+    // Prepared but never paid: no warranty.
+    const unpaid = resolve({ task: gatingTask, profile: matchingProfile }, index, {
+      now: NOW,
+      previewId: nextPreviewId(),
+      payment: { network: "eip155:421614", asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", maxTimeoutSeconds: 300 },
+      offerTtlSeconds: 900,
+    });
+    await store.saveOffer(unpaid);
+    await service.prepare(unpaid.previewId, payment(BUYER, "0x7777"), LATER, `0x${"c2".repeat(32)}`);
+    expect((await store.listResolutionsToActivate(10)).map((r) => r.resolutionId).sort()).toEqual([withClaim.id, second.id].sort());
+    expect(await store.listResolutionsToActivate(1)).toHaveLength(1);
+    await store.insertWarrantyAction({ resolutionId: withClaim.id, kind: "activate", payload: voucher(withClaim.id), signature: null, state: "skipped", nextAttemptAt: NOW, lastCode: "RELEASE_NOT_REGISTERED" }, NOW);
+    expect((await store.listResolutionsToActivate(10)).map((r) => r.resolutionId)).toEqual([second.id]);
+    expect((await store.getWarrantyAction(withClaim.id, "activate"))?.lastCode).toBe("RELEASE_NOT_REGISTERED");
+  });
+
+  it("lists active warranties with a verified receipt to evaluate, and ones past their deadline to expire", async () => {
+    const [verified, unverified, silent, passed, expired] = await Promise.all([1, 2, 3, 4, 5].map((i) => settledResolution(`0x00000000000000000000000000000000000000${(0xd0 + i).toString(16)}`)));
+    const receipt = (id: Hex32): AdoptionReceipt => ({ schemaVersion: "1", resolutionId: id, outcome: "passed", acceptance: { exitCode: 0, durationMs: 1000, outputDigest: null }, recordedAt: "2026-10-01T00:02:00.000Z", signature: null });
+    for (const r of [verified!, unverified!, passed!]) expect(await service.acceptReceipt({ receipt: receipt(r.id), previewId: r.previewId })).toBe("ACCEPTED");
+    for (const r of [verified!, passed!]) expect(await store.markReceiptVerified(r.id, adoptionReceiptDigest(receipt(r.id)), LATER)).toBe(true);
+    await index_([
+      activated(verified!.id, 10n, 1_000n),
+      activated(unverified!.id, 11n, 1_000n),
+      activated(silent!.id, 12n, 2_000n),
+      activated(passed!.id, 13n, 1_000n),
+      activated(expired!.id, 14n, 500n),
+      finalized(passed!.id, 20n, 1),
+      event({ name: "ResolutionExpired", blockNumber: 21n, logIndex: 0, resolutionId: expired!.id, releaseDigest, amount: "250000" }),
+    ]);
+    expect((await store.listWarrantiesToEvaluate(10)).map((e) => e.resolutionId)).toEqual([verified!.id]);
+    await store.insertWarrantyAction({ resolutionId: verified!.id, kind: "finalize", payload: outcome(verified!.id), signature: null, state: "review", nextAttemptAt: NOW }, NOW);
+    expect(await store.listWarrantiesToEvaluate(10)).toEqual([]);
+
+    // Before 1500 only the deadlines at 1000 are past; an action in review does not hold an expiry back.
+    expect((await store.listWarrantiesToExpire(1_500n, 10)).map((e) => e.resolutionId).sort()).toEqual([verified!.id, unverified!.id].sort());
+    expect((await store.listWarrantiesToExpire(1_000n, 10)).map((e) => e.resolutionId)).toEqual([]);
+    expect((await store.listWarrantiesToExpire(3_000n, 10)).map((e) => e.resolutionId)).toContain(silent!.id);
+    expect(await store.listWarrantiesToExpire(3_000n, 1)).toHaveLength(1);
+    // A finalization queued (or sent) does; so does an expiry action already there.
+    expect(await store.updateWarrantyAction(verified!.id, "finalize", { state: "review", attempts: 0 }, { state: "queued" }, NOW)).toBe(true);
+    await store.insertWarrantyAction({ resolutionId: silent!.id, kind: "expire", payload: { schemaVersion: "1", resolutionId: silent!.id }, signature: null, state: "queued", nextAttemptAt: NOW }, NOW);
+    expect((await store.listWarrantiesToExpire(3_000n, 10)).map((e) => e.resolutionId)).toEqual([unverified!.id]);
+  });
+
+  it("counts a payer's weighted outcomes per release and profile for the damper: finalized or in flight, in the window, once each", async () => {
+    const since = new Date(NOW.getTime() - 30 * DAY);
+    const ids = await Promise.all([1, 2, 3, 4, 5, 6, 7, 8].map(() => settledResolution(BUYER)));
+    const [a, b, c, d, e, f, g, h] = ids.map((r) => r.id) as [Hex32, Hex32, Hex32, Hex32, Hex32, Hex32, Hex32, Hex32];
+    const theirs = (await settledResolution(OTHER_BUYER)).id;
+    await index_([
+      ...[a, b, c, d, e, f, g, h, theirs].map((id, i) => activated(id, BigInt(10 + i), 9_000_000_000n, id === h ? 1 : 0)),
+      finalized(a, 30n, 1, 10_000, NOW),
+      finalized(b, 31n, 2, 5_000, NOW),
+      // Not counted: a VOID, a zero weight, one older than the window, another profile, another payer.
+      finalized(c, 32n, 3, 10_000, NOW),
+      finalized(d, 33n, 1, 0, NOW),
+      finalized(e, 34n, 1, 10_000, new Date(NOW.getTime() - 31 * DAY)),
+      finalized(h, 35n, 1, 10_000, NOW),
+      finalized(theirs, 36n, 1, 10_000, NOW),
+    ]);
+    const query = { payer: BUYER, releaseDigest, profileIndex: 0, since, exclude: `0x${"ff".repeat(32)}` as Hex32 };
+    expect(await store.countDamperOutcomes(query)).toBe(2);
+    // In flight: a queued finalization with weight counts, once even when it also finalized; one in review counts; a VOID one or an abandoned one does not.
+    await store.insertWarrantyAction({ resolutionId: a, kind: "finalize", payload: outcome(a), signature: null, state: "done", nextAttemptAt: NOW }, NOW);
+    await store.insertWarrantyAction({ resolutionId: f, kind: "finalize", payload: outcome(f), signature: null, state: "review", nextAttemptAt: NOW }, NOW);
+    await store.insertWarrantyAction({ resolutionId: g, kind: "finalize", payload: outcome(g, { verdict: "void", weightBps: 0 }), signature: null, state: "queued", nextAttemptAt: NOW }, NOW);
+    expect(await store.countDamperOutcomes(query)).toBe(3);
+    await store.updateWarrantyAction(f, "finalize", { state: "review", attempts: 0 }, { state: "abandoned" }, NOW);
+    expect(await store.countDamperOutcomes(query)).toBe(2);
+    await store.insertWarrantyAction({ resolutionId: e, kind: "finalize", payload: outcome(e), signature: null, state: "queued", nextAttemptAt: NOW }, new Date(NOW.getTime() - 31 * DAY));
+    expect(await store.countDamperOutcomes(query)).toBe(2);
+    // The resolution asked about never counts itself.
+    expect(await store.countDamperOutcomes({ ...query, exclude: a })).toBe(1);
+    expect(await store.countDamperOutcomes({ ...query, profileIndex: 1 })).toBe(1);
+    expect(await store.countDamperOutcomes({ ...query, payer: OTHER_BUYER })).toBe(1);
+  });
+
+  it("counts for the damper an outcome finalized, or an action written, exactly at the window's start, and not a second before", async () => {
+    const since = new Date(NOW.getTime() - 30 * DAY);
+    const before = new Date(since.getTime() - 1000);
+    const [a, b, c, d] = (await Promise.all([1, 2, 3, 4].map(() => settledResolution(BUYER)))).map((r) => r.id) as [Hex32, Hex32, Hex32, Hex32];
+    await index_([...[a, b, c, d].map((id, i) => activated(id, BigInt(10 + i), 9_000_000_000n)), finalized(a, 30n, 1, 10_000, since), finalized(b, 31n, 1, 10_000, before)]);
+    const query = { payer: BUYER, releaseDigest, profileIndex: 0, since, exclude: `0x${"ff".repeat(32)}` as Hex32 };
+    expect(await store.countDamperOutcomes(query)).toBe(1);
+    await store.insertWarrantyAction({ resolutionId: c, kind: "finalize", payload: outcome(c), signature: null, state: "queued", nextAttemptAt: NOW }, since);
+    await store.insertWarrantyAction({ resolutionId: d, kind: "finalize", payload: outcome(d), signature: null, state: "queued", nextAttemptAt: NOW }, before);
+    expect(await store.countDamperOutcomes(query)).toBe(2);
   });
 });

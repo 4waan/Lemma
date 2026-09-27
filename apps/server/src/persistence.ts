@@ -1,17 +1,26 @@
 import type { CatalogIndex } from "@lemma/catalog";
 import {
-  type Address,
+  Address,
   AdoptionReceipt,
   type AgentId,
   type CapabilityId,
   CapabilityRelease,
-  type Hex32,
+  Hex32,
   PatchBundle,
   Preview,
   Resolution,
+  SignatureBytes,
+  type WarrantyActionKind,
+  WarrantyActionRef,
+  type WarrantyActionState,
+  WarrantyOutcome,
+  WarrantyVoucher,
+  WarrantyWithdrawal,
   canonicalize,
   fileDigest,
+  isFinalActionState,
 } from "@lemma/core";
+import { z } from "zod";
 
 import type { PreviewStore } from "./store.js";
 
@@ -120,6 +129,179 @@ export interface ReputationPostChange {
 }
 
 /**
+ * What a warranty outbox action carries: a voucher to activate, an outcome to
+ * finalize, a credit withdrawal to relay, or only its resolution (an expiry,
+ * a withdrawal once it is over, or an action closed before it had anything to
+ * carry). Stores keep it as canonical JSON and re-parse it with its core
+ * schema on every read.
+ */
+export type WarrantyPayload = WarrantyVoucher | WarrantyOutcome | WarrantyWithdrawal | WarrantyActionRef;
+
+const PAYLOAD_SCHEMAS = {
+  activate: z.union([WarrantyVoucher, WarrantyActionRef]),
+  finalize: z.union([WarrantyOutcome, WarrantyActionRef]),
+  expire: WarrantyActionRef,
+  withdraw: z.union([WarrantyWithdrawal, WarrantyActionRef]),
+} as const satisfies Record<WarrantyActionKind, z.ZodType>;
+
+/** Parses a payload for an action of `kind` on `resolutionId`; throws when it is not one, or names another resolution. */
+export function parseWarrantyPayload(kind: WarrantyActionKind, resolutionId: Hex32, payload: unknown): WarrantyPayload {
+  const parsed = PAYLOAD_SCHEMAS[kind].parse(payload) as WarrantyPayload;
+  if (parsed.resolutionId !== resolutionId) throw new TypeError(`a ${kind} payload names another resolution`);
+  return parsed;
+}
+
+/** A payload's stored form: its canonical JSON, after checking it fits the action. */
+export function encodeWarrantyPayload(kind: WarrantyActionKind, resolutionId: Hex32, payload: WarrantyPayload): string {
+  return canonicalize(parseWarrantyPayload(kind, resolutionId, payload));
+}
+
+export function decodeWarrantyPayload(kind: WarrantyActionKind, resolutionId: Hex32, body: string): WarrantyPayload {
+  return parseWarrantyPayload(kind, resolutionId, JSON.parse(body));
+}
+
+/** An EIP-712 signature as stored with an action (core `SignatureBytes`), or null. */
+export function checkSignature(signature: string | null): string | null {
+  return signature === null ? null : SignatureBytes.parse(signature);
+}
+
+/** One warranty action as it is first written to the outbox. */
+export interface NewWarrantyAction {
+  readonly resolutionId: Hex32;
+  readonly kind: WarrantyActionKind;
+  readonly payload: WarrantyPayload;
+  /** The EIP-712 signature over the payload (activate and finalize), null until signed. */
+  readonly signature: string | null;
+  /** Usually `queued` (due at `nextAttemptAt`) or `review` (waits for an operator); a final state closes it at once. */
+  readonly state: WarrantyActionState;
+  readonly nextAttemptAt: Date;
+  /** Why it is in this state, when a code says more than the state (a skip's reason, say). */
+  readonly lastCode?: string | null;
+}
+
+/**
+ * A warranty outbox row: one per resolution and kind. `attempts` counts sends
+ * begun; once it is above zero a transaction may be out, and the job reads
+ * the recorded transaction's receipt and the registry's state before it ever
+ * sends again.
+ */
+export interface WarrantyAction {
+  readonly resolutionId: Hex32;
+  readonly kind: WarrantyActionKind;
+  readonly payload: WarrantyPayload;
+  readonly signature: string | null;
+  readonly state: WarrantyActionState;
+  readonly attempts: number;
+  readonly nextAttemptAt: Date;
+  /** The last transaction sent for it, if any. */
+  readonly txHash: Hex32 | null;
+  readonly sentAt: Date | null;
+  /** The last failure's code, or why it was skipped or abandoned. */
+  readonly lastCode: string | null;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+/** Fields a job changes on an action, only while it still has the state and attempts the job read. */
+export interface WarrantyActionChange {
+  readonly state?: WarrantyActionState;
+  readonly payload?: WarrantyPayload;
+  readonly signature?: string | null;
+  readonly attempts?: number;
+  readonly nextAttemptAt?: Date;
+  readonly txHash?: Hex32 | null;
+  readonly sentAt?: Date | null;
+  readonly lastCode?: string | null;
+}
+
+/** What `updateWarrantyAction` compares before it changes a row. */
+export interface WarrantyActionExpectation {
+  readonly attempts: number;
+  readonly state: WarrantyActionState;
+}
+
+/**
+ * The warranty registry's events the indexer stores, in the registry's own
+ * names. `Paused` and `Unpaused` are kept too: every second the registry is
+ * paused moves each active warranty's claim deadline later.
+ */
+export const REGISTRY_EVENT_NAMES = ["ResolutionActivated", "OutcomeFinalized", "EngineRecordFailed", "ResolutionExpired", "CreditWithdrawn", "EngineSet", "Paused", "Unpaused"] as const;
+
+export type RegistryEventName = (typeof REGISTRY_EVENT_NAMES)[number];
+
+export function isRegistryEventName(name: string): name is RegistryEventName {
+  return (REGISTRY_EVENT_NAMES as readonly string[]).includes(name);
+}
+
+/**
+ * One registry log as the indexer stored it, with its block's timestamp.
+ * Fields an event does not have are null: `resolutionId` for `EngineSet`,
+ * `Paused` and `Unpaused`; `releaseDigest` except for `ResolutionActivated`,
+ * `OutcomeFinalized` and `ResolutionExpired`; `profileIndex` and
+ * `claimDeadline` (Unix seconds) for `ResolutionActivated`; `verdict`,
+ * `weightBps` and `evidenceHash` for `OutcomeFinalized`; `amount` (atomic
+ * USDC) for `ResolutionActivated`, `ResolutionExpired` and `CreditWithdrawn`;
+ * `engine` (the new engine, zero when disabled) for `EngineSet`. The payment
+ * reference of an activation is never stored.
+ */
+export interface RegistryEventRow {
+  readonly blockNumber: bigint;
+  readonly logIndex: number;
+  readonly txHash: Hex32;
+  readonly blockTime: Date;
+  readonly name: RegistryEventName;
+  readonly resolutionId: Hex32 | null;
+  readonly releaseDigest: Hex32 | null;
+  readonly profileIndex: number | null;
+  readonly verdict: number | null;
+  readonly weightBps: number | null;
+  readonly evidenceHash: Hex32 | null;
+  readonly amount: string | null;
+  readonly claimDeadline: bigint | null;
+  readonly engine: Address | null;
+}
+
+/** Where a log sits in the chain: registry events are read and ordered by block, then log index. */
+export interface EventPosition {
+  readonly blockNumber: bigint;
+  readonly logIndex: number;
+}
+
+export function compareEventPositions(a: EventPosition, b: EventPosition): number {
+  return a.blockNumber < b.blockNumber ? -1 : a.blockNumber > b.blockNumber ? 1 : a.logIndex - b.logIndex;
+}
+
+/** Which stored registry events to list: after a position, of one resolution, of some names; all of them when empty. */
+export interface RegistryEventQuery {
+  readonly after?: EventPosition | undefined;
+  readonly resolutionId?: Hex32 | undefined;
+  readonly names?: readonly RegistryEventName[] | undefined;
+}
+
+/**
+ * The wash-adoption damper's question: this payer's outcomes with a weight
+ * above zero for one release digest and profile index, finalized (indexed
+ * `OutcomeFinalized`, PASSED or FAILED) or in flight (an outbox finalization
+ * not skipped or abandoned, not VOID), since `since`, other than `exclude`.
+ */
+export interface DamperQuery {
+  readonly payer: Address;
+  readonly releaseDigest: Hex32;
+  readonly profileIndex: number;
+  readonly since: Date;
+  readonly exclude: Hex32;
+}
+
+/** Whether an in-flight finalization's payload counts for the damper: a PASSED or FAILED outcome with weight. */
+export function countsForDamper(payload: WarrantyPayload): boolean {
+  const outcome = WarrantyOutcome.safeParse(payload);
+  return outcome.success && outcome.data.verdict !== "void" && outcome.data.weightBps > 0;
+}
+
+/** The outbox states a finalization counts for the damper in: not given up and not skipped. */
+export const DAMPER_ACTION_STATES: readonly WarrantyActionState[] = ["review", "queued", "sent", "done"];
+
+/**
  * Everything the server persists. `MemoryStore` serves development and tests;
  * `PgStore` (drizzle over postgres.js or PGlite) serves production. One
  * contract suite runs against both, so they cannot drift apart.
@@ -218,6 +400,50 @@ export interface LemmaStore extends PreviewStore {
    * resolution needs them, and resolutions that expired unpaid before then.
    */
   purgeExpiredOffers(before: Date): Promise<number>;
+
+  /** Where the named chain reader goes on: the next block to read, or undefined before its first run. */
+  getChainCursor(name: string): Promise<bigint | undefined>;
+  /**
+   * Stores `events` (each once: a (transaction, log index) already stored is
+   * kept as it is) and moves the named cursor to `next`, in one step, only
+   * while the cursor is still at `expected` (undefined for a cursor that does
+   * not exist yet); false, changing nothing, when another reader moved it.
+   */
+  advanceChainCursor(name: string, expected: bigint | undefined, next: bigint, events: readonly RegistryEventRow[], now: Date): Promise<boolean>;
+  /** Stored registry events that match `query`, in chain order (block, then log index). */
+  listRegistryEvents(query: RegistryEventQuery, limit: number): Promise<RegistryEventRow[]>;
+
+  /** Adds an outbox action; false when the resolution already has one of this kind (kept as it is). */
+  insertWarrantyAction(action: NewWarrantyAction, now: Date): Promise<boolean>;
+  getWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind): Promise<WarrantyAction | undefined>;
+  /** Actions of `kind` to attempt at `now` (`queued` or `sent`, due), the longest waiting first. */
+  dueWarrantyActions(kind: WarrantyActionKind, now: Date, limit: number): Promise<WarrantyAction[]>;
+  /** Actions of a kind and state (each optional), oldest first. */
+  listWarrantyActions(filter: { readonly kind?: WarrantyActionKind; readonly state?: WarrantyActionState }, limit: number): Promise<WarrantyAction[]>;
+  /**
+   * Applies `change` only while the action still has `expected` state and
+   * attempts, so two jobs never both begin the same attempt; false when the
+   * row moved on. A final state (done, skipped, abandoned) never changes.
+   */
+  updateWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind, expected: WarrantyActionExpectation, change: WarrantyActionChange, now: Date): Promise<boolean>;
+
+  /** Settled resolutions bought with a claim that have no activation action yet, the longest settled first. */
+  listResolutionsToActivate(limit: number): Promise<ResolutionRow[]>;
+  /**
+   * Indexed activations still active (no `OutcomeFinalized` or
+   * `ResolutionExpired` indexed for them) whose receipt is verified and that
+   * have no finalization action yet, in chain order.
+   */
+  listWarrantiesToEvaluate(limit: number): Promise<RegistryEventRow[]>;
+  /**
+   * Indexed activations still active whose claim deadline at activation is
+   * before `before` (Unix seconds, the chain's clock), with no expiry action
+   * and no finalization queued or sent, earliest deadline first. A pause may
+   * have moved the deadline in force later: the expirer reads it on chain.
+   */
+  listWarrantiesToExpire(before: bigint, limit: number): Promise<RegistryEventRow[]>;
+  /** How many of the payer's outcomes the damper counts (`DamperQuery`): distinct resolutions. */
+  countDamperOutcomes(query: DamperQuery): Promise<number>;
 }
 
 /** The salted digest counted for distinct profiles or sources; the salt never leaves the store. */
@@ -237,6 +463,13 @@ export function decodeResolution(body: string): Resolution {
 
 const postKey = (resolutionId: Hex32, target: ReputationTarget) => `${resolutionId}\n${target}`;
 
+const actionKey = (resolutionId: Hex32, kind: WarrantyActionKind) => `${resolutionId}\n${kind}`;
+
+/** A stored action as the memory store keeps it: the payload as canonical JSON, like a table row. */
+type StoredAction = Omit<WarrantyAction, "payload"> & { readonly body: string };
+
+const FINAL_EVENTS: ReadonlySet<RegistryEventName> = new Set(["OutcomeFinalized", "ResolutionExpired"]);
+
 /** The most offers the memory store holds; beyond it, saving fails and the preview says so. */
 export const MAX_MEMORY_OFFERS = 50_000;
 
@@ -254,6 +487,11 @@ export class MemoryStore implements LemmaStore {
   private readonly resolutions = new Map<string, ResolutionRow>();
   private readonly receipts = new Map<string, { body: string; digest: Hex32; verified: boolean; receivedAt: Date; checkedAt: Date | null; buyerAgentId: AgentId | null }>();
   private readonly posts = new Map<string, ReputationPost>();
+  private readonly actions = new Map<string, StoredAction>();
+  private readonly cursors = new Map<string, bigint>();
+  /** Registry events in chain order, and the (transaction, log index) keys already stored. */
+  private events: RegistryEventRow[] = [];
+  private readonly eventKeys = new Set<string>();
   private readonly salts = new Map<string, string>();
   private readonly seen = new Map<string, { profiles: Set<string>; sources: Set<string> }>();
   private readonly daily = new Map<string, DemandBucket>();
@@ -449,6 +687,135 @@ export class MemoryStore implements LemmaStore {
       .sort((a, b) => (a.day + a.bucket < b.day + b.bucket ? -1 : 1));
   }
 
+  async getChainCursor(name: string): Promise<bigint | undefined> {
+    return this.cursors.get(name);
+  }
+
+  async advanceChainCursor(name: string, expected: bigint | undefined, next: bigint, events: readonly RegistryEventRow[], _now?: Date): Promise<boolean> {
+    if (this.cursors.get(name) !== expected) return false;
+    // Checked before anything changes, so a bad row leaves the store as it was.
+    const checked = events.map(checkRegistryEvent);
+    const fresh = new Map<string, RegistryEventRow>();
+    for (const e of checked) {
+      const key = `${e.txHash}:${e.logIndex}`;
+      if (!this.eventKeys.has(key) && !fresh.has(key)) fresh.set(key, e);
+    }
+    for (const key of fresh.keys()) this.eventKeys.add(key);
+    this.events = [...this.events, ...fresh.values()].sort(compareEventPositions);
+    this.cursors.set(name, next);
+    return true;
+  }
+
+  async listRegistryEvents(query: RegistryEventQuery, limit: number): Promise<RegistryEventRow[]> {
+    return this.events
+      .filter(
+        (e) =>
+          (query.after === undefined || compareEventPositions(e, query.after) > 0) &&
+          (query.resolutionId === undefined || e.resolutionId === query.resolutionId) &&
+          (query.names === undefined || query.names.includes(e.name)),
+      )
+      .slice(0, limit);
+  }
+
+  async insertWarrantyAction(action: NewWarrantyAction, now: Date): Promise<boolean> {
+    const key = actionKey(action.resolutionId, action.kind);
+    if (this.actions.has(key)) return false;
+    this.actions.set(key, {
+      resolutionId: action.resolutionId,
+      kind: action.kind,
+      body: encodeWarrantyPayload(action.kind, action.resolutionId, action.payload),
+      signature: checkSignature(action.signature),
+      state: action.state,
+      attempts: 0,
+      nextAttemptAt: action.nextAttemptAt,
+      txHash: null,
+      sentAt: null,
+      lastCode: action.lastCode ?? null,
+      createdAt: now,
+      updatedAt: now,
+    });
+    return true;
+  }
+
+  async getWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind): Promise<WarrantyAction | undefined> {
+    const row = this.actions.get(actionKey(resolutionId, kind));
+    return row === undefined ? undefined : toAction(row);
+  }
+
+  async dueWarrantyActions(kind: WarrantyActionKind, now: Date, limit: number): Promise<WarrantyAction[]> {
+    return [...this.actions.values()]
+      .filter((a) => a.kind === kind && (a.state === "queued" || a.state === "sent") && a.nextAttemptAt <= now)
+      .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
+      .slice(0, limit)
+      .map(toAction);
+  }
+
+  async listWarrantyActions(filter: { readonly kind?: WarrantyActionKind; readonly state?: WarrantyActionState }, limit: number): Promise<WarrantyAction[]> {
+    return [...this.actions.values()]
+      .filter((a) => (filter.kind === undefined || a.kind === filter.kind) && (filter.state === undefined || a.state === filter.state))
+      .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.resolutionId < b.resolutionId ? -1 : a.resolutionId > b.resolutionId ? 1 : 0))
+      .slice(0, limit)
+      .map(toAction);
+  }
+
+  async updateWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind, expected: WarrantyActionExpectation, change: WarrantyActionChange, now: Date): Promise<boolean> {
+    const key = actionKey(resolutionId, kind);
+    const row = this.actions.get(key);
+    if (row === undefined || isFinalActionState(row.state) || row.state !== expected.state || row.attempts !== expected.attempts) return false;
+    const { payload, ...rest } = change;
+    const defined = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== undefined)) as Omit<WarrantyActionChange, "payload">;
+    const body = payload === undefined ? row.body : encodeWarrantyPayload(kind, resolutionId, payload);
+    const signature = change.signature === undefined ? row.signature : checkSignature(change.signature);
+    this.actions.set(key, { ...row, ...defined, body, signature, updatedAt: now });
+    return true;
+  }
+
+  async listResolutionsToActivate(limit: number): Promise<ResolutionRow[]> {
+    return [...this.resolutions.values()]
+      .filter((r) => r.state === "settled" && r.claimHash !== null && !this.actions.has(actionKey(r.resolutionId, "activate")))
+      .slice(0, limit);
+  }
+
+  async listWarrantiesToEvaluate(limit: number): Promise<RegistryEventRow[]> {
+    return this.activeWarranties()
+      .filter((a) => this.receipts.get(a.resolutionId as string)?.verified === true && !this.actions.has(actionKey(a.resolutionId as Hex32, "finalize")))
+      .slice(0, limit);
+  }
+
+  async listWarrantiesToExpire(before: bigint, limit: number): Promise<RegistryEventRow[]> {
+    return this.activeWarranties()
+      .filter((a) => {
+        const id = a.resolutionId as Hex32;
+        const finalize = this.actions.get(actionKey(id, "finalize"));
+        return (a.claimDeadline ?? 0n) < before && !this.actions.has(actionKey(id, "expire")) && finalize?.state !== "queued" && finalize?.state !== "sent";
+      })
+      .sort((a, b) => ((a.claimDeadline ?? 0n) < (b.claimDeadline ?? 0n) ? -1 : (a.claimDeadline ?? 0n) > (b.claimDeadline ?? 0n) ? 1 : (a.resolutionId as string) < (b.resolutionId as string) ? -1 : 1))
+      .slice(0, limit);
+  }
+
+  async countDamperOutcomes(query: DamperQuery): Promise<number> {
+    const counted = new Set<Hex32>();
+    const matches = (id: Hex32 | null): id is Hex32 => {
+      if (id === null || id === query.exclude || this.resolutions.get(id)?.payer !== query.payer) return false;
+      const activation = this.events.find((e) => e.name === "ResolutionActivated" && e.resolutionId === id);
+      return activation?.releaseDigest === query.releaseDigest && activation.profileIndex === query.profileIndex;
+    };
+    for (const e of this.events) {
+      if (e.name === "OutcomeFinalized" && (e.verdict === 1 || e.verdict === 2) && (e.weightBps ?? 0) > 0 && e.blockTime >= query.since && matches(e.resolutionId)) counted.add(e.resolutionId);
+    }
+    for (const a of this.actions.values()) {
+      if (a.kind !== "finalize" || !DAMPER_ACTION_STATES.includes(a.state) || a.createdAt < query.since || !matches(a.resolutionId)) continue;
+      if (countsForDamper(decodeWarrantyPayload("finalize", a.resolutionId, a.body))) counted.add(a.resolutionId);
+    }
+    return counted.size;
+  }
+
+  /** Indexed activations with no finalization or expiry indexed, in chain order. */
+  private activeWarranties(): RegistryEventRow[] {
+    const ended = new Set(this.events.filter((e) => FINAL_EVENTS.has(e.name)).map((e) => e.resolutionId));
+    return this.events.filter((e) => e.name === "ResolutionActivated" && e.resolutionId !== null && !ended.has(e.resolutionId));
+  }
+
   async purgeExpiredOffers(before: Date): Promise<number> {
     const settled = new Set([...this.resolutions.values()].filter((r) => r.state === "settled").map((r) => r.previewId));
     for (const [id, row] of this.resolutions) {
@@ -463,4 +830,32 @@ export class MemoryStore implements LemmaStore {
     }
     return n;
   }
+}
+
+function toAction(row: StoredAction): WarrantyAction {
+  const { body, ...rest } = row;
+  return { ...rest, payload: decodeWarrantyPayload(row.kind, row.resolutionId, body) };
+}
+
+/** Checks a registry event row's fields before it is stored or after it is read (a store never keeps a row it could not have read). */
+export function checkRegistryEvent(row: RegistryEventRow): RegistryEventRow {
+  const hex32 = (v: string | null) => (v === null ? null : Hex32.parse(v));
+  if (!isRegistryEventName(row.name)) throw new TypeError(`unknown registry event ${String(row.name)}`);
+  if (row.blockNumber < 0n || !Number.isSafeInteger(row.logIndex) || row.logIndex < 0) throw new RangeError("invalid log position");
+  return {
+    blockNumber: row.blockNumber,
+    logIndex: row.logIndex,
+    txHash: Hex32.parse(row.txHash),
+    blockTime: row.blockTime,
+    name: row.name,
+    resolutionId: hex32(row.resolutionId),
+    releaseDigest: hex32(row.releaseDigest),
+    profileIndex: row.profileIndex,
+    verdict: row.verdict,
+    weightBps: row.weightBps,
+    evidenceHash: hex32(row.evidenceHash),
+    amount: row.amount,
+    claimDeadline: row.claimDeadline,
+    engine: row.engine === null ? null : Address.parse(row.engine),
+  };
 }

@@ -1,13 +1,30 @@
 import type { CatalogIndex } from "@lemma/catalog";
-import { type Address, AdoptionReceipt, type AgentId, type CapabilityId, CapabilityRelease, type Hex32, PatchBundle, type Preview } from "@lemma/core";
-import { and, asc, eq, gt, gte, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import {
+  type Address,
+  AdoptionReceipt,
+  type AgentId,
+  type CapabilityId,
+  CapabilityRelease,
+  type Hex32,
+  PatchBundle,
+  type Preview,
+  type WarrantyActionKind,
+  type WarrantyActionState,
+  isFinalActionState,
+} from "@lemma/core";
+import { type SQL, and, asc, eq, getTableColumns, gt, gte, inArray, isNotNull, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
+import { type PgColumn, type PgDatabase, type PgQueryResultHKT, alias } from "drizzle-orm/pg-core";
 
 import {
+  DAMPER_ACTION_STATES,
+  type DamperQuery,
   type DemandBucket,
   type LemmaStore,
   type NewReputationPost,
+  type NewWarrantyAction,
   type RearmResult,
+  type RegistryEventQuery,
+  type RegistryEventRow,
   type ReputationPost,
   type ReputationPostChange,
   type ReputationTarget,
@@ -15,9 +32,18 @@ import {
   type StoredReceipt,
   type UncheckedReceipt,
   type UnsettledCursor,
+  type WarrantyAction,
+  type WarrantyActionChange,
+  type WarrantyActionExpectation,
+  checkRegistryEvent,
+  checkSignature,
+  countsForDamper,
   decodePreview,
   decodeResolution,
+  decodeWarrantyPayload,
   encode,
+  encodeWarrantyPayload,
+  isRegistryEventName,
   saltedDigest,
 } from "../persistence.js";
 import * as t from "./schema.js";
@@ -313,6 +339,215 @@ export class PgStore implements LemmaStore {
     return deleted.length;
   }
 
+  async getChainCursor(name: string): Promise<bigint | undefined> {
+    const [row] = await this.db.select({ next: t.chainCursors.nextBlock }).from(t.chainCursors).where(eq(t.chainCursors.name, name)).limit(1);
+    return row?.next;
+  }
+
+  async advanceChainCursor(name: string, expected: bigint | undefined, next: bigint, events: readonly RegistryEventRow[], now: Date): Promise<boolean> {
+    // Checked before the transaction, so a bad row fails the call and changes nothing.
+    const rows = events.map((e) => toEventValues(checkRegistryEvent(e)));
+    return this.db.transaction(async (tx) => {
+      // The cursor moves first, conditionally: a reader that lost the race stores nothing.
+      const moved =
+        expected === undefined
+          ? await tx.insert(t.chainCursors).values({ name, nextBlock: next, updatedAt: now }).onConflictDoNothing().returning({ name: t.chainCursors.name })
+          : await tx
+              .update(t.chainCursors)
+              .set({ nextBlock: next, updatedAt: now })
+              .where(and(eq(t.chainCursors.name, name), eq(t.chainCursors.nextBlock, expected)))
+              .returning({ name: t.chainCursors.name });
+      if (moved.length !== 1) return false;
+      for (let i = 0; i < rows.length; i += EVENT_INSERT_BATCH) {
+        await tx.insert(t.registryEvents).values(rows.slice(i, i + EVENT_INSERT_BATCH)).onConflictDoNothing();
+      }
+      return true;
+    });
+  }
+
+  async listRegistryEvents(query: RegistryEventQuery, limit: number): Promise<RegistryEventRow[]> {
+    const e = t.registryEvents;
+    if (query.names !== undefined && query.names.length === 0) return [];
+    const after = query.after;
+    const rows = await this.db
+      .select()
+      .from(e)
+      .where(
+        and(
+          after === undefined ? undefined : or(gt(e.blockNumber, after.blockNumber), and(eq(e.blockNumber, after.blockNumber), gt(e.logIndex, after.logIndex))),
+          query.resolutionId === undefined ? undefined : eq(e.resolutionId, query.resolutionId),
+          query.names === undefined ? undefined : inArray(e.name, [...query.names]),
+        ),
+      )
+      .orderBy(asc(e.blockNumber), asc(e.logIndex))
+      .limit(limit);
+    return rows.flatMap(toEvent);
+  }
+
+  async insertWarrantyAction(action: NewWarrantyAction, now: Date): Promise<boolean> {
+    const inserted = await this.db
+      .insert(t.warrantyActions)
+      .values({
+        resolutionId: action.resolutionId,
+        kind: action.kind,
+        payload: encodeWarrantyPayload(action.kind, action.resolutionId, action.payload),
+        signature: checkSignature(action.signature),
+        state: action.state,
+        txHash: null,
+        sentAt: null,
+        attempts: 0,
+        nextAttemptAt: action.nextAttemptAt,
+        lastCode: action.lastCode ?? null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .onConflictDoNothing()
+      .returning({ id: t.warrantyActions.resolutionId });
+    return inserted.length === 1;
+  }
+
+  async getWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind): Promise<WarrantyAction | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(t.warrantyActions)
+      .where(and(eq(t.warrantyActions.resolutionId, resolutionId), eq(t.warrantyActions.kind, kind)))
+      .limit(1);
+    return row === undefined ? undefined : toAction(row);
+  }
+
+  async dueWarrantyActions(kind: WarrantyActionKind, now: Date, limit: number): Promise<WarrantyAction[]> {
+    const a = t.warrantyActions;
+    const rows = await this.db
+      .select()
+      .from(a)
+      .where(and(eq(a.kind, kind), inArray(a.state, ["queued", "sent"]), lte(a.nextAttemptAt, now)))
+      .orderBy(asc(a.nextAttemptAt))
+      .limit(limit);
+    return rows.map(toAction);
+  }
+
+  async listWarrantyActions(filter: { readonly kind?: WarrantyActionKind; readonly state?: WarrantyActionState }, limit: number): Promise<WarrantyAction[]> {
+    const a = t.warrantyActions;
+    const rows = await this.db
+      .select()
+      .from(a)
+      .where(and(filter.kind === undefined ? undefined : eq(a.kind, filter.kind), filter.state === undefined ? undefined : eq(a.state, filter.state)))
+      .orderBy(asc(a.createdAt), asc(a.resolutionId))
+      .limit(limit);
+    return rows.map(toAction);
+  }
+
+  async updateWarrantyAction(resolutionId: Hex32, kind: WarrantyActionKind, expected: WarrantyActionExpectation, change: WarrantyActionChange, now: Date): Promise<boolean> {
+    if (isFinalActionState(expected.state)) return false;
+    const set: Partial<typeof t.warrantyActions.$inferInsert> = { updatedAt: now };
+    if (change.state !== undefined) set.state = change.state;
+    if (change.payload !== undefined) set.payload = encodeWarrantyPayload(kind, resolutionId, change.payload);
+    if (change.signature !== undefined) set.signature = checkSignature(change.signature);
+    if (change.attempts !== undefined) set.attempts = change.attempts;
+    if (change.nextAttemptAt !== undefined) set.nextAttemptAt = change.nextAttemptAt;
+    if (change.txHash !== undefined) set.txHash = change.txHash;
+    if (change.sentAt !== undefined) set.sentAt = change.sentAt;
+    if (change.lastCode !== undefined) set.lastCode = change.lastCode;
+    const a = t.warrantyActions;
+    const updated = await this.db
+      .update(a)
+      .set(set)
+      .where(and(eq(a.resolutionId, resolutionId), eq(a.kind, kind), eq(a.state, expected.state), eq(a.attempts, expected.attempts)))
+      .returning({ id: a.resolutionId });
+    return updated.length === 1;
+  }
+
+  async listResolutionsToActivate(limit: number): Promise<ResolutionRow[]> {
+    const r = t.resolutions;
+    const rows = await this.db
+      .select()
+      .from(r)
+      .where(and(eq(r.state, "settled"), isNotNull(r.claimHash), notExists(this.actionOf(r.resolutionId, "activate"))))
+      .orderBy(asc(r.updatedAt), asc(r.resolutionId))
+      .limit(limit);
+    return rows.map(toRow);
+  }
+
+  async listWarrantiesToEvaluate(limit: number): Promise<RegistryEventRow[]> {
+    const e = t.registryEvents;
+    const rows = await this.db
+      .select(getTableColumns(e))
+      .from(e)
+      .innerJoin(t.adoptionReceipts, eq(t.adoptionReceipts.resolutionId, e.resolutionId))
+      .where(and(eq(e.name, "ResolutionActivated"), eq(t.adoptionReceipts.verified, true), notExists(this.endOf(e.resolutionId)), notExists(this.actionOf(e.resolutionId, "finalize"))))
+      .orderBy(asc(e.blockNumber), asc(e.logIndex))
+      .limit(limit);
+    return rows.flatMap(toEvent);
+  }
+
+  async listWarrantiesToExpire(before: bigint, limit: number): Promise<RegistryEventRow[]> {
+    const e = t.registryEvents;
+    const rows = await this.db
+      .select()
+      .from(e)
+      .where(
+        and(
+          eq(e.name, "ResolutionActivated"),
+          lt(e.claimDeadline, before),
+          notExists(this.endOf(e.resolutionId)),
+          notExists(this.actionOf(e.resolutionId, "expire")),
+          notExists(this.actionOf(e.resolutionId, "finalize", ["queued", "sent"])),
+        ),
+      )
+      .orderBy(asc(e.claimDeadline), asc(e.resolutionId))
+      .limit(limit);
+    return rows.flatMap(toEvent);
+  }
+
+  async countDamperOutcomes(query: DamperQuery): Promise<number> {
+    const e = t.registryEvents;
+    const a = t.warrantyActions;
+    const activation = alias(t.registryEvents, "activation");
+    // The payer's resolutions of this release digest and profile index (known from their indexed activation), but the one asked about.
+    const ofPayer = (id: PgColumn): SQL | undefined =>
+      and(
+        eq(activation.name, "ResolutionActivated"),
+        eq(activation.releaseDigest, query.releaseDigest),
+        eq(activation.profileIndex, query.profileIndex),
+        eq(t.resolutions.payer, query.payer),
+        ne(id, query.exclude),
+      );
+    const finalized = await this.db
+      .select({ id: e.resolutionId })
+      .from(e)
+      .innerJoin(activation, eq(activation.resolutionId, e.resolutionId))
+      .innerJoin(t.resolutions, eq(t.resolutions.resolutionId, e.resolutionId))
+      .where(and(eq(e.name, "OutcomeFinalized"), inArray(e.verdict, [1, 2]), gt(e.weightBps, 0), gte(e.blockTime, query.since), ofPayer(e.resolutionId)));
+    const inFlight = await this.db
+      .select({ id: a.resolutionId, payload: a.payload })
+      .from(a)
+      .innerJoin(activation, eq(activation.resolutionId, a.resolutionId))
+      .innerJoin(t.resolutions, eq(t.resolutions.resolutionId, a.resolutionId))
+      .where(and(eq(a.kind, "finalize"), inArray(a.state, [...DAMPER_ACTION_STATES]), gte(a.createdAt, query.since), ofPayer(a.resolutionId)));
+    const counted = new Set<string>();
+    for (const row of finalized) if (row.id !== null) counted.add(row.id);
+    for (const row of inFlight) if (countsForDamper(decodeWarrantyPayload("finalize", row.id as Hex32, row.payload))) counted.add(row.id);
+    return counted.size;
+  }
+
+  /** An outbox action of `kind` (in one of `states`, when given) for the resolution in `id`: for `not exists`. */
+  private actionOf(id: PgColumn, kind: WarrantyActionKind, states?: readonly WarrantyActionState[]) {
+    const a = t.warrantyActions;
+    return this.db
+      .select({ one: sql`1` })
+      .from(a)
+      .where(and(eq(a.resolutionId, id), eq(a.kind, kind), states === undefined ? undefined : inArray(a.state, [...states])));
+  }
+
+  /** An indexed finalization or expiry of the resolution in `id`: for `not exists`. */
+  private endOf(id: PgColumn) {
+    const ended = alias(t.registryEvents, "ended");
+    return this.db
+      .select({ one: sql`1` })
+      .from(ended)
+      .where(and(eq(ended.resolutionId, id), inArray(ended.name, ["OutcomeFinalized", "ResolutionExpired"])));
+  }
+
   /**
    * The day's salt, created on first use; undefined once the day is closed (it
    * is never re-created). Read under the day's lock on every call, never
@@ -362,6 +597,54 @@ function toPost(row: typeof t.reputationPosts.$inferSelect): ReputationPost {
     note: row.note,
   };
 }
+
+function toAction(row: typeof t.warrantyActions.$inferSelect): WarrantyAction {
+  const resolutionId = row.resolutionId as Hex32;
+  return {
+    resolutionId,
+    kind: row.kind,
+    payload: decodeWarrantyPayload(row.kind, resolutionId, row.payload),
+    signature: checkSignature(row.signature),
+    state: row.state,
+    attempts: row.attempts,
+    nextAttemptAt: row.nextAttemptAt,
+    txHash: row.txHash as Hex32 | null,
+    sentAt: row.sentAt,
+    lastCode: row.lastCode,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+/** A stored registry event, or nothing for a row this build does not know (an event name added later). */
+function toEvent(row: typeof t.registryEvents.$inferSelect): RegistryEventRow[] {
+  if (!isRegistryEventName(row.name)) return [];
+  return [
+    checkRegistryEvent({
+      blockNumber: row.blockNumber,
+      logIndex: row.logIndex,
+      txHash: row.txHash as Hex32,
+      blockTime: row.blockTime,
+      name: row.name,
+      resolutionId: row.resolutionId as Hex32 | null,
+      releaseDigest: row.releaseDigest as Hex32 | null,
+      profileIndex: row.profileIndex,
+      verdict: row.verdict,
+      weightBps: row.weightBps,
+      evidenceHash: row.evidenceHash as Hex32 | null,
+      amount: row.amount,
+      claimDeadline: row.claimDeadline,
+      engine: row.engine as Address | null,
+    }),
+  ];
+}
+
+function toEventValues(row: RegistryEventRow): typeof t.registryEvents.$inferInsert {
+  return { ...row };
+}
+
+/** Rows per insert statement: well inside Postgres's 65535 parameters at 14 columns a row. */
+const EVENT_INSERT_BATCH = 1000;
 
 const UNIQUE_VIOLATION = "23505";
 /** The advisory-lock namespace for demand days (with `hashtext(day)` as the key). */

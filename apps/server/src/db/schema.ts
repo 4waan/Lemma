@@ -1,5 +1,5 @@
 import { isNull } from "drizzle-orm";
-import { boolean, date, index, integer, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { bigint, boolean, date, index, integer, numeric, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 /**
  * Lemma's durable state. Every hashed object is stored as its canonical JSON
@@ -161,3 +161,76 @@ export const demandDaily = pgTable(
   },
   (t) => [primaryKey({ columns: [t.day, t.bucket] })],
 );
+
+export const warrantyActionKind = pgEnum("warranty_action_kind", ["activate", "finalize", "expire", "withdraw"]);
+export const warrantyActionState = pgEnum("warranty_action_state", ["review", "queued", "sent", "done", "skipped", "abandoned"]);
+
+/**
+ * The warranty outbox: one action per resolution and kind (activate, finalize,
+ * expire, withdraw), written before anything is sent. `payload` is the
+ * canonical JSON of the core schema it carries (a voucher, an outcome, a
+ * withdrawal, or only the resolution), re-parsed on read; `signature` is the
+ * provider's or evaluator's EIP-712 signature over it. `attempts` counts sends
+ * begun: once it is above zero a transaction may be out, so the job reads
+ * `tx_hash`'s receipt and the registry's state before it ever sends again.
+ * Updates are compare-and-set on the state and attempts read. A withdrawal's
+ * claim secret and refund address stay in its payload only until it is over.
+ */
+export const warrantyActions = pgTable(
+  "warranty_actions",
+  {
+    resolutionId: text("resolution_id").notNull(),
+    kind: warrantyActionKind("kind").notNull(),
+    payload: text("payload").notNull(),
+    signature: text("signature"),
+    state: warrantyActionState("state").notNull(),
+    txHash: text("tx_hash"),
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "date" }),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "date" }).notNull(),
+    lastCode: text("last_code"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.resolutionId, t.kind] }), index("warranty_actions_due_idx").on(t.kind, t.state, t.nextAttemptAt)],
+);
+
+/**
+ * The warranty registry's logs, as the indexer read them: one row per log,
+ * with its block's timestamp; the only source of chain facts the server
+ * shows (states, deadlines, verdicts, transaction hashes). Columns an event
+ * does not have are null. An activation's payment reference is never stored.
+ * `amount` is atomic USDC; `claim_deadline` is the deadline set at activation,
+ * in Unix seconds.
+ */
+export const registryEvents = pgTable(
+  "registry_events",
+  {
+    blockNumber: bigint("block_number", { mode: "bigint" }).notNull(),
+    logIndex: integer("log_index").notNull(),
+    txHash: text("tx_hash").notNull(),
+    blockTime: timestamp("block_time", { withTimezone: true, mode: "date" }).notNull(),
+    name: text("name").notNull(),
+    resolutionId: text("resolution_id"),
+    releaseDigest: text("release_digest"),
+    profileIndex: integer("profile_index"),
+    verdict: integer("verdict"),
+    weightBps: integer("weight_bps"),
+    evidenceHash: text("evidence_hash"),
+    amount: numeric("amount", { precision: 78, scale: 0 }),
+    claimDeadline: bigint("claim_deadline", { mode: "bigint" }),
+    engine: text("engine"),
+  },
+  (t) => [
+    primaryKey({ columns: [t.txHash, t.logIndex] }),
+    index("registry_events_order_idx").on(t.blockNumber, t.logIndex),
+    index("registry_events_resolution_idx").on(t.resolutionId, t.name),
+  ],
+);
+
+/** Where each chain reader goes on: the next block the warranty indexer reads. Moved only together with that range's rows. */
+export const chainCursors = pgTable("chain_cursors", {
+  name: text("name").primaryKey(),
+  nextBlock: bigint("next_block", { mode: "bigint" }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+});

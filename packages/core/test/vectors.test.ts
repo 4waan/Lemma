@@ -3,7 +3,20 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import { type DigestKind, adoptionReceiptDigest, baseReleaseDigest, canonicalize, catalogDigest, deriveResolutionId, digest } from "../src/index.js";
+import { hashTypedData } from "viem";
+
+import {
+  type DigestKind,
+  adoptionReceiptDigest,
+  adoptionReceiptTypedData,
+  baseReleaseDigest,
+  canonicalize,
+  catalogDigest,
+  derivePaymentNonce,
+  deriveResolutionId,
+  digest,
+  warrantyClaimHash,
+} from "../src/index.js";
 import * as ex from "./examples.js";
 
 /**
@@ -25,6 +38,7 @@ const inputs: ReadonlyArray<{ name: string; kind: DigestKind; value: unknown }> 
   { name: "adoption-receipt", kind: "adoption-receipt", value: ex.receipt },
   { name: "patch-bundle", kind: "patch-bundle", value: ex.bundle },
   { name: "run-record", kind: "run-record", value: ex.runRecord },
+  { name: "payment-nonce", kind: "payment-nonce", value: { resolutionId: ex.resolution.resolutionId, previewId: ex.resolution.previewId } },
 ];
 
 const computed = inputs.map(({ name, kind, value }) => ({
@@ -40,6 +54,11 @@ const derived = {
   adoptionReceiptDigest: adoptionReceiptDigest(ex.receipt),
   catalogDigest: catalogDigest([ex.release]),
   baseReleaseDigest: baseReleaseDigest(ex.release),
+  paymentNonce: derivePaymentNonce(ex.resolution.resolutionId, ex.resolution.previewId),
+  /** keccak256(abi.encode(bytes32 resolutionId, bytes32 claimSecret, address refundTo)), checked by the warranty registry. */
+  warrantyClaimHash: warrantyClaimHash(ex.resolution.resolutionId, ex.hex32("77"), ex.BUYER),
+  /** The EIP-712 hash the buyer signs for the example receipt on Arbitrum Sepolia. */
+  adoptionReceiptTypedDataHash: hashTypedData(adoptionReceiptTypedData(ex.receipt, 421614)),
 };
 
 if (process.env.LEMMA_WRITE_VECTORS === "1") {
@@ -65,5 +84,6 @@ describe("digest vectors", () => {
   it("pins the derived identifiers the payment and contract work sign or store", () => {
     expect(frozen.derived).toEqual(derived);
     expect(derived.resolutionId).toBe(computed.find((v) => v.name === "resolution-id")?.digest);
+    expect(derived.paymentNonce).toBe(computed.find((v) => v.name === "payment-nonce")?.digest);
   });
 });

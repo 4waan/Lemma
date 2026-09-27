@@ -19,7 +19,7 @@ import {
 } from "../src/index.js";
 import { type FakeRegistry, registryError } from "./fake-registry.js";
 import { BUYER } from "./helpers.js";
-import { type Bought, idOf, warrantyWorld } from "./warranty-helpers.js";
+import { type Bought, activateOnChain, idOf, voucherOn, warrantyWorld } from "./warranty-helpers.js";
 
 const OTHER_BUYER = "0x00000000000000000000000000000000000000c1";
 const HOUR = 3600;
@@ -281,6 +281,36 @@ describe("the activator", () => {
     expect(await w.jobs.activator.runOnce()).toMatchObject({ done: 1, sent: 0 });
     expect(w.chain.sent).toHaveLength(0);
   });
+
+  it("skips with an alert, never taking it for its own, a resolution the registry holds for another release, profile or amount", async () => {
+    for (const over of [{ releaseDigest: idOf("another release") }, { profileIndex: 1 }, { amount: "1" }]) {
+      const w = await warrantyWorld();
+      const b = await w.buy();
+      const digest = over.releaseDigest ?? w.entry.releaseDigest;
+      if (over.releaseDigest !== undefined) {
+        w.chain.registerRelease(digest);
+        w.chain.depositBond(digest, 100_000_000n);
+      }
+      // Resolution ids are global on the registry: another provider activates this one first, on its own terms.
+      await activateOnChain(w.chain, voucherOn(w.chain, b.id, digest, over));
+      expect(await w.jobs.activator.runOnce(), JSON.stringify(over)).toMatchObject({ queued: 1, skipped: 1, done: 0, sent: 0 });
+      expect(await w.store.getWarrantyAction(b.id, "activate")).toMatchObject({ state: "skipped", lastCode: "FOREIGN_ACTIVATION" });
+      expect(w.logger.lines.filter((l) => l.event === "warranty.foreign_activation")).toEqual([
+        { level: "error", event: "warranty.foreign_activation", fields: { resolutionId: b.id, releaseDigest: w.entry.releaseDigest, registryReleaseDigest: digest, code: "FOREIGN_ACTIVATION" } },
+      ]);
+    }
+  });
+
+  it("looks again when the registry refuses the send as a duplicate, and closes the action by what it then holds", async () => {
+    const w = await warrantyWorld();
+    const b = await w.buy();
+    await new WarrantyActivator({ ...common(w, { chain: refusing(w.chain, "ResolutionAlreadyExists", [b.id]) }), jitterSeconds: 0 }).runOnce();
+    const action = await w.store.getWarrantyAction(b.id, "activate");
+    expect(action).toMatchObject({ state: "sent", lastCode: "RESOLUTION_ALREADY_EXISTS" });
+    // It was this voucher, relayed between the read and the send: the next attempt reads it and closes the action.
+    await w.chain.relay({ fn: "activateResolution", voucher: WarrantyVoucher.parse(action?.payload), signature: action?.signature as `0x${string}` });
+    expect(await w.jobs.activator.runOnce()).toMatchObject({ done: 1, sent: 0 });
+  });
 });
 
 describe("the evaluator", () => {
@@ -324,10 +354,9 @@ describe("the evaluator", () => {
     expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 2, review: 2, sent: 0 });
     w.advance(2 * HOUR);
     const listed = await listReview(w.store, w.clock.now);
-    expect(listed.map((i) => [i.resolutionId, i.release, i.profileIndex, i.receiptOutcome, i.exitCode, i.ageSeconds])).toEqual([
-      [first!.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR],
-      [second!.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR],
-    ]);
+    // Both were queued at one instant, so the list orders them by resolution id.
+    const byId = [first!, second!].sort((x, y) => (x.id < y.id ? -1 : 1));
+    expect(listed.map((i) => [i.resolutionId, i.release, i.profileIndex, i.receiptOutcome, i.exitCode, i.ageSeconds])).toEqual(byId.map((b) => [b.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR]));
     expect(JSON.stringify(listed)).not.toContain(BUYER.slice(2));
     expect(await decideReview(w.store, first!.id, "failed", w.clock.now)).toBe("QUEUED");
     expect(await decideReview(w.store, second!.id, "void", w.clock.now)).toBe("QUEUED");
@@ -648,7 +677,8 @@ describe("registry refusals", () => {
   }
 
   it("turns each activation refusal into what it means", async () => {
-    expect((await refused("activate", "ResolutionAlreadyExists", [idOf("x")])).action).toMatchObject({ state: "done", lastCode: null });
+    // Activated since the read: the next attempt tells this voucher's activation from another release's.
+    expect((await refused("activate", "ResolutionAlreadyExists", [idOf("x")])).action).toMatchObject({ state: "sent", lastCode: "RESOLUTION_ALREADY_EXISTS" });
     expect((await refused("activate", "VoucherExpired", [1n])).action).toMatchObject({ state: "sent", lastCode: "VOUCHER_EXPIRED" });
     expect((await refused("activate", "InsufficientAvailableBond", [0n, 250_000n])).action).toMatchObject({ state: "sent", lastCode: "INSUFFICIENT_AVAILABLE_BOND" });
     expect((await refused("activate", "UnknownRelease", [idOf("x")])).action).toMatchObject({ state: "skipped", lastCode: "RELEASE_NOT_REGISTERED" });

@@ -41,6 +41,8 @@ export const DEFAULT_ACTIVATION_JITTER_SECONDS = 300;
 export const NO_VOUCHER = "NO_VOUCHER";
 /** The alert code of an activation abandoned after a day of a short bond. */
 export const BOND_EXHAUSTED = "BOND_EXHAUSTED";
+/** The alert code of a resolution the registry holds under another release, profile or amount than its voucher's. */
+export const FOREIGN_ACTIVATION = "FOREIGN_ACTIVATION";
 
 export interface ActivatorDeps extends ActionJobDeps {
   /**
@@ -82,6 +84,12 @@ const randomRef = (): Hex32 => `0x${randomBytes(32).toString("hex")}`;
  * come within `SIGN_MARGIN_SECONDS`, and sends it. A short bond
  * (`InsufficientAvailableBond`) backs off and retries for a day, then the
  * action is `abandoned` with the alert `warranty.bond_exhausted`.
+ *
+ * A resolution the registry already holds is `done` only when it holds this
+ * voucher's release digest, profile index and amount. Resolution ids are
+ * global on the registry, so another registered provider can activate one
+ * first under its own release: that action is `skipped` with the alert
+ * `warranty.foreign_activation`, never taken for this server's own.
  */
 export class WarrantyActivator {
   private readonly sender: ActionSender;
@@ -154,11 +162,15 @@ function activationRules(chain: WarrantyChain, logger: ActionJobDeps["logger"]):
     fn: "activateResolution",
 
     async prepare(action: WarrantyAction, resolution: RegistryResolution, ctx: RunContext): Promise<Decision> {
-      // Activated already: by this job's earlier send, or by anyone who relayed the voucher.
-      if (resolution.status !== "none") return { kind: "finish", state: "done", code: null };
       const parsed = WarrantyVoucher.safeParse(action.payload);
       if (!parsed.success) return { kind: "finish", state: "skipped", code: NO_VOUCHER };
       const voucher = parsed.data;
+      if (resolution.status !== "none") {
+        // Activated already: by this job's earlier send, by anyone who relayed the voucher, or by another provider under its own release.
+        if (resolution.releaseDigest === voucher.releaseDigest && resolution.profileIndex === voucher.profileIndex && resolution.amount === BigInt(voucher.amount)) return { kind: "finish", state: "done", code: null };
+        logger.log("error", "warranty.foreign_activation", { resolutionId: action.resolutionId, releaseDigest: voucher.releaseDigest, registryReleaseDigest: resolution.releaseDigest, code: FOREIGN_ACTIVATION });
+        return { kind: "finish", state: "skipped", code: FOREIGN_ACTIVATION };
+      }
       const release = await ctx.release(voucher.releaseDigest);
       const problem = releaseProblem(release, chain, true);
       if (problem !== undefined) {
@@ -177,7 +189,8 @@ function activationRules(chain: WarrantyChain, logger: ActionJobDeps["logger"]):
     async onRevert(action: WarrantyAction, revert: RegistryRevert, ctx: RunContext): Promise<SettledDecision> {
       switch (revert.code) {
         case "RESOLUTION_ALREADY_EXISTS":
-          return { kind: "finish", state: "done", code: null };
+          // Activated since the read: the next attempt reads it and tells this voucher's activation from another release's.
+          return { kind: "wait", until: ctx.now, code: revert.code };
         case "VOUCHER_EXPIRED":
           return { kind: "wait", until: ctx.now, code: revert.code };
         case "INSUFFICIENT_AVAILABLE_BOND":

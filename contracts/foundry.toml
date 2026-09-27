@@ -25,6 +25,11 @@ runs = 64
 depth = 32
 fail_on_revert = false
 
+[lint]
+# Lint the contract and the deploy script. Tests compare block.timestamp on purpose to model the
+# registry's deadlines.
+ignore = ["test/**/*.sol"]
+
 [fmt]
 line_length = 100
 tab_width = 4

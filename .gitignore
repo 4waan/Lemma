@@ -26,3 +26,6 @@ contracts/lib/
 *.sqlite3
 
 .railway/
+
+# Claude Code agent worktrees (temporary checkouts; never content)
+.claude/worktrees/

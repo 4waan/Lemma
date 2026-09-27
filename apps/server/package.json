@@ -19,7 +19,9 @@
     "start": "node dist/main.js",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node dist/migrate.js",
-    "agent:register": "tsx src/scripts/register-agent.ts"
+    "agent:register": "tsx src/scripts/register-agent.ts",
+    "evaluator": "node dist/scripts/evaluator.js",
+    "warranty:admin": "tsx src/scripts/warranty-admin.ts"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",

@@ -10,6 +10,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { timeout } from "hono/timeout";
 
 import { clientAddress } from "./client.js";
+import { CompatibilityReader, NO_OUTCOMES, type OutcomeSource } from "./compatibility.js";
 import type { ServerConfig } from "./config.js";
 import type { Logger } from "./log.js";
 import { type PaidToolRegistrar, buildMcpServer } from "./mcp.js";
@@ -43,6 +44,8 @@ export interface AppDeps {
   readonly storeKind?: "postgres" | "memory";
   /** The built dashboard (apps/web/dist); when absent, no dashboard is served. */
   readonly webRoot?: string | undefined;
+  /** Finalized adoption outcomes for the catalog's compatibility confidence, read from memory. Absent: none yet. */
+  readonly outcomes?: OutcomeSource | undefined;
 }
 
 /**
@@ -62,6 +65,7 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const economics = deps.economics ?? { status: "placeholder" as const, chainCostAtomic: "0", priceFloorAtomic: "0" };
   const buckets = new TokenBuckets(deps.config.rateLimitPerMinute);
+  const compatibility = new CompatibilityReader(deps.outcomes ?? NO_OUTCOMES, deps.logger);
   const mcpDeps = {
     config: deps.config,
     index: deps.index,
@@ -221,7 +225,8 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(ResolutionView.parse(view));
   });
 
-  // Read models for the dashboard (core read.ts): computed at request time, because sellability changes with time.
+  // Read models for the dashboard (core read.ts): computed at request time, because sellability and
+  // compatibility confidence change with time. Confidence comes from @lemma/confidence over in-memory outcomes.
   app.get("/api/v1/catalog", (c) => {
     const now = deps.clock();
     const view: CatalogView = {
@@ -230,7 +235,12 @@ export function createApp(deps: AppDeps): Hono {
       generatedAt: now.toISOString(),
       economics: { status: economics.status, chainCostUsdc: economics.chainCostAtomic, priceFloorUsdc: economics.priceFloorAtomic },
       releases: deps.index.releases.map((r) =>
-        summarizeRelease({ release: r.release, releaseDigest: r.releaseDigest, baseReleaseDigest: r.baseReleaseDigest, provisional: r.source === "provisional" }, { chainCostAtomic: BigInt(economics.chainCostAtomic) }, now),
+        summarizeRelease(
+          { release: r.release, releaseDigest: r.releaseDigest, baseReleaseDigest: r.baseReleaseDigest, provisional: r.source === "provisional" },
+          { chainCostAtomic: BigInt(economics.chainCostAtomic) },
+          now,
+          compatibility.forRelease(r.release, r.releaseDigest, now),
+        ),
       ),
     };
     c.header("Cache-Control", "public, max-age=60");

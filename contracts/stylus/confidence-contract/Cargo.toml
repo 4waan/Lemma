@@ -1,0 +1,32 @@
+[package]
+name = "confidence-contract"
+description = "Lemma compatibility confidence as a Stylus contract: per (release, profile) decayed outcome sums over a benchmark prior"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-sol-types = { workspace = true }
+lemma-confidence = { workspace = true }
+stylus-sdk = { workspace = true }
+
+[dev-dependencies]
+stylus-sdk = { workspace = true, features = ["stylus-test"] }
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[features]
+default = ["mini-alloc"]
+export-abi = ["stylus-sdk/export-abi"]
+debug = ["stylus-sdk/debug"]
+mini-alloc = ["stylus-sdk/mini-alloc"]
+# Read by the stylus-sdk macros; unused here.
+contract-client-gen = []
+
+[[bin]]
+name = "confidence-contract"
+path = "src/main.rs"

@@ -1,15 +1,17 @@
 import type { CatalogView, ProfileSummary, ReleaseSummary } from "@lemma/core";
 
+import { COMPATIBILITY_EXPLAINED, compatibilityBasis } from "../components/Compatibility.js";
 import { CostComparison } from "../components/CostChart.js";
 import { Hash } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
 import { Badge, Callout, EmptyState, PageHead, Section, Stat } from "../components/ui.js";
-import { percent, usdc, when } from "../format.js";
+import { percent, thousandths, usdc, when } from "../format.js";
 import { PricingCalculator } from "./PricingCalculator.js";
 
-/** The proof page: how savings are measured, every profile that carries evidence, the pricing math, and what to trust. */
+/** The proof page: how savings are measured, every profile that carries evidence, compatibility confidence, the pricing math, and what to trust. */
 export function Evidence({ view }: { view: CatalogView }) {
   const rows = view.releases.flatMap((r) => r.profiles.filter((p) => p.evidence !== null).map((p) => ({ release: r, profile: p })));
+  const confident = view.releases.flatMap((r) => r.profiles.filter((p) => p.compatibility !== null).map((p) => ({ release: r, profile: p })));
   return (
     <>
       <PageHead eyebrow="Proof" title="Measured, not promised">
@@ -78,6 +80,20 @@ export function Evidence({ view }: { view: CatalogView }) {
         )}
       </Section>
 
+      <Section title="Compatibility confidence" intro={COMPATIBILITY_EXPLAINED}>
+        {confident.length === 0 ? (
+          <EmptyState title="Nothing to be confident about yet">
+            <p>No profile has benchmark evidence or a finalized adoption outcome yet. Each one that does appears here with its confidence and what it rests on.</p>
+          </EmptyState>
+        ) : (
+          <CompatibilityTable rows={confident} />
+        )}
+        <p className="small muted">
+          The same integer engine is built as a Stylus contract for Arbitrum, where the warranty registry records each finalized outcome, so once it is deployed anyone can recompute
+          these numbers on chain.
+        </p>
+      </Section>
+
       <Section title="Try the pricing math" intro="Both rules are code in the shared core package, and the catalog check refuses any price that breaks them.">
         <div className="rules">
           <div className="rule">
@@ -115,6 +131,7 @@ const TRUST: readonly string[] = [
   "Evidence marked provisional comes from an exploratory probe, not the frozen benchmark, and exists only on testnet.",
   "The server, the provider and the outcome evaluator are operated by the Lemma team. This demonstrates an economic mechanism, not trustless software correctness.",
   "The warranty registry is not deployed yet. Until it is, no provider bond backs a purchase.",
+  "Compatibility confidence counts finalized adoption outcomes only. Until the outcome pipeline supplies them, it is the benchmark prior alone.",
 ];
 
 function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary; profile: ProfileSummary; chainCost: bigint }) {
@@ -133,6 +150,12 @@ function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary
       <p className="small muted">
         {e.benchmarkVersion} · {e.model} · measured {when(e.measuredAt)} · all-in reduction at list price{" "}
         {profile.allInReductionBps === null ? "–" : percent(profile.allInReductionBps)}
+        {profile.compatibility === null ? null : (
+          <>
+            {" "}
+            · compatibility confidence {percent(BigInt(profile.compatibility.confidenceBps))} ({compatibilityBasis(profile.compatibility, profile.label)})
+          </>
+        )}
       </p>
       <CostComparison
         control={control}
@@ -197,6 +220,47 @@ function EvidenceTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary
                   {when(e.measuredAt)}
                   <div className="platform-deps">{when(e.staleAfter)}</div>
                 </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CompatibilityTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary; profile: ProfileSummary }> }) {
+  return (
+    <div className="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Release and profile</th>
+            <th scope="col" className="num">
+              Confidence
+            </th>
+            <th scope="col" className="num">
+              Effective sample
+            </th>
+            <th scope="col" className="num">
+              Outcomes
+            </th>
+            <th scope="col">Built from</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(({ release, profile }) => {
+            const c = profile.compatibility;
+            if (c === null) return null;
+            return (
+              <tr key={`${release.releaseDigest}-${profile.profileIndex}`}>
+                <td>
+                  {release.releaseId}@{release.version} #{profile.profileIndex}
+                </td>
+                <td className="num">{percent(BigInt(c.confidenceBps))}</td>
+                <td className="num">{thousandths(c.effectiveNMilli)}</td>
+                <td className="num">{c.outcomes}</td>
+                <td>{c.source === "benchmark" ? <Badge tone={profile.label === "provisional" ? "warn" : "accent"}>{compatibilityBasis(c, profile.label)}</Badge> : compatibilityBasis(c, profile.label)}</td>
               </tr>
             );
           })}

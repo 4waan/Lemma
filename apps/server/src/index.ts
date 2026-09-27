@@ -1,5 +1,6 @@
 export * from "./app.js";
 export * from "./client.js";
+export * from "./compatibility.js";
 export * from "./config.js";
 export * from "./dashboard.js";
 export * from "./errors.js";

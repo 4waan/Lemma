@@ -1,0 +1,5 @@
+# cargo stylus workspace marker. Networks are passed on the command line
+# (--endpoint), so no RPC URL, and no key, ever lives in this file.
+[workspace]
+
+[workspace.networks]

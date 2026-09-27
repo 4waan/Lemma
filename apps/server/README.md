@@ -48,7 +48,7 @@ Implemented tools:
 | `GET /api/v1/resolutions/:id` | Public resolution state without buyer or recovery secret. |
 | `POST /api/v1/adoption-receipts` | First-write-wins outcome submission from the buyer. |
 | `GET /api/v1/demand` | Privacy-thresholded, closed-day demand buckets. |
-| `GET /api/v1/catalog` | Dashboard catalog with evidence and sellability. |
+| `GET /api/v1/catalog` | Dashboard catalog with evidence, sellability, and compatibility confidence. |
 | `GET /api/v1/status` | Network, catalog, economics, purchase, and store status. |
 | `GET /healthz` | Process health. |
 | `GET /` and `GET /assets/:name` | Built dashboard when `apps/web/dist` is present. |
@@ -66,6 +66,10 @@ There are no public facilitator routes. The x402 facilitator runs in process, be
 - `chain.ts` holds the injected chain reads, and `rpc.ts` scrubs URLs from every RPC error.
 
 [Server Runtime](../../docs/server-runtime.md#payment-seam) describes each check and job.
+
+## Compatibility confidence
+
+The catalog scores each profile with [`@lemma/confidence`](../../packages/confidence/README.md), the Stylus engine's crate run as wasm. The prior comes from the profile's evidence. Finalized outcomes come from an injected `OutcomeSource` (`createApp({ outcomes })`, `src/compatibility.ts`), which must answer from memory. The default, `NO_OUTCOMES`, has none, so every evidenced profile shows its benchmark prior alone. See [Server Runtime](../../docs/server-runtime.md#catalog-compatibility-confidence) for the source contract and failure behavior.
 
 ## Persistence lifecycle
 

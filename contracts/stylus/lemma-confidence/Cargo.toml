@@ -1,0 +1,15 @@
+[package]
+name = "lemma-confidence"
+description = "Lemma compatibility confidence: time-decayed outcomes over a benchmark prior, scored by a Wilson lower bound in integer math"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ruint = { workspace = true }
+
+[dev-dependencies]
+proptest = { version = "1.7", default-features = false, features = ["std"] }
+serde_json = "1"

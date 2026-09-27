@@ -1,6 +1,7 @@
 import { CAPABILITY_IDS, type CapabilityId, type CatalogView, type ProfileSummary, type ReleaseSummary } from "@lemma/core";
 import { useState } from "react";
 
+import { COMPATIBILITY_EXPLAINED, ConfidenceCell } from "../components/Compatibility.js";
 import { Hash } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
 import { Badge, Callout, KeyValue, PageHead } from "../components/ui.js";
@@ -158,6 +159,9 @@ function Release({ release }: { release: ReleaseSummary }) {
                 <th scope="col" className="num">
                   Highest price that keeps the target
                 </th>
+                <th scope="col" className="num">
+                  Compatibility confidence
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -167,6 +171,7 @@ function Release({ release }: { release: ReleaseSummary }) {
             </tbody>
           </table>
         </div>
+        <p className="small muted">{COMPATIBILITY_EXPLAINED}</p>
       </details>
     </article>
   );
@@ -194,6 +199,9 @@ function Profile({ profile: p }: { profile: ProfileSummary }) {
       <td>{p.blocker === null ? <Badge tone="ok">sellable</Badge> : <span className="muted">not sold: {reasonText(p.blocker)}</span>}</td>
       <td className="num">{p.allInReductionBps === null ? "–" : percent(p.allInReductionBps)}</td>
       <td className="num">{p.maxPriceUsdc === null ? "–" : usdc(p.maxPriceUsdc)}</td>
+      <td className="num">
+        <ConfidenceCell profile={p} />
+      </td>
     </tr>
   );
 }

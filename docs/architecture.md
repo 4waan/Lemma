@@ -34,6 +34,12 @@ The same-origin React dashboard renders validated public read models for catalog
 
 The harness runs controlled agent experiments, reconciles provider usage, creates canonical run records, derives conservative evidence, and evaluates the product's correctness and cost targets.
 
+### Compatibility confidence engine
+
+An integer-only Rust crate (`contracts/stylus/lemma-confidence`) scores how likely a release is to pass its acceptance recipe on one supported profile. The server runs it as a committed wasm module ([`@lemma/confidence`](../packages/confidence/README.md)) to fill the catalog read model. The dashboard only displays the number.
+
+A Stylus contract runs the same crate on Arbitrum, and the warranty registry is to record each finalized outcome into it. The contract is not deployed, and no outcomes flow yet.
+
 ### Warranty registry
 
 The planned Arbitrum Sepolia contract holds provider bond, activates signed warranty vouchers, records evaluator outcomes, and creates buyer withdrawal credit. It stores identifiers and accounting state rather than repository or patch content.

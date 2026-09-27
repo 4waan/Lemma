@@ -49,6 +49,8 @@ Matches use a published deterministic order. Sellable releases rank before previ
 
 Benchmark evidence is bound to the exact run set and the base release that was measured. Adding evidence creates a new release version. Stale or missing evidence keeps a profile preview-only.
 
+The catalog read model also carries a [compatibility confidence](../packages/confidence/README.md) per profile, built from the evidence and finalized outcomes rather than raw receipts. It is display only for now: matching, ranking, pricing, and sale decisions do not use it.
+
 ## Pricing and spending
 
 The catalog enforces two bounds:

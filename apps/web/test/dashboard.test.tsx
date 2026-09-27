@@ -1,5 +1,5 @@
 import { CatalogView, type DemandView, type ResolutionView, StatusView, summarizeRelease } from "@lemma/core";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,7 +9,8 @@ import { describe, expect, it } from "vitest";
 import { ASSET, checkDist } from "../scripts/check-dist.mjs";
 import { fetchView } from "../src/api.js";
 import { App, Shown } from "../src/App.js";
-import { percent } from "../src/format.js";
+import { COMPATIBILITY_EXPLAINED } from "../src/components/Compatibility.js";
+import { percent, thousandths } from "../src/format.js";
 import { sourceUrl } from "../src/links.js";
 import { parseRoute } from "../src/routes.js";
 import { Catalog } from "../src/views/Catalog.js";
@@ -63,7 +64,10 @@ const catalog = CatalogView.parse({
   catalogDigest: hex("88"),
   generatedAt: NOW.toISOString(),
   economics: { status: "measured", chainCostUsdc: "10000", priceFloorUsdc: "100000" },
-  releases: [summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW)],
+  releases: [
+    // The server's confidence for a one-run probe that passed (vectors.json, "prior only: a one-run probe").
+    summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]])),
+  ],
 });
 
 describe("views render only from read models", () => {
@@ -77,12 +81,50 @@ describe("views render only from read models", () => {
     expect(html).toContain("&lt;img");
     expect(html).toContain('href="https://github.com/coinbase/x402/tree/dd927a26cfefc98c24b3ec38b3a8f204dad0c60d"');
     expect(html).toContain('rel="noopener noreferrer nofollow"');
+    expect(html).toContain("Compatibility confidence");
+    expect(html).toContain("26.98 %");
+    // The prior comes from a testnet-only probe here, and the basis says so.
+    expect(html).toContain("provisional probe prior, no outcomes yet");
+    expect(html).toContain("90% lower bound");
+  });
+
+  it("shows compatibility confidence on the catalog and the proof page, with what it rests on", () => {
+    const withOutcomes = CatalogView.parse({
+      ...catalog,
+      releases: [
+        summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 7337, effectiveNMilli: "21727", outcomes: 4, source: "benchmark+outcomes" as const }]])),
+      ],
+    });
+    for (const html of [renderToStaticMarkup(<Catalog view={withOutcomes} />), renderToStaticMarkup(<Evidence view={withOutcomes} />)]) {
+      expect(html).toContain("73.37 %");
+      expect(html).toContain("provisional probe prior and 4 outcomes");
+      expect(html).toContain(COMPATIBILITY_EXPLAINED.replaceAll("'", "&#x27;"));
+    }
+    expect(renderToStaticMarkup(<Evidence view={withOutcomes} />)).toContain(">21.727<");
+    // Frozen-benchmark evidence: the prior is the benchmark's, with nothing provisional about it.
+    const frozen = { ...release, version: "1.0.0+bench-1", supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: { ...p.evidence, benchmarkVersion: "bench-1" } })) };
+    const benchmarked = CatalogView.parse({
+      ...catalog,
+      releases: [summarizeRelease({ release: frozen, releaseDigest: hex("58"), baseReleaseDigest: hex("56"), provisional: false }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]]))],
+    });
+    for (const html of [renderToStaticMarkup(<Catalog view={benchmarked} />), renderToStaticMarkup(<Evidence view={benchmarked} />)]) {
+      expect(html).toContain("benchmark prior, no outcomes yet");
+      expect(html).not.toContain("provisional probe prior");
+    }
+    // No evidence and no outcome: a dash in the catalog and an empty state on the proof page.
+    const none = CatalogView.parse({
+      ...catalog,
+      releases: [summarizeRelease({ release: { ...release, supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: null })) }, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 0n }, NOW)],
+    });
+    expect(renderToStaticMarkup(<Evidence view={none} />)).toContain("Nothing to be confident about yet");
+    expect(renderToStaticMarkup(<Catalog view={none} />)).not.toContain("no outcomes yet");
   });
 
   it("shows evidence, demand, status and a resolution", () => {
     const evidence = renderToStaticMarkup(<Evidence view={catalog} />);
     expect(evidence).toContain("provisional-1");
     expect(evidence).toContain("Their saving is optimistic");
+    expect(evidence).toContain("compatibility confidence 26.98 % (provisional probe prior, no outcomes yet)");
     const demand: DemandView = { minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 7, sources: 6, key: { capability: "node-service.add-payment-facilitator", decision: "build", release: null, profileIndex: null, reasons: ["NO_RELEASE_FOR_CAPABILITY"], offer: false, class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] } } }] };
     expect(renderToStaticMarkup(<Demand view={demand} />)).toContain("no release exists for this capability yet");
     const status = StatusView.parse({ schemaVersion: "1", status: "ok", network: "eip155:421614", catalogDigest: hex("88"), releases: 2, paidTools: false, provisionalEvidence: true, store: "memory", economics: "placeholder" });
@@ -154,6 +196,15 @@ describe("safety helpers", () => {
     expect(percent("-1")).toBe("-0.01 %");
     expect(percent(5n)).toBe("0.05 %");
   });
+
+  it("formats thousandths exactly, without trailing zeros", () => {
+    expect(thousandths("0")).toBe("0");
+    expect(thousandths("3000")).toBe("3");
+    expect(thousandths("21727")).toBe("21.727");
+    expect(thousandths("2500")).toBe("2.5");
+    expect(thousandths("1001253000")).toBe("1,001,253");
+    expect(thousandths("18446744073709551615")).toBe("18,446,744,073,709,551.615");
+  });
 });
 
 describe("the dist check", () => {
@@ -185,9 +236,20 @@ describe("the dist check", () => {
       ["stray file", good, { "index-a1.js": "x", "index-a1.css": "b{}", "index-a1.js.map": "{}" }],
       ["favicon outside /assets/", good.replace("</head>", '<link rel="icon" href="/favicon.svg"></head>')],
       ["foreign font", good, { "index-a1.js": "x", "index-a1.css": "@font-face{font-family:x;src:url(https://fonts.example/x.woff2)}" }],
+      ["wasm file", good, { "index-a1.js": "x", "index-a1.css": "b{}", "engine-a1.wasm": "\u0000asm" }],
+      ["wasm instantiated", good, { "index-a1.js": "WebAssembly.instantiate(bytes)", "index-a1.css": "b{}" }],
+      ["wasm inlined", good, { "index-a1.js": 'const engine = "AGFzbQEAAAA=";', "index-a1.css": "b{}" }],
     ];
     for (const [name, html, assets] of cases) expect(checkDist(dist(html, assets)), name).not.toEqual([]);
     for (const dir of dists.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("keeps the compatibility engine out of the browser", () => {
+    // @lemma/confidence loads wasm with node:fs; the dashboard gets its numbers from the catalog read model.
+    const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+    expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty("@lemma/confidence");
+    const sources = readdirSync(new URL("../src", import.meta.url), { recursive: true, encoding: "utf8" }).filter((f) => /\.(ts|tsx)$/.test(f));
+    for (const file of sources) expect(readFileSync(new URL(`../src/${file}`, import.meta.url), "utf8"), file).not.toContain("@lemma/confidence");
   });
 
   it("uses the server's asset-name rule", () => {

@@ -1,0 +1,9 @@
+# One pinned toolchain for the engine crate, the Node wasm and the Stylus contract.
+# The committed packages/confidence/wasm/lemma_confidence.wasm is rebuilt byte for
+# byte only with this exact version (npm run confidence:wasm), and cargo stylus
+# refuses a floating channel for reproducible verification.
+[toolchain]
+channel = "1.94.1"
+profile = "minimal"
+components = ["clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]

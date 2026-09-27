@@ -36,6 +36,7 @@ import {
 - USDC amounts are decimal strings in six-decimal atomic units, never floating-point values.
 - A no-match preview cannot contain an offer.
 - Evidence is specific to one supported profile and bound to a benchmark run set.
+- `ProfileSummary.compatibility` is a read-model value only: `{ confidenceBps, effectiveNMilli, outcomes, source }`, or null when a profile has neither evidence nor a finalized outcome (or the server could not read its outcomes). Its `source` must agree with both. The server computes it with `@lemma/confidence` and passes it to `summarizeRelease`. It is never signed, paid, or persisted, so no digest vector covers it.
 - A sellable price must pass both the 30 percent saving rule and the all-in reduction bound.
 - MCP matching accepts typed capability ids, not free-form task prose.
 - Patch bundles cannot modify manifests, lockfiles, workspace policy files, dotfiles, or `node_modules`.

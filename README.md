@@ -64,6 +64,7 @@ Lemma is an active MVP build. The compatibility path is substantially implemente
 | Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
 | Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
 | Dashboard views and production bundle checks | Implemented |
+| Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; contract not deployed and no outcomes recorded yet |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
 | x402 facilitator, paid MCP tool, signer integration, and settlement reconciliation | Pending |
 | Warranty registry, deployment scripts, and evaluator outcomes | Pending |
@@ -78,6 +79,7 @@ Requirements:
 - Node.js 22 or newer
 - npm 10 or newer
 - Foundry for Solidity builds and tests
+- Rust through rustup, only for the Stylus workspace and the engine's wasm (`contracts/stylus/rust-toolchain.toml` pins 1.94.1)
 - Docker or another Compose-compatible runtime when testing Postgres
 
 Install and run the repository checks:
@@ -91,6 +93,8 @@ npm run contracts:test
 ```
 
 `npm run verify` typechecks source and tests, runs Vitest, builds every TypeScript workspace, and validates the production web bundle. Some process-isolation tests require Linux facilities such as `/proc` and network namespaces.
+
+With Rust installed, `npm run stylus:test` runs the Stylus workspace's tests, and `npm run confidence:wasm:check` proves that the committed engine wasm rebuilds byte for byte. After an engine change, `npm run confidence:wasm` rebuilds it.
 
 Start the implemented applications in separate terminals:
 
@@ -113,7 +117,9 @@ apps/web/           Read-only React dashboard
 packages/core/      Versioned schemas, identifiers, pricing, policy, and read models
 packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
 packages/benchmark/ Controlled agent experiments and evidence derivation
+packages/confidence/ Compatibility-confidence engine as reproducible wasm for the server
 contracts/          Foundry project for the pending warranty registry
+contracts/stylus/   Rust confidence engine, its Node wasm build, and its Stylus contract
 docs/               Architecture, protocol, economics, security, and delivery decisions
 ops/                Container and Railway configuration
 ```

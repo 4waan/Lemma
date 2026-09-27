@@ -34,7 +34,9 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Core protocol package](../packages/core/README.md)
 - [Capability catalog](../packages/catalog/README.md)
 - [Benchmark harness](../packages/benchmark/README.md)
+- [Compatibility confidence package](../packages/confidence/README.md)
 - [Warranty contract](../contracts/README.md)
+- [Stylus confidence engine](../contracts/README.md#stylus-compatibility-confidence-engine)
 - [Operations](../ops/README.md)
 
 When a public interface changes, update the owning component guide and the cross-component document that explains the behavior. Do not duplicate detailed rules in the root README.

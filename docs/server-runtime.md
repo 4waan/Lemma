@@ -38,6 +38,14 @@ Every preview contributes to a daily demand bucket. Repository profiles and clie
 
 The public demand API exposes only buckets with at least five distinct repositories and five distinct client addresses. Closing and recording coordinate through per-day database locks so no preview is counted twice or added after closure.
 
+## Catalog compatibility confidence
+
+`GET /api/v1/catalog` fills `ProfileSummary.compatibility` with `@lemma/confidence`, scored at the request's clock. The prior is the profile evidence's treatment arm. Finalized outcomes come from the `OutcomeSource` passed to `createApp({ outcomes })`, keyed by release digest and profile index like the Stylus contract. The default source, `NO_OUTCOMES`, returns none, so until the outcome pipeline exists every evidenced profile shows its benchmark prior alone. A profile with neither evidence nor outcomes gets null.
+
+The route reads the source for every profile on every request. A source must answer from an in-memory snapshot that it refreshes in the background, never from a database or a chain. It should return a frozen array of frozen outcomes, and the same array while nothing changes: the route folds such an array once and remembers the sums by identity. Any other array is folded again on every request, which is slower but never stale.
+
+The catalog shows the contract's number only for the same inputs: exactly the outcomes the contract recorded for that key, each dated with the block that recorded it, a prior set on chain from the same evidence, and the same time. The [confidence package guide](../packages/confidence/README.md#when-the-catalog-and-the-chain-agree) explains why.
+
 ## Startup gates
 
 The production entrypoint refuses to listen unless:
@@ -56,6 +64,7 @@ The process handles `SIGTERM` by stopping new requests, closing background work,
 
 - No match returns a free decision and no offer.
 - A catalog or migration failure prevents startup.
+- An outcome source that throws, or returns an outcome the engine cannot represent, costs only that profile its compatibility confidence (null, logged as `catalog.compatibility_failed` with the release digest and profile index). The rest of the catalog is served.
 - Store failures are reduced to typed error codes before reaching clients.
 - Settlement uncertainty remains pending for reconciliation.
 - Recovery uses the original preview secret and buyer, so a public resolution id is insufficient.

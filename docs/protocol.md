@@ -49,6 +49,8 @@ Matches use a published deterministic order. Sellable releases rank before previ
 
 Benchmark evidence is bound to the exact run set and the base release that was measured. Adding evidence creates a new release version. Stale or missing evidence keeps a profile preview-only.
 
+The catalog read model also carries a compatibility confidence per profile: the 90% lower bound on the acceptance pass rate, from the evidence's treatment arm and finalized outcomes whose weight halves every 30 days. The integer engine in `contracts/stylus` computes it; the server runs it as wasm, and a Stylus contract can run the same code on chain. It is display only for now: matching, ranking, pricing, and sale decisions do not use it, and it counts finalized outcomes, not raw receipts.
+
 ## Pricing and spending
 
 The catalog enforces two bounds:

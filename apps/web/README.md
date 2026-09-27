@@ -21,8 +21,8 @@ Set `LEMMA_API_URL` when the development server should proxy to an address other
 | --- | --- | --- |
 | `#/` | Home: what Lemma does with an example session, the three steps (check, buy, apply) marked live or coming soon, why it pays (the worked example's cost chart), why Arbitrum, and live figures from this server. | `CatalogView`, `StatusView` |
 | `#/how-it-works` | Home, scrolled to the three steps. | as above |
-| `#/catalog` | One card per release: what it fits, price, warranty, source and expiry, with the digest and the per-profile table under Details. A capability without a release shows its free build answer. | `CatalogView` |
-| `#/evidence` | Proof: the two-arm benchmark and its fixed parameters, every evidenced profile with its numbers and cost chart, the pricing rule with a calculator, and what to trust. | `CatalogView` |
+| `#/catalog` | One card per release: what it fits, price, warranty, source and expiry, with the digest and the per-profile table under Details, including each profile's compatibility confidence and what it rests on. A capability without a release shows its free build answer. | `CatalogView` |
+| `#/evidence` | Proof: the two-arm benchmark and its fixed parameters, every evidenced profile with its numbers and cost chart, compatibility confidence per profile ("no outcomes yet" while only the benchmark prior exists, and a provisional prior labeled as a testnet probe), the pricing rule with a calculator, and what to trust. | `CatalogView` |
 | `#/what-to-trust` | Proof, scrolled to its limits. | as above |
 | `#/setup` | Get started: add the bridge to Cursor, Claude Code or another MCP agent (the configuration names this server's own origin), install the rule for that agent, and ask for an integration. | none (static) |
 | `#/resolutions`, `#/resolutions/<id>` | Look up a resolution by its public id; its lifecycle (quote, payment, adoption receipt, warranty), terms and digests. | `ResolutionView` |
@@ -48,6 +48,8 @@ npm run bundle -w @lemma/web
 npm run test -w @lemma/web
 ```
 
-`bundle` runs Vite and then inspects every output file. It rejects inline scripts, styles and event handlers, foreign asset URLs, missing hashed assets, source maps, and filenames the server will not serve.
+`bundle` runs Vite and then inspects every output file. It rejects inline scripts, styles and event handlers, foreign asset URLs, missing hashed assets, source maps, WebAssembly, and filenames the server will not serve.
+
+The compatibility engine (`@lemma/confidence`, a wasm module) is server-only. The dashboard shows the numbers the catalog read model carries, with a one-line explanation (a 90% lower bound over the benchmark prior and finalized outcomes with a 30-day half-life), and never imports the engine. A test and the bundle check hold that.
 
 React escaping is the only HTML rendering path. External links are rebuilt from validated GitHub repository and commit fields. The server's Content Security Policy permits scripts, styles, fonts, images, and API calls only from the application origin.

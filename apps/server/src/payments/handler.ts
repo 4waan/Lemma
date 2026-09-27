@@ -89,13 +89,16 @@ export function authorizationOf(payload: unknown): VerifiedAuthorization | undef
   const parsed = ExactEip3009Payload.safeParse((payload as { payload?: unknown } | undefined)?.payload);
   if (!parsed.success) return undefined;
   const authorization = parsed.data.authorization;
+  const validBefore = new Date(Number(authorization.validBefore) * 1000);
+  // Past the last instant a Date can hold, the window check would compare NaN, which is never too long.
+  if (Number.isNaN(validBefore.getTime())) return undefined;
   try {
     return {
       payer: toAddress(authorization.from),
       to: toAddress(authorization.to),
       value: authorization.value,
       nonce: authorization.nonce.toLowerCase(),
-      validBefore: new Date(Number(authorization.validBefore) * 1000),
+      validBefore,
     };
   } catch {
     return undefined;

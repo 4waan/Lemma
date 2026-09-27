@@ -7,10 +7,11 @@
  *
  * In the server's container: `node apps/server/dist/scripts/evaluator.js list`.
  * `list` prints each one waiting (resolution id, release, profile, the
- * receipt's outcome and exit code, how long it has waited; nothing about the
- * buyer). `decide` queues it as FAILED (the buyer's credit) or VOID (no
- * credit, bond released, nothing recorded); the evaluator job in the running
- * server signs and sends it. It reads DATABASE_URL and needs no key.
+ * receipt's outcome and exit code, how long it has waited, and the claim
+ * deadline to decide by; nothing about the buyer). `decide` queues it as
+ * FAILED (the buyer's credit) or VOID (no credit, bond released, nothing
+ * recorded); the evaluator job in the running server signs and sends it. It
+ * reads DATABASE_URL and needs no key.
  */
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";

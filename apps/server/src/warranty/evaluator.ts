@@ -3,10 +3,12 @@ import { type Address, type AdoptionReceipt, type Hex32, MAX_OUTCOME_WEIGHT_BPS,
 import { describeError } from "../errors.js";
 import type { RegistryEventRow, WarrantyAction } from "../persistence.js";
 import { type ActionJobDeps, type ActionReport, type ActionRules, ActionSender, type Decision, RELEASE_ROLES_MISMATCH, type RunContext,
-  type SettledDecision, emptyReport, releaseProblem, runContext } from "./actions.js";
+  type SettledDecision, StaleReadError, emptyReport, releaseProblem, runContext } from "./actions.js";
 import { ACTIONS_INTERVAL_MS, SIGN_MARGIN_SECONDS } from "./activator.js";
 import type { RegistryResolution, RegistryRevert, WarrantyChain } from "./chain.js";
 import { runEvery } from "./loop.js";
+import { claimDeadlinesInForce } from "./outcomes.js";
+import { REVIEW_LIST_LIMIT } from "./review.js";
 
 /** An outcome is signed to be submitted within this many seconds of the chain's clock, and never after the claim deadline. */
 export const OUTCOME_WINDOW_SECONDS = 3600;
@@ -14,6 +16,8 @@ export const OUTCOME_WINDOW_SECONDS = 3600;
 export const DAMPER_WINDOW_MS = 30 * 86_400_000;
 /** ...count at most this many; the next ones finalize with weight 0. */
 export const DAMPER_LIMIT = 3;
+/** An outcome in review this close to its claim deadline in force, or past it, is alerted at error level (once). */
+export const REVIEW_ALERT_SECONDS = 6 * 3600;
 
 /** `EVALUATOR_FAILURES`: `review` (an operator decides each failed outcome) or `auto` (a failed receipt finalizes as FAILED). */
 export type EvaluatorFailures = "review" | "auto";
@@ -67,10 +71,13 @@ export function verdictForReceipt(outcome: AdoptionReceipt["outcome"]): Warranty
  * the release must name this evaluator, and the evaluator signs the outcome
  * with `validUntil` = min(the chain's clock + 3600 s, `claimDeadlineOf`),
  * again when that comes near, and sends it. Actions still in review when
- * their warranty ended are closed.
+ * their warranty ended are closed, and each one still in review within
+ * `REVIEW_ALERT_SECONDS` of its claim deadline is alerted once.
  */
 export class WarrantyEvaluator {
   private readonly sender: ActionSender;
+  /** Outcomes in review alerted as near their deadline: each is alerted once while this process runs. */
+  private readonly alerted = new Set<Hex32>();
 
   constructor(private readonly deps: EvaluatorDeps) {
     this.sender = new ActionSender(deps, finalizationRules(deps.chain, deps.logger));
@@ -79,6 +86,7 @@ export class WarrantyEvaluator {
   async runOnce(): Promise<EvaluatorReport> {
     const { queued, review } = await this.discover();
     const closed = await this.closeEndedReviews();
+    await this.alertReviewDeadlines();
     const report = emptyReport();
     const ctx = await runContext(this.deps, "finalize");
     if (ctx !== undefined) await this.sender.sendDue(ctx, report);
@@ -150,6 +158,33 @@ export class WarrantyEvaluator {
     return closed;
   }
 
+  /**
+   * Logs `warranty.review_deadline` at error level, once per outcome, when
+   * one still in review is `REVIEW_ALERT_SECONDS` or less from its claim
+   * deadline in force, or past it. Undecided by then, the expirer expires the
+   * warranty, its bond goes back to the provider, and a FAILED outcome can no
+   * longer credit the buyer.
+   */
+  private async alertReviewDeadlines(): Promise<void> {
+    const { store, logger } = this.deps;
+    try {
+      const inReview = await store.listWarrantyActions({ kind: "finalize", state: "review" }, REVIEW_LIST_LIMIT);
+      if (inReview.length < REVIEW_LIST_LIMIT) {
+        const waiting = new Set(inReview.map((a) => a.resolutionId));
+        for (const id of this.alerted) if (!waiting.has(id)) this.alerted.delete(id);
+      }
+      const nowSeconds = BigInt(Math.floor(this.deps.clock().getTime() / 1000));
+      const unalerted = inReview.map((a) => a.resolutionId).filter((id) => !this.alerted.has(id));
+      for (const [resolutionId, deadline] of await claimDeadlinesInForce(store, unalerted, nowSeconds)) {
+        if (deadline - nowSeconds > BigInt(REVIEW_ALERT_SECONDS)) continue;
+        this.alerted.add(resolutionId);
+        logger.log("error", "warranty.review_deadline", { resolutionId, claimDeadline: new Date(Number(deadline) * 1000).toISOString(), secondsLeft: Number(deadline - nowSeconds) });
+      }
+    } catch (error) {
+      logger.log("warn", "warranty.outbox_failed", { kind: "finalize", error: describeError(error) });
+    }
+  }
+
   /** Runs now and then every `intervalMs`, one run at a time; returns a stop function. */
   start(intervalMs: number = ACTIONS_INTERVAL_MS): () => void {
     return runEvery(intervalMs, () => this.runOnce(), this.deps.logger, "warranty.evaluator_failed");
@@ -168,7 +203,9 @@ function finalizationRules(chain: WarrantyChain, logger: ActionJobDeps["logger"]
     fn: "finalizeOutcome",
 
     async prepare(action: WarrantyAction, resolution: RegistryResolution, ctx: RunContext): Promise<Decision> {
-      // Finalized already (by this job's earlier send, or anyone relaying its signature), expired, or never activated.
+      // The indexer confirmed the activation: a node that answers none is behind it.
+      if (resolution.status === "none") throw new StaleReadError();
+      // Finalized already (by this job's earlier send, or anyone relaying its signature), or expired.
       if (resolution.status !== "active") return endedBy(resolution, resolution.status === "expired" ? "RESOLUTION_EXPIRED" : "RESOLUTION_NOT_ACTIVE");
       const parsed = WarrantyOutcome.safeParse(action.payload);
       if (!parsed.success) return { kind: "finish", state: "abandoned", code: "NO_OUTCOME" };

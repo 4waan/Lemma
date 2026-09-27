@@ -3,11 +3,13 @@ import { type AdoptionReceipt, Hex32, WarrantyOutcome } from "@lemma/core";
 import { schemaIsCurrent } from "../db/migrations.js";
 import { type Db, PgStore } from "../db/store.js";
 import type { LemmaStore } from "../persistence.js";
+import { claimDeadlinesInForce } from "./outcomes.js";
 
 /**
  * One failed outcome waiting for an operator's decision, as the evaluator
  * command lists it: the resolution, its release and profile, what the
- * buyer's receipt said, and how long it has waited. Nothing about the buyer.
+ * buyer's receipt said, how long it has waited, and until when it can be
+ * decided. Nothing about the buyer.
  */
 export interface ReviewItem {
   readonly resolutionId: Hex32;
@@ -18,14 +20,27 @@ export interface ReviewItem {
   readonly receiptOutcome: AdoptionReceipt["outcome"] | null;
   readonly exitCode: number | null;
   readonly ageSeconds: number;
+  /**
+   * The claim deadline in force, from the indexed events (null when the
+   * activation is not indexed). Undecided by then, the warranty expires: its
+   * bond goes back to the provider, and a FAILED outcome can no longer credit
+   * the buyer.
+   */
+  readonly claimDeadline: Date | null;
 }
 
+/** How many outcomes in review the evaluator command lists, and the evaluator job watches for their deadlines. */
+export const REVIEW_LIST_LIMIT = 100;
+
 /** The finalizations in review, oldest first. */
-export async function listReview(store: Pick<LemmaStore, "listWarrantyActions" | "getResolution" | "getReceipt">, now: Date, limit = 100): Promise<ReviewItem[]> {
+export async function listReview(store: Pick<LemmaStore, "listWarrantyActions" | "getResolution" | "getReceipt" | "listRegistryEvents">, now: Date, limit = REVIEW_LIST_LIMIT): Promise<ReviewItem[]> {
+  const actions = await store.listWarrantyActions({ kind: "finalize", state: "review" }, limit);
+  const deadlines = await claimDeadlinesInForce(store, actions.map((a) => a.resolutionId), BigInt(Math.floor(now.getTime() / 1000)));
   const items: ReviewItem[] = [];
-  for (const action of await store.listWarrantyActions({ kind: "finalize", state: "review" }, limit)) {
+  for (const action of actions) {
     const [row, receipt] = await Promise.all([store.getResolution(action.resolutionId), store.getReceipt(action.resolutionId)]);
     const release = row?.resolution.release;
+    const deadline = deadlines.get(action.resolutionId);
     items.push({
       resolutionId: action.resolutionId,
       release: release === undefined ? "unknown" : `${release.releaseId}@${release.version}`,
@@ -34,6 +49,7 @@ export async function listReview(store: Pick<LemmaStore, "listWarrantyActions" |
       receiptOutcome: receipt?.receipt.outcome ?? null,
       exitCode: receipt?.receipt.acceptance.exitCode ?? null,
       ageSeconds: Math.max(0, Math.floor((now.getTime() - action.createdAt.getTime()) / 1000)),
+      claimDeadline: deadline === undefined ? null : new Date(Number(deadline) * 1000),
     });
   }
   return items;
@@ -73,10 +89,17 @@ export function formatAge(seconds: number): string {
   return `${seconds}s`;
 }
 
-/** One line of the operator's list. */
-export function formatReviewItem(item: ReviewItem): string {
+/** One line of the operator's list, at `now`. */
+export function formatReviewItem(item: ReviewItem, now: Date): string {
   const receipt = item.receiptOutcome === null ? "no receipt" : `receipt ${item.receiptOutcome} (exit ${item.exitCode ?? "none"})`;
-  return `${item.resolutionId}  ${item.release}  profile ${item.profileIndex}  ${receipt}  waiting ${formatAge(item.ageSeconds)}`;
+  return `${item.resolutionId}  ${item.release}  profile ${item.profileIndex}  ${receipt}  waiting ${formatAge(item.ageSeconds)}  ${formatDeadline(item.claimDeadline, now)}`;
+}
+
+/** `decide by 2026-10-04T00:00:00Z (in 5h 20m)`, or that the window closed, or that no activation is indexed. */
+function formatDeadline(deadline: Date | null, now: Date): string {
+  if (deadline === null) return "decide by: unknown (activation not indexed)";
+  const left = Math.floor((deadline.getTime() - now.getTime()) / 1000);
+  return `decide by ${deadline.toISOString().replace(".000Z", "Z")} (${left > 0 ? `in ${formatAge(left)}` : "window closed"})`;
 }
 
 export type EvaluatorCommand = { readonly command: "list" } | { readonly command: "decide"; readonly resolutionId: Hex32; readonly verdict: "failed" | "void" };
@@ -101,7 +124,7 @@ export async function runEvaluatorCommand(db: Db, command: EvaluatorCommand, now
   const store = new PgStore(db);
   if (command.command === "list") {
     const items = await listReview(store, now);
-    return { lines: items.length === 0 ? ["no failed outcome waits for a decision"] : items.map(formatReviewItem), error: null };
+    return { lines: items.length === 0 ? ["no failed outcome waits for a decision"] : items.map((item) => formatReviewItem(item, now)), error: null };
   }
   const result = await decideReview(store, command.resolutionId, command.verdict, now);
   if (result === "QUEUED") return { lines: [`queued ${command.resolutionId} as ${command.verdict}; the evaluator job signs and sends it`], error: null };

@@ -30,7 +30,10 @@ const paid = () => ({
   ARBITRUM_SEPOLIA_RPC_URL: "http://127.0.0.1:9",
   DATABASE_URL: "postgres://lemma@localhost:5432/lemma",
 });
-const warrantyEnv = () => ({ ...paid(), RESOLUTION_WARRANTY_REGISTRY_ADDRESS: REGISTRY, PROVIDER_PRIVATE_KEY: generatePrivateKey(), EVALUATOR_PRIVATE_KEY: generatePrivateKey() });
+const warrantyEnv = () => {
+  const providerKey = generatePrivateKey();
+  return { ...paid(), PROVIDER_ADDRESS: privateKeyToAccount(providerKey).address, RESOLUTION_WARRANTY_REGISTRY_ADDRESS: REGISTRY, PROVIDER_PRIVATE_KEY: providerKey, EVALUATOR_PRIVATE_KEY: generatePrivateKey() };
+};
 
 describe("warranty configuration", () => {
   it("leaves the pipeline off, and nothing else changed, when none of it is set", () => {
@@ -80,7 +83,7 @@ describe("warranty configuration", () => {
     }
   });
 
-  it("refuses a key that is not one, or one account in two roles", () => {
+  it("refuses a key that is not one, one account in two roles, or a provider key that is not PROVIDER_ADDRESS", () => {
     const zero = `0x${"0".repeat(64)}`;
     expect(() => loadConfig({ ...warrantyEnv(), PROVIDER_PRIVATE_KEY: zero })).toThrow(/^PROVIDER_PRIVATE_KEY is not a valid secp256k1 private key; its value is not shown$/);
     const shared = generatePrivateKey();
@@ -89,6 +92,15 @@ describe("warranty configuration", () => {
     const attester = { ATTESTER_PRIVATE_KEY: shared, LEMMA_AGENT_ID: "7", PUBLIC_BASE_URL: "https://lemma.example" };
     expect(() => loadConfig({ ...warrantyEnv(), ...attester, EVALUATOR_PRIVATE_KEY: shared })).toThrow(/EVALUATOR_PRIVATE_KEY and ATTESTER_PRIVATE_KEY/);
     expect(loadConfig({ ...warrantyEnv(), ...attester }).warranty).toBeDefined();
+    // Offers pay PROVIDER_ADDRESS, and the activator sends from the provider key: two accounts would sell warranties that never activate.
+    const env = warrantyEnv();
+    expect(() => loadConfig({ ...env, PROVIDER_ADDRESS: PROVIDER })).toThrow(/^PROVIDER_ADDRESS is not the address of PROVIDER_PRIVATE_KEY/);
+    try {
+      loadConfig({ ...env, PROVIDER_ADDRESS: PROVIDER });
+    } catch (error) {
+      expect((error as Error).message).not.toContain(env.PROVIDER_PRIVATE_KEY.slice(2));
+    }
+    expect(loadConfig({ ...env, PROVIDER_ADDRESS: env.PROVIDER_ADDRESS.toLowerCase() }).warranty?.providerAddress).toBe(env.PROVIDER_ADDRESS.toLowerCase());
     for (const bad of [{ WARRANTY_INDEXER_CONFIRMATIONS: "-1" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1.5" }, { WARRANTY_INDEXER_CONFIRMATIONS: "safe" }, { WARRANTY_INDEXER_CONFIRMATIONS: "1000000" }, { EVALUATOR_FAILURES: "sometimes" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "86401" }, { WARRANTY_ACTIVATION_JITTER_SECONDS: "-1" }, { WARRANTY_REGISTRY_START_BLOCK: "1.5" }, { RESOLUTION_WARRANTY_REGISTRY_ADDRESS: "0x4C454D4D41000000000000000000000000000001" }]) {
       expect(() => loadConfig({ ...warrantyEnv(), ...bad }), JSON.stringify(bad)).toThrow(ConfigError);
     }

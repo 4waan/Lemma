@@ -8,6 +8,7 @@ import {
   DAMPER_WINDOW_MS,
   type LemmaStore,
   type RegistryCall,
+  type RegistryStatus,
   type WarrantyChain,
   WarrantyActivator,
   WarrantyEvaluator,
@@ -18,7 +19,7 @@ import {
 } from "../src/index.js";
 import { type FakeRegistry, registryError } from "./fake-registry.js";
 import { BUYER } from "./helpers.js";
-import { type Bought, idOf, warrantyWorld } from "./warranty-helpers.js";
+import { type Bought, activateOnChain, idOf, voucherOn, warrantyWorld } from "./warranty-helpers.js";
 
 const OTHER_BUYER = "0x00000000000000000000000000000000000000c1";
 const HOUR = 3600;
@@ -47,6 +48,19 @@ function refusing(chain: FakeRegistry, errorName: string, args: readonly unknown
     },
   });
 }
+
+/**
+ * Answers the next resolution read as a node behind the indexed events would:
+ * a lagging backend of a load-balanced endpoint answers `getBlockNumber` with
+ * an old block, and reads the registry there.
+ */
+function behind(chain: FakeRegistry, status: RegistryStatus): void {
+  const read = chain.resolution.bind(chain);
+  vi.spyOn(chain, "resolution").mockImplementationOnce(async (id) => ({ ...(await read(id)), status }));
+}
+
+/** The one line the outbox logs when an attempt failed on the chain's side, here a stale read. */
+const staleReadLogged = (w: World, kind: string) => w.logger.lines.some((l) => l.event === "warranty.attempt_failed" && l.fields["kind"] === kind && l.fields["error"] === "StaleReadError STALE_READ");
 
 const common = (w: World, over: { chain?: WarrantyChain; store?: LemmaStore } = {}) => ({ store: over.store ?? w.store, chain: over.chain ?? w.chain, clock: () => w.clock.now, logger: w.logger, jitter: () => 0 });
 
@@ -267,6 +281,36 @@ describe("the activator", () => {
     expect(await w.jobs.activator.runOnce()).toMatchObject({ done: 1, sent: 0 });
     expect(w.chain.sent).toHaveLength(0);
   });
+
+  it("skips with an alert, never taking it for its own, a resolution the registry holds for another release, profile or amount", async () => {
+    for (const over of [{ releaseDigest: idOf("another release") }, { profileIndex: 1 }, { amount: "1" }]) {
+      const w = await warrantyWorld();
+      const b = await w.buy();
+      const digest = over.releaseDigest ?? w.entry.releaseDigest;
+      if (over.releaseDigest !== undefined) {
+        w.chain.registerRelease(digest);
+        w.chain.depositBond(digest, 100_000_000n);
+      }
+      // Resolution ids are global on the registry: another provider activates this one first, on its own terms.
+      await activateOnChain(w.chain, voucherOn(w.chain, b.id, digest, over));
+      expect(await w.jobs.activator.runOnce(), JSON.stringify(over)).toMatchObject({ queued: 1, skipped: 1, done: 0, sent: 0 });
+      expect(await w.store.getWarrantyAction(b.id, "activate")).toMatchObject({ state: "skipped", lastCode: "FOREIGN_ACTIVATION" });
+      expect(w.logger.lines.filter((l) => l.event === "warranty.foreign_activation")).toEqual([
+        { level: "error", event: "warranty.foreign_activation", fields: { resolutionId: b.id, releaseDigest: w.entry.releaseDigest, registryReleaseDigest: digest, code: "FOREIGN_ACTIVATION" } },
+      ]);
+    }
+  });
+
+  it("looks again when the registry refuses the send as a duplicate, and closes the action by what it then holds", async () => {
+    const w = await warrantyWorld();
+    const b = await w.buy();
+    await new WarrantyActivator({ ...common(w, { chain: refusing(w.chain, "ResolutionAlreadyExists", [b.id]) }), jitterSeconds: 0 }).runOnce();
+    const action = await w.store.getWarrantyAction(b.id, "activate");
+    expect(action).toMatchObject({ state: "sent", lastCode: "RESOLUTION_ALREADY_EXISTS" });
+    // It was this voucher, relayed between the read and the send: the next attempt reads it and closes the action.
+    await w.chain.relay({ fn: "activateResolution", voucher: WarrantyVoucher.parse(action?.payload), signature: action?.signature as `0x${string}` });
+    expect(await w.jobs.activator.runOnce()).toMatchObject({ done: 1, sent: 0 });
+  });
 });
 
 describe("the evaluator", () => {
@@ -310,10 +354,9 @@ describe("the evaluator", () => {
     expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 2, review: 2, sent: 0 });
     w.advance(2 * HOUR);
     const listed = await listReview(w.store, w.clock.now);
-    expect(listed.map((i) => [i.resolutionId, i.release, i.profileIndex, i.receiptOutcome, i.exitCode, i.ageSeconds])).toEqual([
-      [first!.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR],
-      [second!.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR],
-    ]);
+    // Both were queued at one instant, so the list orders them by resolution id.
+    const byId = [first!, second!].sort((x, y) => (x.id < y.id ? -1 : 1));
+    expect(listed.map((i) => [i.resolutionId, i.release, i.profileIndex, i.receiptOutcome, i.exitCode, i.ageSeconds])).toEqual(byId.map((b) => [b.id, "gating@1.0.0+bench-1", 0, "failed", 1, 2 * HOUR]));
     expect(JSON.stringify(listed)).not.toContain(BUYER.slice(2));
     expect(await decideReview(w.store, first!.id, "failed", w.clock.now)).toBe("QUEUED");
     expect(await decideReview(w.store, second!.id, "void", w.clock.now)).toBe("QUEUED");
@@ -322,6 +365,32 @@ describe("the evaluator", () => {
     expect(await w.jobs.evaluator.runOnce()).toMatchObject({ done: 2 });
     expect([w.chain.status(first!.id), w.chain.status(second!.id)]).toEqual(["failed", "voided"]);
     expect(WarrantyOutcome.parse((await w.store.getWarrantyAction(second!.id, "finalize"))?.payload)).toMatchObject({ verdict: "void", weightBps: 0 });
+  });
+
+  it("lists each failure in review with its claim deadline in force, and alerts once, at error level, six hours before it", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    await w.receipt(b, "failed");
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ review: 1 });
+    // An hour's pause moves the deadline an hour later, on the chain and in the list.
+    const set = (await w.chain.resolution(b.id)).claimDeadline;
+    w.chain.pause();
+    w.advance(HOUR);
+    w.chain.unpause();
+    await w.jobs.indexer.runOnce();
+    const deadline = (await w.chain.resolution(b.id)).claimDeadline;
+    expect(deadline).toBe(set + BigInt(HOUR));
+    expect((await listReview(w.store, w.clock.now)).map((i) => i.claimDeadline)).toEqual([new Date(Number(deadline) * 1000)]);
+    const alerts = () => w.logger.lines.filter((l) => l.event === "warranty.review_deadline");
+    // Seven hours before it, nothing; five hours before it, one alert, and only one.
+    w.advance(WINDOW - 7 * HOUR);
+    await w.jobs.evaluator.runOnce();
+    expect(alerts()).toEqual([]);
+    w.advance(2 * HOUR);
+    await w.jobs.evaluator.runOnce();
+    await w.jobs.evaluator.runOnce();
+    expect(alerts()).toEqual([{ level: "error", event: "warranty.review_deadline", fields: { resolutionId: b.id, claimDeadline: new Date(Number(deadline) * 1000).toISOString(), secondsLeft: 5 * HOUR } }]);
+    expectNothingSecretLogged(w, [b]);
   });
 
   it("never finalizes on an unverified or missing receipt: the warranty runs to its expiry", async () => {
@@ -412,6 +481,19 @@ describe("the evaluator", () => {
     expect(w.chain.sentOf("finalizeOutcome")).toHaveLength(0);
   });
 
+  it("retries a finalization, never abandons it, when a node behind the indexed activation answers none", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    await w.receipt(b, "passed");
+    behind(w.chain, "none");
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 1, failed: 1, abandoned: 0, sent: 0 });
+    expect(await w.store.getWarrantyAction(b.id, "finalize")).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+    expect(staleReadLogged(w, "finalize")).toBe(true);
+    w.advance(30);
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.status(b.id)).toBe("passed");
+  });
+
   it("closes a failure still in review once its warranty ended", async () => {
     const w = await warrantyWorld();
     const b = await w.activeWarranty();
@@ -480,6 +562,19 @@ describe("the expirer", () => {
     expect(await w.store.getWarrantyAction(finalized!.id, "expire")).toMatchObject({ state: "skipped", lastCode: "RESOLUTION_NOT_ACTIVE" });
     expect(w.chain.sentOf("expireResolution")).toHaveLength(0);
   });
+
+  it("retries an expiry, never skips it, when a node behind the indexed activation answers none", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    w.advance(WINDOW + 1);
+    behind(w.chain, "none");
+    expect(await w.jobs.expirer.runOnce()).toMatchObject({ queued: 1, failed: 1, skipped: 0, sent: 0 });
+    expect(await w.store.getWarrantyAction(b.id, "expire")).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+    expect(staleReadLogged(w, "expire")).toBe(true);
+    w.advance(30);
+    expect(await w.jobs.expirer.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.status(b.id)).toBe("expired");
+  });
 });
 
 describe("the credit relay", () => {
@@ -540,6 +635,21 @@ describe("the credit relay", () => {
     await w.jobs.indexer.runOnce();
     expect(await requestWithdrawal({ store: w.store, clock: () => w.clock.now, logger: w.logger }, { resolutionId: other.id, claimSecret: other.secret, to: other.refundTo })).toEqual({ status: 409, body: { error: "NO_CREDIT" } });
   });
+
+  it("retries a withdrawal, never abandons it, when a node behind the indexed FAILED outcome answers another status", async () => {
+    const w = await warrantyWorld({ failures: "auto" });
+    const b = await failedWarranty(w);
+    await requestWithdrawal({ store: w.store, clock: () => w.clock.now, logger: w.logger }, { resolutionId: b.id, claimSecret: b.secret, to: b.refundTo });
+    for (const status of ["none", "active", "passed", "voided", "expired"] as const) {
+      behind(w.chain, status);
+      expect(await w.jobs.relay.runOnce(), status).toMatchObject({ failed: 1, abandoned: 0, sent: 0 });
+      expect(await w.store.getWarrantyAction(b.id, "withdraw"), status).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+      w.advance(30);
+    }
+    expect(staleReadLogged(w, "withdraw")).toBe(true);
+    expect(await w.jobs.relay.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.paid.get(b.refundTo)).toBe(250_000n);
+  });
 });
 
 describe("registry refusals", () => {
@@ -567,7 +677,8 @@ describe("registry refusals", () => {
   }
 
   it("turns each activation refusal into what it means", async () => {
-    expect((await refused("activate", "ResolutionAlreadyExists", [idOf("x")])).action).toMatchObject({ state: "done", lastCode: null });
+    // Activated since the read: the next attempt tells this voucher's activation from another release's.
+    expect((await refused("activate", "ResolutionAlreadyExists", [idOf("x")])).action).toMatchObject({ state: "sent", lastCode: "RESOLUTION_ALREADY_EXISTS" });
     expect((await refused("activate", "VoucherExpired", [1n])).action).toMatchObject({ state: "sent", lastCode: "VOUCHER_EXPIRED" });
     expect((await refused("activate", "InsufficientAvailableBond", [0n, 250_000n])).action).toMatchObject({ state: "sent", lastCode: "INSUFFICIENT_AVAILABLE_BOND" });
     expect((await refused("activate", "UnknownRelease", [idOf("x")])).action).toMatchObject({ state: "skipped", lastCode: "RELEASE_NOT_REGISTERED" });
@@ -602,7 +713,8 @@ describe("registry refusals", () => {
     expect((await refused("expire", "ResolutionNotActive", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "expired"))).action).toMatchObject({ state: "done" });
     expect((await refused("expire", "EnforcedPause")).action).toMatchObject({ state: "sent", lastCode: "ENFORCED_PAUSE" });
     expect((await refused("withdraw", "NoCredit", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "refunded"))).action).toMatchObject({ state: "done" });
-    expect((await refused("withdraw", "NoCredit", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "passed"))).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
+    // Refused while the registry still shows the credit: nothing to withdraw after all. (A status a FAILED outcome rules out is a stale read, retried.)
+    expect((await refused("withdraw", "NoCredit", [idOf("x")])).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
     expect((await refused("withdraw", "InvalidClaim")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_CLAIM", payload: { schemaVersion: "1" } });
     expect((await refused("withdraw", "InvalidRecipient")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_RECIPIENT" });
   });

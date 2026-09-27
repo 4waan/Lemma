@@ -3,7 +3,7 @@ import type { Hex32 } from "@lemma/core";
 import { describeError } from "../errors.js";
 import type { WarrantyAction } from "../persistence.js";
 import { type ActionJobDeps, type ActionReport, type ActionRules, ActionSender, type Decision, type RunContext,
-  type SettledDecision, emptyReport, refPayload, runContext } from "./actions.js";
+  type SettledDecision, StaleReadError, emptyReport, refPayload, runContext } from "./actions.js";
 import { ACTIONS_INTERVAL_MS } from "./activator.js";
 import type { RegistryResolution, RegistryRevert, WarrantyChain } from "./chain.js";
 import { runEvery } from "./loop.js";
@@ -86,6 +86,8 @@ function expiryRules(deps: ActionJobDeps & { readonly chain: WarrantyChain }): A
     fn: "expireResolution",
 
     async prepare(action: WarrantyAction, resolution: RegistryResolution, ctx: RunContext): Promise<Decision> {
+      // The indexer confirmed the activation: a node that answers none is behind it.
+      if (resolution.status === "none") throw new StaleReadError();
       if (resolution.status !== "active") return endedBy(resolution);
       const finalization = await deps.store.getWarrantyAction(action.resolutionId, "finalize");
       if (finalization?.state === "queued" || finalization?.state === "sent") return { kind: "wait", until: new Date(ctx.now.getTime() + FINALIZATION_WAIT_MS), code: FINALIZATION_PENDING };

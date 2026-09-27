@@ -35,7 +35,7 @@ Do not duplicate a schema independently across applications.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It has three jobs: `verify` (typecheck, tests, build on the Node version in `.nvmrc`), `contracts` (`forge build` and `forge test`), and `secrets` (gitleaks over full history with `.gitleaks.toml`). Third-party actions are pinned to commit SHAs, and gitleaks is pinned by version and checksum. Update a pin only in a dedicated change.
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. Its jobs are `verify` (typecheck, tests, build on the Node version in `.nvmrc`), `macos` (the same `npm run verify` on macOS, where the tests that need Linux skip), `postgres` (the store's race and migration tests against Postgres), `contracts` (`forge build`, `forge test`, the ABI check and a deploy rehearsal), `stylus` (the Stylus engine's tests, ABI and reproducible wasm), `e2e` (`npm run e2e` on anvil), and `secrets` (gitleaks over full history with `.gitleaks.toml`). Third-party actions are pinned to commit SHAs, and gitleaks is pinned by version and checksum. Update a pin only in a dedicated change.
 
 ## Branches and pull requests
 

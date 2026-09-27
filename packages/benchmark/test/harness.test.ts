@@ -868,7 +868,8 @@ describe("CursorAdapter process boundary", { timeout: 20_000 }, () => {
     expect(running(pid)).toBe(false);
   });
 
-  it("kills what the agent detached, even after the child that started it exited", async () => {
+  // A process detached into a session of its own is found only by the home it carries, read from /proc (Linux); elsewhere it escapes, as the README says, and CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/environ"))("kills what the agent detached, even after the child that started it exited", async () => {
     const { script, request, dir } = child(`import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst orphan = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });\norphan.unref();\nwriteFileSync("orphan.pid", String(orphan.pid));\nemit({ type: "started", agentId: "agent-11" });\nprocess.exit(1);`);
     const outcome = await new CursorAdapter("k", script, quick).run(request);
     expect(outcome).toMatchObject({ agentId: "agent-11" });
@@ -887,7 +888,8 @@ describe("CursorAdapter process boundary", { timeout: 20_000 }, () => {
     expect(String(result.output[3] ?? "")).toContain("startup-error");
   });
 
-  it("kills every process carrying a run's home", async () => {
+  // Start environments are read from /proc (Linux); CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/environ"))("kills every process carrying a run's home", async () => {
     const { spawn } = await import("node:child_process");
     const home = temp("lemma-home-");
     const p = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: { ...process.env, HOME: home }, detached: true, stdio: "ignore" });

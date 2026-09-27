@@ -79,6 +79,42 @@ jobs:
         env:
           FOUNDRY_OFFLINE: "true"
 
+  stylus:
+    name: stylus engine (cargo test, ABI, reproducible wasm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # No secrets, no cache and no third-party action: rustup (preinstalled on the
+    # image) installs the toolchain pinned in rust-toolchain.toml, and cargo
+    # fetches crates checked against Cargo.lock.
+    defaults:
+      run:
+        working-directory: contracts/stylus
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Install the pinned toolchain (Rust 1.94.1, wasm32, clippy, rustfmt)
+        run: |
+          rustup toolchain install --no-self-update
+          rustc --version
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+      - name: The committed Solidity interface matches the contract
+        run: |
+          cargo run --locked --quiet -p confidence-contract --features export-abi -- abi > "$RUNNER_TEMP/ICompatibilityConfidence.sol"
+          diff -u confidence-contract/ICompatibilityConfidence.sol "$RUNNER_TEMP/ICompatibilityConfidence.sol"
+      - name: The contract builds for Stylus, fits and uses no floats (cargo stylus check needs an RPC)
+        run: |
+          cargo build --locked --release --target wasm32-unknown-unknown -p confidence-contract --lib
+          node scripts/contract-size.mjs
+      - name: lemma_confidence.wasm rebuilds byte for byte
+        working-directory: .
+        run: node packages/confidence/scripts/build-wasm.mjs --check
+
   secrets:
     name: gitleaks (full history)
     runs-on: ubuntu-24.04

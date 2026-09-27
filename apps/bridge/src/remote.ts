@@ -1,6 +1,7 @@
 import {
   AdoptionReceipt,
   type Address,
+  AgentId,
   BuyInput,
   CapabilityRelease,
   type Hex32,
@@ -9,6 +10,8 @@ import {
   type Preview,
   type PreviewInput,
   PreviewResult,
+  REPUTATION_META_KEY,
+  ReleaseReputation,
   ResolutionDelivery,
   type SpendRequest,
   releaseDigest,
@@ -74,6 +77,22 @@ export class RemoteError extends Error {
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
+export interface RemoteOptions {
+  /**
+   * This buyer agent's own ERC-8004 agent id (LEMMA_AGENT_ID), sent with every
+   * receipt so the attester can give the agent feedback on its adoptions. Opt-in:
+   * without it, no receipt names an agent. The server posts to the agent only if
+   * the address that paid owns it or is its agent wallet.
+   */
+  readonly agentId?: AgentId | undefined;
+}
+
+/** A preview with the matched release's public adoption record, when the server knows one. */
+export interface RemotePreview {
+  readonly preview: Preview;
+  readonly reputation: ReleaseReputation | null;
+}
+
 /**
  * The bridge's view of the Lemma server. Every response is validated with a
  * schema before use, and the cheap parts are cached so a preview costs one
@@ -94,15 +113,19 @@ export class LemmaRemote {
   private readonly probes = new Map<Hex32, BaseProbeEntry[]>();
   private readonly fetchImpl: FetchLike;
 
+  private readonly agentId: AgentId | undefined;
+
   constructor(
     private readonly baseUrl: URL,
     fetchImpl: FetchLike = (input, init) => fetch(input, init),
     private readonly timeoutMs = 10_000,
+    options: RemoteOptions = {},
   ) {
     this.fetchImpl = (input, init) => {
       this.requests++;
       return fetchImpl(input, init);
     };
+    this.agentId = options.agentId === undefined ? undefined : AgentId.parse(options.agentId);
   }
 
   /** The interest set, fetched once and revalidated only when asked (after a catalog change). */
@@ -118,9 +141,20 @@ export class LemmaRemote {
   }
 
   async preview(input: PreviewInput): Promise<Preview> {
+    return (await this.previewWithRecord(input)).preview;
+  }
+
+  /**
+   * A preview, and the matched release's adoption record from the result's
+   * `_meta["lemma/reputation"]`. The record is optional: a missing or malformed
+   * one reads as null and never fails the preview.
+   */
+  async previewWithRecord(input: PreviewInput): Promise<RemotePreview> {
     const result = await (await this.mcp()).callTool({ name: LEMMA_TOOLS.preview, arguments: input }, undefined, { timeout: this.timeoutMs });
     if (result.isError === true) throw new RemoteError(textOf(result.content) || "the preview failed");
-    return PreviewResult.parse(result.structuredContent).preview;
+    const preview = PreviewResult.parse(result.structuredContent).preview;
+    const record = ReleaseReputation.safeParse(result._meta?.[REPUTATION_META_KEY]);
+    return { preview, reputation: record.success && "release" in preview ? record.data : null };
   }
 
   async baseProbe(releaseDigest: Hex32): Promise<BaseProbeEntry[]> {
@@ -145,14 +179,14 @@ export class LemmaRemote {
 
   /**
    * Posts an adoption receipt with the preview id it was bought from, which
-   * proves to the server that the buyer sends it; the answer says whether the
-   * server recorded it.
+   * proves to the server that the buyer sends it, and this agent's ERC-8004 id
+   * when it opted in; the answer says whether the server recorded it.
    */
   async postReceipt(receipt: AdoptionReceipt, previewId: Hex32): Promise<ReceiptAnswer> {
     const res = await this.fetchImpl(new URL("/api/v1/adoption-receipts", this.baseUrl), {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ receipt: AdoptionReceipt.parse(receipt), previewId }),
+      body: JSON.stringify({ receipt: AdoptionReceipt.parse(receipt), previewId, ...(this.agentId === undefined ? {} : { agentId: this.agentId }) }),
       signal: AbortSignal.timeout(this.timeoutMs),
     });
     const parsed = z.object({ result: ReceiptAnswer }).safeParse(await res.json().catch(() => undefined));

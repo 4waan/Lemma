@@ -1,4 +1,4 @@
-import { CapabilityId, type Preview } from "@lemma/core";
+import { CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -131,7 +131,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         if (cwd === undefined) {
           return { isError: true, content: [{ type: "text", text: `Lemma: ${pkg} is not a package directory in this workspace (it needs its own package.json, reached without links). Check the path and ask again; nothing is charged.` }] };
         }
-        const { preview, packageDir, incomplete } = await previewFor(deps, capability, cwd);
+        const { preview, reputation, packageDir, incomplete } = await previewFor(deps, capability, cwd);
         const receivedMono = deps.monotonic();
         const receivedWall = wallClock();
         const ttlMs = "offer" in preview && preview.offer !== null ? Date.parse(preview.offer.validUntil) - Date.parse(preview.createdAt) : 0;
@@ -141,7 +141,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         if (latest.get(capability) === call) cache.set(capability, { preview, here, drift, expiresAtMono: receivedMono + ttlMs, expiresAtWall: receivedWall + ttlMs });
         // Apply and verify later find a purchase from this preview by the package and capability it was for.
         if ("offer" in preview && preview.offer !== null) deps.inbox.notePreview(preview.previewId, here, capability);
-        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, block(preview, here)) }] };
+        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, block(preview, here), reputation) }] };
       } catch (error) {
         return { isError: true, content: [{ type: "text", text: `Lemma preview failed (${error instanceof Error ? error.name : "error"}). Build it yourself; nothing is charged.` }] };
       }
@@ -165,13 +165,17 @@ function toolName(params: unknown): string {
  * revalidated and the preview asked once more, so a dependency the new catalog
  * matches on is not missing from the profile.
  */
-async function previewFor(deps: BridgeDeps, capability: CapabilityId, cwd: string): Promise<{ preview: Preview; packageDir: string; incomplete: boolean }> {
+async function previewFor(
+  deps: BridgeDeps,
+  capability: CapabilityId,
+  cwd: string,
+): Promise<{ preview: Preview; reputation: ReleaseReputation | null; packageDir: string; incomplete: boolean }> {
   let interest = await deps.remote.interest();
   for (let attempt = 0; ; attempt++) {
     const { profile, notes } = deps.scanner.scan({ root: deps.root, cwd, interest: interest.capabilities[capability] ?? [], runningNodeMajor: deps.runningNodeMajor });
-    const preview = await deps.remote.preview({ task: { schemaVersion: "1", capability }, profile });
+    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile });
     if (preview.catalogDigest === interest.catalogDigest || attempt > 0) {
-      return { preview, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
+      return { preview, reputation, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
     }
     interest = await deps.remote.interest(true);
   }

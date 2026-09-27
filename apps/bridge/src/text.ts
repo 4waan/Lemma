@@ -1,4 +1,4 @@
-import { type Preview, formatUsdc } from "@lemma/core";
+import { type Preview, type ReleaseReputation, formatUsdc } from "@lemma/core";
 
 import type { ApplyOutcome, Undone } from "./apply.js";
 
@@ -12,9 +12,10 @@ export type DriftCheck = "none" | "likely" | "unchecked";
  * No catalog prose (titles, provenance, file names) reaches the model, which
  * limits prompt injection through release content. `bought` says whether
  * this bridge already bought the offered release for this profile, or has a
- * purchase of it still settling.
+ * purchase of it still settling. `record` is the matched release's public
+ * adoption record (ERC-8004), appended as numbers only when it fits.
  */
-export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, bought?: "bought" | "pending"): string {
+export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, bought?: "bought" | "pending", record?: ReleaseReputation | null): string {
   const reasons = preview.reasons.join(", ");
   let text: string;
   if (preview.decision === "build") {
@@ -39,7 +40,21 @@ export function previewText(preview: Preview, drift: DriftCheck, purchasesEnable
     text = `Lemma: a verified resolution fits (decision ${preview.decision}). Price ${formatUsdc(BigInt(o.terms.amount))} USDC; expected raw model-cost saving ${formatUsdc(BigInt(o.expectedRawSavingUsdc))} USDC, about ${o.expectedTokenSaving} tokens; offer valid until ${o.validUntil}.${driftNote}${next}`;
   }
   if (incomplete && preview.decision !== "reuse") text += " Part of the repository profile (a dependency version, the lockfile or the Node pin) could not be read exactly, which can hide a match; fix that and ask again.";
+  // The record is left out rather than cutting the answer short.
+  if (record !== undefined && record !== null && "release" in preview && text.length + recordText(record).length <= MAX_TOOL_TEXT) text += recordText(record);
   return text.length <= MAX_TOOL_TEXT ? text : `${text.slice(0, MAX_TOOL_TEXT - 1)}…`;
+}
+
+/**
+ * ` Record: pass <p>%, n <count>.`: the share of the release capability's
+ * finalized adoptions that passed (from basis points, never rounded up) and how
+ * many there were. Numbers only.
+ */
+export function recordText(record: ReleaseReputation): string {
+  const whole = Math.trunc(record.passBps / 100);
+  const hundredths = record.passBps % 100;
+  const pass = hundredths === 0 ? String(whole) : `${whole}.${String(hundredths).padStart(2, "0").replace(/0$/, "")}`;
+  return ` Record: pass ${pass}%, n ${record.count}.`;
 }
 
 /** The longest bundle path, and path segment, an answer shows, and the most path text in one answer; the rest are counted, not shown. */

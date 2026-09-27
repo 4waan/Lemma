@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { performance } from "node:perf_hooks";
 
+import { AgentId } from "@lemma/core";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { adoptionTools } from "./adoption.js";
@@ -24,13 +25,20 @@ import { Trace } from "./trace.js";
  * Environment: LEMMA_API_URL (default http://localhost:3000), LEMMA_WORKSPACE
  * (default: the current directory), LEMMA_STATE_DIR (default
  * $XDG_STATE_HOME/lemma; absolute, outside the workspace), LEMMA_ACCEPTANCE_OFFLINE=1
- * (Linux: run acceptance tests without network), LEMMA_BRIDGE_TRACE (benchmark
- * harness only).
+ * (Linux: run acceptance tests without network), LEMMA_AGENT_ID (opt-in: this
+ * agent's own ERC-8004 agent id, sent with receipts), LEMMA_BRIDGE_TRACE
+ * (benchmark harness only).
  */
 async function serve(): Promise<void> {
   // The real path, so a workspace reached through a link is scanned like any other; links below it are still refused.
   const root = realpathSync(resolvePath(process.env["LEMMA_WORKSPACE"] || process.cwd()));
-  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? "http://localhost:3000"));
+  const agentId = process.env["LEMMA_AGENT_ID"] || undefined;
+  if (agentId !== undefined && !AgentId.safeParse(agentId).success) {
+    console.error("lemma-mcp: LEMMA_AGENT_ID must be this agent's ERC-8004 agent id, a decimal number such as 42");
+    process.exitCode = 2;
+    return;
+  }
+  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? "http://localhost:3000"), undefined, undefined, { agentId });
   let stateDir: string;
   try {
     stateDir = stateDirFor(root);

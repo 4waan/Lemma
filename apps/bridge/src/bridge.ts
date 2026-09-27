@@ -1,5 +1,6 @@
 import { CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
 import { driftCheck } from "./drift.js";
@@ -79,7 +80,8 @@ export interface PaidToolContext {
  * full Preview stays here.
  *
  * Tool calls are traced from the transport, before the SDK validates their
- * arguments, so a rejected call still counts.
+ * arguments, so a rejected call still counts. The tool list leaves the
+ * transport compacted (`compactToolList`).
  */
 export function createBridgeServer(deps: BridgeDeps): McpServer {
   const server = new McpServer({ name: "lemma-bridge", version: "0.1.0" }, { instructions: BRIDGE_INSTRUCTIONS });
@@ -111,6 +113,8 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
       if ("method" in message && message.method === "tools/call") deps.trace.event("tool", toolName(message.params));
       next?.(message, extra);
     };
+    const send = transport.send.bind(transport);
+    transport.send = (message, options) => send(compactToolList(message), options);
     return connect(transport);
   };
 
@@ -152,6 +156,36 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
   deps.registerAdoptionTools?.(server, ctx);
   return server;
 }
+
+/**
+ * A `tools/list` answer without the two fields the MCP SDK adds to every
+ * tool definition that only restate the protocol's defaults, because every
+ * character of a definition is in the agent's context on every turn: each
+ * input schema's `$schema` (draft-07; MCP reads a schema without one as JSON
+ * Schema 2020-12, and every keyword these schemas use means the same in
+ * both, which a test pins) and `execution: { taskSupport: "forbidden" }` (what an absent
+ * `execution` means). Any other message, or field, passes unchanged.
+ */
+export function compactToolList(message: JSONRPCMessage): JSONRPCMessage {
+  if (!("result" in message) || !Array.isArray(message.result["tools"])) return message;
+  return { ...message, result: { ...message.result, tools: message.result["tools"].map(compactTool) } };
+}
+
+function compactTool(tool: unknown): unknown {
+  if (!isRecord(tool)) return tool;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(tool)) {
+    if (key === "execution" && isRecord(value) && Object.keys(value).length === 1 && value["taskSupport"] === "forbidden") continue;
+    if (key === "inputSchema" && isRecord(value)) {
+      const schema = { ...value };
+      delete schema["$schema"];
+      out[key] = schema;
+    } else out[key] = value;
+  }
+  return out;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The called tool's name for the trace: a Lemma tool name, or "other" for anything an agent could put there. */
 function toolName(params: unknown): string {

@@ -294,7 +294,15 @@ export class ResolutionInbox {
 
   claim(resolutionId: Hex32): WarrantyClaim | undefined {
     const parsed = WarrantyClaim.safeParse(this.read(join("claims", `${Hex32.parse(resolutionId)}.json`)));
-    return parsed.success ? parsed.data : undefined;
+    return parsed.success && parsed.data.resolutionId === resolutionId ? parsed.data : undefined;
+  }
+
+  /** Every stored warranty claim, in file name order: only files that parse and are stored under their own resolution id. */
+  claims(): WarrantyClaim[] {
+    return this.list("claims").flatMap((name) => {
+      const parsed = WarrantyClaim.safeParse(this.read(join("claims", name)));
+      return parsed.success && name === `${parsed.data.resolutionId}.json` ? [parsed.data] : [];
+    });
   }
 
   /** Where apply keeps its journal and backups, outside every workspace. */

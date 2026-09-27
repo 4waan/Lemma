@@ -4,7 +4,7 @@ import {
   AgentId,
   BuyInput,
   CapabilityRelease,
-  type Hex32,
+  Hex32,
   LEMMA_TOOLS,
   PatchPath,
   type Preview,
@@ -14,6 +14,12 @@ import {
   ReleaseReputation,
   ResolutionDelivery,
   type SpendRequest,
+  UsdcAtomic,
+  type WarrantyClaim,
+  WarrantyState,
+  WarrantyWithdrawalAnswer,
+  WarrantyWithdrawalRefusal,
+  WarrantyWithdrawalRequest,
   releaseDigest,
 } from "@lemma/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -54,6 +60,27 @@ export const PAYMENT_META_KEY = "x402/payment";
 /** How long the paid call may take: verification, the handler and settlement on chain. */
 export const PAID_CALL_TIMEOUT_MS = 30_000;
 
+/** The server's credit relay route (server `WITHDRAWALS_PATH`): the only place a claim secret is ever sent. */
+export const WITHDRAWALS_PATH = "/api/v1/warranty/withdrawals";
+
+/**
+ * The part of a resolution's public view (`GET /api/v1/resolutions/:id`,
+ * core `ResolutionView`) the refund tool reads: its warranty's state and
+ * amount. Other fields, and any a later server adds, are ignored; a server
+ * that runs no warranty pipeline (null) or predates it (absent) shows none.
+ */
+export const ResolutionWarranty = z.object({
+  resolutionId: Hex32,
+  warranty: z.object({ state: WarrantyState, amount: UsdcAtomic.nullable() }).nullable().optional(),
+});
+
+export type ResolutionWarranty = z.infer<typeof ResolutionWarranty>;
+
+/** What the credit relay route answered: the relay's state for the resolution (core `WarrantyWithdrawalAnswer`), or its refusal code (core `WarrantyWithdrawalRefusal`). */
+export type WithdrawalReply =
+  | { readonly kind: "accepted"; readonly state: WarrantyWithdrawalAnswer["state"] }
+  | { readonly kind: "refused"; readonly code: WarrantyWithdrawalRefusal["error"] };
+
 /**
  * What the paid call answered. A challenge is an x402 v2 `PaymentRequired`,
  * kept to its reason and the requirement fields core `checkPurchase` reads.
@@ -66,10 +93,15 @@ export type BuyAnswer =
 export class RemoteError extends Error {
   override name = "RemoteError";
 
-  /** `missing`: the server answered, and has no such object (or a different one); retrying will not help. */
+  /**
+   * `missing`: the server answered, and has no such object (or a different
+   * one); retrying will not help. `status`: the HTTP status it answered with,
+   * when there was one (429 is its rate limit).
+   */
   constructor(
     message: string,
     readonly missing = false,
+    readonly status: number | null = null,
   ) {
     super(message);
   }
@@ -192,6 +224,51 @@ export class LemmaRemote {
     const parsed = z.object({ result: ReceiptAnswer }).safeParse(await res.json().catch(() => undefined));
     if (!parsed.success) throw new RemoteError(`receipt request failed with ${res.status}`);
     return parsed.data.result;
+  }
+
+  /**
+   * A resolution's warranty as the server shows it (`GET
+   * /api/v1/resolutions/:id`), or undefined when the server has no such
+   * resolution. The request names only the resolution id. Any other answer
+   * throws a `RemoteError` with its status.
+   */
+  async resolutionWarranty(resolutionId: Hex32): Promise<ResolutionWarranty | undefined> {
+    const res = await this.fetchImpl(new URL(`/api/v1/resolutions/${Hex32.parse(resolutionId)}`, this.baseUrl), { signal: AbortSignal.timeout(this.timeoutMs) });
+    if (res.status === 404) return undefined;
+    if (!res.ok) throw new RemoteError(`resolution request failed with ${res.status}`, false, res.status);
+    const parsed = ResolutionWarranty.safeParse(await res.json().catch(() => undefined));
+    if (!parsed.success || parsed.data.resolutionId !== resolutionId) throw new RemoteError("the server's resolution view could not be read", false, res.status);
+    return parsed.data;
+  }
+
+  /**
+   * Asks the server to relay a failed warranty's credit to the claim's
+   * refund address (`POST /api/v1/warranty/withdrawals`, core
+   * `WarrantyWithdrawalRequest`); the server's evaluator pays the gas. This
+   * is the only request that carries the claim secret, and it goes only to
+   * this server's withdrawal route: a redirect fails the request rather than
+   * take the secret along. The answer is the relay's state (the same one for
+   * the same request) or the route's refusal code; a rate limit, any other
+   * answer and a transport failure throw.
+   */
+  async requestWithdrawal(claim: WarrantyClaim): Promise<WithdrawalReply> {
+    const body = WarrantyWithdrawalRequest.parse({ resolutionId: claim.resolutionId, claimSecret: claim.claimSecret, to: claim.refundTo });
+    const res = await this.fetchImpl(new URL(WITHDRAWALS_PATH, this.baseUrl), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      redirect: "error",
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    const json = await res.json().catch(() => undefined);
+    if (res.status === 202) {
+      const answer = WarrantyWithdrawalAnswer.safeParse(json);
+      if (answer.success && answer.data.resolutionId === claim.resolutionId) return { kind: "accepted", state: answer.data.state };
+    } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+      const refusal = WarrantyWithdrawalRefusal.safeParse(json);
+      if (refusal.success) return { kind: "refused", code: refusal.data.error };
+    }
+    throw new RemoteError(`withdrawal request failed with ${res.status}`, false, res.status);
   }
 
   /**

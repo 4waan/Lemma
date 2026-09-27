@@ -7,6 +7,7 @@ import { type Hex32, MAX_FILE_CONTENT, type PatchBundle, REASON_CODES, bundleDig
 import { MemoryStore, ResolutionService, createApp, loadConfig, silentLogger } from "@lemma/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,6 +23,7 @@ import {
   ResolutionInbox,
   ScanCache,
   Trace,
+  compactToolList,
   createBridgeServer,
   defaultStateDir,
   driftCheck,
@@ -123,6 +125,43 @@ describe("the agent-facing bridge", () => {
     expect(tools.every((t) => t.outputSchema === undefined)).toBe(true);
     expect(JSON.stringify(tools).length + BRIDGE_INSTRUCTIONS.length).toBeLessThanOrEqual(3000);
     expect(BRIDGE_INSTRUCTIONS.split(/\s+/).length).toBeLessThanOrEqual(60);
+  });
+
+  it("lists its tools without the fields the SDK adds only to restate protocol defaults, and still checks arguments", async () => {
+    const { client } = await bridge(serverApp().app, workspace());
+    const [preview] = (await client.listTools()).tools;
+    expect(preview).toEqual({
+      name: "lemma_preview",
+      description: expect.stringMatching(/^Free check/),
+      inputSchema: { type: "object", properties: { capability: expect.any(Object), package: expect.any(Object) }, required: ["capability"], additionalProperties: false },
+      annotations: { readOnlyHint: true },
+    });
+    // The server validates arguments against its own schema, which the listing does not change.
+    expect((await client.callTool({ name: "lemma_preview", arguments: { capability: "mcp-server.add-payment-gating", extra: true } })).isError).toBe(true);
+  });
+
+  it("compacts only a tool list, and keeps a setting that is not the default", () => {
+    const listed: JSONRPCMessage = {
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        tools: [
+          { name: "a", inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" }, execution: { taskSupport: "forbidden" } },
+          { name: "b", inputSchema: { type: "object" }, execution: { taskSupport: "optional" } },
+        ],
+      },
+    };
+    expect(compactToolList(listed)).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { tools: [{ name: "a", inputSchema: { type: "object" } }, { name: "b", inputSchema: { type: "object" }, execution: { taskSupport: "optional" } }] },
+    });
+    const others: JSONRPCMessage[] = [
+      { jsonrpc: "2.0", id: 2, result: { content: [] } },
+      { jsonrpc: "2.0", id: 3, method: "tools/list" },
+      { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
+    ];
+    for (const other of others) expect(compactToolList(other)).toBe(other);
   });
 
   it("answers from the real server with short text, in one request per preview once warm", async () => {

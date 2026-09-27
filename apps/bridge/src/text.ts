@@ -1,4 +1,4 @@
-import { type Preview, type ReleaseReputation, formatUsdc } from "@lemma/core";
+import { type AdoptionReceipt, type Preview, type ReleaseReputation, formatUsdc } from "@lemma/core";
 
 import type { ApplyOutcome, Undone } from "./apply.js";
 
@@ -237,3 +237,21 @@ function firstRun(note: ReceiptNote, outcome: string): string {
 }
 
 const upper = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+/** The line verify adds after a failed run on a purchase under warranty. */
+export const WARRANTY_HINT = " The purchase is under warranty: the evaluator reviews failures, and lemma_claim_refund collects a confirmed refund.";
+
+/**
+ * Whether a verify answer may carry `WARRANTY_HINT`: the receipt that counts
+ * failed, and the server has not refused it for good (`UNKNOWN_RESOLUTION`
+ * and `MISMATCH` leave the evaluator nothing to review). Verify then asks
+ * whether the purchase is under warranty.
+ */
+export function warrantyHintMayApply(outcome: AdoptionReceipt["outcome"], note: ReceiptNote): boolean {
+  return outcome === "failed" && note !== "UNKNOWN_RESOLUTION" && note !== "MISMATCH";
+}
+
+/** A verify answer with `WARRANTY_HINT`, which is left out rather than cutting the answer short. */
+export function withWarrantyHint(text: string): string {
+  return text.length + WARRANTY_HINT.length <= MAX_TOOL_TEXT ? `${text}${WARRANTY_HINT}` : text;
+}

@@ -158,7 +158,7 @@ describe("apply and verify through the bridge", () => {
   it("keeps the tools within the context budget", async () => {
     const { client } = await setup(workspace());
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name)).toEqual(["lemma_preview", "lemma_apply_resolution", "lemma_verify_adoption"]);
+    expect(tools.map((t) => t.name)).toEqual(["lemma_preview", "lemma_apply_resolution", "lemma_verify_adoption", "lemma_claim_refund"]);
     expect(tools.every((t) => t.outputSchema === undefined)).toBe(true);
     expect(JSON.stringify(tools).length + BRIDGE_INSTRUCTIONS.length).toBeLessThanOrEqual(3000);
   });

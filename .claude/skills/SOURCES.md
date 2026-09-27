@@ -38,6 +38,31 @@ each of those patterns. That pass found no hits outside `gha-security-review/ref
 `VULNERABLE` or "Attacker's …", which describe threats for the reviewer to recognise; nothing
 tells the agent to run them.
 
+**Repeating the second pass.** The checker that ran it was a scratch script and is not kept, so
+these are its exact checks, as run on 2026-09-27. Load
+`skills/skill-scanner/scripts/scan_skill.py` from a getsentry/skills checkout at the pinned
+commit as a Python module. Walk every file under the skill directory (report any symlink as a
+hit), decode it as UTF-8 (report a file that does not decode) and apply:
+
+- to the whole text, the scanner's `check_prompt_injection`, `check_obfuscation` and
+  `check_secrets`;
+- to each line, the scanner's `DANGEROUS_SCRIPT_PATTERNS` (first match per line);
+- to each line, three Python regular expressions: load-time command `` !`[^`]+` ``; pipe to a
+  shell `(?i)\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b`; pre-approved tools
+  `(?im)^\s*allowed-tools\s*:`;
+- to each line, a wider invisible-character set than the scanner's own: U+00AD, U+034F, U+061C,
+  U+115F, U+1160, U+17B4, U+17B5, U+180B-U+180E, U+200B-U+200F, U+202A-U+202E, U+2060-U+2064,
+  U+2066-U+206F, U+3164, U+FE00-U+FE0E, U+FEFF, U+FFA0 and U+E0000-U+E007F.
+
+Then check that the scanner's `parse_frontmatter` of `SKILL.md` gives a string `name` equal to
+the directory name, a non-empty `description` and no `hooks`, that every `.yaml`/`.yml` file
+parses with `yaml.safe_load`, and list every non-ASCII character by code point. Before trusting
+a clean result, run the checker on a throwaway positive-control skill whose `SKILL.md` has
+`allowed-tools`, an "ignore all previous instructions" line, a `curl ... | bash` line, a
+`` !`cmd` `` line, a zero-width space, a right-to-left override and a fake token built to match
+a scanner secret pattern, and confirm each one is flagged. Keep the control in a scratch
+directory, never in the repo.
+
 Structural checks across all installed files found none of the following: symlinks, scripts,
 `package.json`, test files, frontmatter `hooks`, `` !`cmd` `` lines, zero-width, bidi or
 Unicode-tag characters, or real credentials. Every `SKILL.md` has YAML frontmatter that
@@ -127,8 +152,10 @@ network access, so Claude Code's normal permission prompts apply to each one.
   the output format only. They use placeholders (`security@project.com`, truncated addresses such
   as `0x1234...` and `0xdac17f9...`, an Echidna `deployer: "0x10000"`) and say nothing about
   Lemma. Their versions (`@openzeppelin/contracts@4.9.0`, Solidity 0.8.19 and 0.8.20) are older
-  than the ones Lemma pins; follow `contracts/foundry.toml` (solc 0.8.30) and the dependencies
-  pinned under `contracts/lib`. The token checklist's USDC facts (upgradeable, blocklist,
+  than Lemma's toolchain. For the compiler, follow `contracts/foundry.toml` (solc 0.8.30). For
+  libraries, `contracts/README.md` says OpenZeppelin Contracts and forge-std will be pinned under
+  `contracts/lib`; neither is vendored yet (checked 2026-09-27), so do not take the examples'
+  OpenZeppelin version as a pin. The token checklist's USDC facts (upgradeable, blocklist,
   pausable, 6 decimals) do apply to the USDC that Lemma settles in.
 
 ## License and attribution notes
@@ -166,6 +193,7 @@ Fetch the new commit into a scratch directory, not into the repo. Run
 `uv run skills/skill-scanner/scripts/scan_skill.py <skill-dir>` from a checkout of
 getsentry/skills, then read every changed file. The scanner skips any folder other than
 `references/` and `scripts/` (such as `reference/` or `resources/`), so repeat the second pass
-above over every file. Reapply the two modifications above if they still apply, update the
-commit and file list in the table, and run
-`gitleaks dir --no-banner --config .gitleaks.toml .claude/skills` before committing.
+over every file, using the exact checks listed under "Repeating the second pass" above.
+Reapply the two modifications above if they still apply, update the commit and file list in the
+table, and run `gitleaks dir --no-banner --redact --config .gitleaks.toml .claude/skills` before
+committing.

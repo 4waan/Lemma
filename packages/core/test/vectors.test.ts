@@ -7,6 +7,8 @@ import { hashTypedData } from "viem";
 
 import {
   type DigestKind,
+  acceptanceRecipeDigest,
+  adoptionFeedbackFileBytes,
   adoptionReceiptDigest,
   adoptionReceiptTypedData,
   baseReleaseDigest,
@@ -15,6 +17,7 @@ import {
   derivePaymentNonce,
   deriveResolutionId,
   digest,
+  feedbackHashOf,
   warrantyClaimHash,
 } from "../src/index.js";
 import * as ex from "./examples.js";
@@ -39,6 +42,7 @@ const inputs: ReadonlyArray<{ name: string; kind: DigestKind; value: unknown }> 
   { name: "patch-bundle", kind: "patch-bundle", value: ex.bundle },
   { name: "run-record", kind: "run-record", value: ex.runRecord },
   { name: "payment-nonce", kind: "payment-nonce", value: { resolutionId: ex.resolution.resolutionId, previewId: ex.resolution.previewId } },
+  { name: "acceptance-recipe", kind: "acceptance-recipe", value: ex.release.acceptanceRecipe },
 ];
 
 const computed = inputs.map(({ name, kind, value }) => ({
@@ -59,6 +63,10 @@ const derived = {
   warrantyClaimHash: warrantyClaimHash(ex.resolution.resolutionId, ex.hex32("77"), ex.BUYER),
   /** The EIP-712 hash the buyer signs for the example receipt on Arbitrum Sepolia. */
   adoptionReceiptTypedDataHash: hashTypedData(adoptionReceiptTypedData(ex.receipt, 421614)),
+  acceptanceRecipeDigest: acceptanceRecipeDigest(ex.release.acceptanceRecipe),
+  // ERC-8004 feedbackHash: keccak256 of a feedback file's bytes as served (JCS of the file itself, no kind envelope).
+  adoptionFeedbackFileBytes: adoptionFeedbackFileBytes(ex.adoptionFeedbackFile),
+  adoptionFeedbackHash: feedbackHashOf(adoptionFeedbackFileBytes(ex.adoptionFeedbackFile)),
 };
 
 if (process.env.LEMMA_WRITE_VECTORS === "1") {
@@ -85,5 +93,6 @@ describe("digest vectors", () => {
     expect(frozen.derived).toEqual(derived);
     expect(derived.resolutionId).toBe(computed.find((v) => v.name === "resolution-id")?.digest);
     expect(derived.paymentNonce).toBe(computed.find((v) => v.name === "payment-nonce")?.digest);
+    expect(derived.acceptanceRecipeDigest).toBe(computed.find((v) => v.name === "acceptance-recipe")?.digest);
   });
 });

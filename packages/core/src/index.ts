@@ -14,6 +14,7 @@ export * from "./read.js";
 export * from "./reasons.js";
 export * from "./receipt.js";
 export * from "./redact.js";
+export * from "./reputation.js";
 export * from "./release.js";
 export * from "./run.js";
 export * from "./signing.js";

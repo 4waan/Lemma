@@ -21,6 +21,7 @@ export const DIGEST_KINDS = [
   "run-set",
   "release-base",
   "payment-nonce",
+  "acceptance-recipe",
 ] as const;
 
 export type DigestKind = (typeof DIGEST_KINDS)[number];

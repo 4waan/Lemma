@@ -88,6 +88,21 @@ export const ProfileSummary = ProfileSummaryFields.refine(
 
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
+/**
+ * A capability's public adoption record: the ERC-8004 reputation summary of the
+ * provider's agent for that capability, counting only feedback from Lemma's
+ * attester (`getSummary(agentId, [attester], "lemma.adoption", capability)`).
+ * `passBps` is the share of posted finalized outcomes that passed, in basis
+ * points, and `count` how many were posted. The server reads it from the chain
+ * and caches it; it is null while nothing is known.
+ */
+export const ReleaseReputation = z.strictObject({
+  passBps: z.int().min(0).max(10_000),
+  count: z.int().min(1),
+});
+
+export type ReleaseReputation = z.infer<typeof ReleaseReputation>;
+
 export const ReleaseSummary = z.strictObject({
   releaseDigest: Hex32,
   baseReleaseDigest: Hex32,
@@ -104,6 +119,8 @@ export const ReleaseSummary = z.strictObject({
   /** Served from the testnet-only provisional overlay. */
   provisional: z.boolean(),
   profiles: z.array(ProfileSummary).min(1),
+  /** The public adoption record of the release's capability (ERC-8004), or null while there is none or it is not known. */
+  reputation: ReleaseReputation.nullable(),
 });
 
 export type ReleaseSummary = z.infer<typeof ReleaseSummary>;
@@ -129,7 +146,14 @@ const PROVISIONAL_BUILD = /\+provisional-/;
  * from it shows null.
  */
 export function summarizeRelease(
-  entry: { readonly release: CapabilityRelease; readonly releaseDigest: Hex32; readonly baseReleaseDigest: Hex32; readonly provisional: boolean },
+  entry: {
+    readonly release: CapabilityRelease;
+    readonly releaseDigest: Hex32;
+    readonly baseReleaseDigest: Hex32;
+    readonly provisional: boolean;
+    /** The cached adoption record of the release's capability; absent reads as none. */
+    readonly reputation?: ReleaseReputation | null | undefined;
+  },
   economics: { readonly chainCostAtomic: bigint },
   now: Date,
   compatibility?: ReadonlyMap<number, ProfileCompatibility>,
@@ -164,6 +188,7 @@ export function summarizeRelease(
         compatibility: compatibility?.get(profileIndex) ?? null,
       };
     }),
+    reputation: entry.reputation ?? null,
   });
 }
 

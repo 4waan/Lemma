@@ -308,6 +308,23 @@
       },
       "canonical": "{\"kind\":\"payment-nonce\",\"value\":{\"previewId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\"}}",
       "digest": "0xf07315862ee17050e9977c56cf59b411b1ecdd692244a7b0496a864f0d17a183"
+    },
+    {
+      "name": "acceptance-recipe",
+      "kind": "acceptance-recipe",
+      "value": {
+        "script": "test",
+        "args": [
+          "--run"
+        ],
+        "timeoutSec": 300,
+        "env": [
+          "CI",
+          "NODE_ENV"
+        ]
+      },
+      "canonical": "{\"kind\":\"acceptance-recipe\",\"value\":{\"args\":[\"--run\"],\"env\":[\"CI\",\"NODE_ENV\"],\"script\":\"test\",\"timeoutSec\":300}}",
+      "digest": "0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63"
     }
   ],
   "derived": {
@@ -317,6 +334,9 @@
     "baseReleaseDigest": "0x1dc49faba87349a8220ccfd14bb29e3552494b5485975652123a87b6ecce1188",
     "paymentNonce": "0xf07315862ee17050e9977c56cf59b411b1ecdd692244a7b0496a864f0d17a183",
     "warrantyClaimHash": "0x8aa8ce960abafa662b3494e6caa16ceeb38db251c08e1ebacb292bfde95a73c2",
-    "adoptionReceiptTypedDataHash": "0x276bfda9064f1aa742d506914c84c5e63b0b0b4774f5ff5c017b9eb9a765beaa"
+    "adoptionReceiptTypedDataHash": "0x276bfda9064f1aa742d506914c84c5e63b0b0b4774f5ff5c017b9eb9a765beaa",
+    "acceptanceRecipeDigest": "0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63",
+    "adoptionFeedbackFileBytes": "{\"agentId\":7,\"agentRegistry\":\"eip155:421614:0x8004a818bfb912233c491871b3d84c89a494bd9e\",\"clientAddress\":\"eip155:421614:0x00000000000000000000000000000000000000f1\",\"createdAt\":\"2026-09-24T13:00:00.000Z\",\"endpoint\":\"\",\"lemma\":{\"acceptance\":{\"durationMs\":41250,\"exitCode\":0,\"outputDigest\":\"0x8888888888888888888888888888888888888888888888888888888888888888\"},\"acceptanceRecipeDigest\":\"0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63\",\"capability\":\"mcp-server.add-payment-gating\",\"finalizedAt\":\"2026-09-24T13:00:00.000Z\",\"kind\":\"lemma.adoption-evidence\",\"registry\":{\"address\":\"0x00000000000000000000000000000000000000e1\",\"chainId\":421614},\"release\":{\"profileIndex\":0,\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"releaseId\":\"mcp-server-payment-gating\",\"version\":\"0.1.0\"},\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\",\"schemaVersion\":\"1\",\"verdict\":\"passed\"},\"tag1\":\"lemma.adoption\",\"tag2\":\"mcp-server.add-payment-gating\",\"value\":100,\"valueDecimals\":0}",
+    "adoptionFeedbackHash": "0xd3290b75f9e0e0b4f24ec2824b63f61e8f1de8ffd79c429d6116205c0b87b6e9"
   }
 }

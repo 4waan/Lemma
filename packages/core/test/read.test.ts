@@ -39,6 +39,15 @@ describe("summarizeRelease", () => {
     expect(summarizeRelease(entry(priced, true), { chainCostAtomic: 0n }, NOW).provisional).toBe(true);
   });
 
+  it("carries the capability's adoption record when known, and null otherwise", () => {
+    expect(summarizeRelease(entry(priced), { chainCostAtomic: 0n }, NOW).reputation).toBeNull();
+    const known = summarizeRelease({ ...entry(priced), reputation: { passBps: 9700, count: 34 } }, { chainCostAtomic: 0n }, NOW);
+    expect(known.reputation).toEqual({ passBps: 9700, count: 34 });
+    expect(ReleaseSummary.safeParse({ ...known, reputation: { passBps: 10_001, count: 1 } }).success).toBe(false);
+    expect(ReleaseSummary.safeParse({ ...known, reputation: { passBps: 5000, count: 0 } }).success).toBe(false);
+    expect(ReleaseSummary.safeParse({ ...known, reputation: { passBps: 97.5, count: 2 } }).success).toBe(false);
+  });
+
   it("builds a catalog view that parses", () => {
     const view = { schemaVersion: "1", catalogDigest: hex32("88"), generatedAt: NOW.toISOString(), economics: { status: "measured", chainCostUsdc: "0", priceFloorUsdc: "0" }, releases: [summarizeRelease(entry(release), { chainCostAtomic: 0n }, NOW)] };
     expect(CatalogView.safeParse(view).success).toBe(true);

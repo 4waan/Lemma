@@ -132,3 +132,10 @@ The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs
 - [Economics](docs/economics.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)
+
+## License
+
+Lemma is released under the [MIT License](LICENSE). Some bundled material keeps its own license:
+
+- The skills under `.claude/skills/` are vendored with their upstream licenses (Apache-2.0, MIT and CC-BY-SA-4.0), recorded in [`.claude/skills/SOURCES.md`](.claude/skills/SOURCES.md).
+- Each catalog release declares its own SPDX license in its manifest, and the contracts carry their own SPDX headers.

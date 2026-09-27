@@ -14,9 +14,12 @@ import { latestMigration, schemaIsCurrent } from "./db/migrations.js";
 import { describeError, isUnparseableUrl, safeStore } from "./errors.js";
 import { PgStore } from "./db/store.js";
 import { jsonLogger } from "./log.js";
+import { type PaymentPath, startPaymentPath } from "./payments/index.js";
 import { type LemmaStore, MemoryStore } from "./persistence.js";
+import { noOutcomes, startReputation } from "./reputation/index.js";
 import { ResolutionService } from "./service.js";
 import { startupProblems } from "./startup.js";
+import { type WarrantyPipeline, WarrantyStartupError, startWarrantyPipeline, viemWarrantyChainFor } from "./warranty/pipeline.js";
 
 const logger = jsonLogger();
 const HOUR = 3_600_000;
@@ -34,9 +37,6 @@ try {
 } catch (error) {
   fail([error instanceof ConfigError ? error.message : String(error)]);
 }
-
-// The payment work's paid-tool registrar is not part of this build yet.
-if (config.paidTools) fail(["PAID_TOOLS=on needs the paid-tool registrar from the payment work, which this build does not include"]);
 
 const check = checkCatalog();
 if (check.problems.length > 0) fail(check.problems);
@@ -110,6 +110,44 @@ const housekeeping = async () => {
 setInterval(() => void housekeeping(), HOUR).unref();
 void housekeeping();
 
+// The paid path (PAID_TOOLS=on, which config accepts only with FACILITATOR_PRIVATE_KEY and ARBITRUM_SEPOLIA_RPC_URL):
+// the x402 registrar, and the settlement reconciler and receipt verifier jobs, which start only here.
+let payments: PaymentPath | undefined;
+if (config.paidTools) {
+  try {
+    payments = await startPaymentPath({ config, store, service, clock, logger });
+  } catch (error) {
+    // Never the error's message: an RPC error can quote the RPC URL, which often carries a provider key.
+    fail([`the payment path could not start (${describeError(error)}); check ARBITRUM_SEPOLIA_RPC_URL, or set PAID_TOOLS=off`]);
+  }
+  logger.log("info", "startup.paid_tools", { network: config.payment.network, facilitator: config.chain.facilitatorAddress });
+}
+
+// The warranty outcome pipeline (config accepts it only with PAID_TOOLS=on, the registry address, the provider's
+// and the evaluator's keys, the RPC URL and a database): the registry indexer and the activation, evaluation, expiry
+// and credit relay jobs, which start only here. It fails closed: a registry that is not the one this server signs
+// for stops the server.
+let warranty: WarrantyPipeline | undefined;
+if (config.warranty !== undefined) {
+  try {
+    warranty = await startWarrantyPipeline({ config: config.warranty, store, index, chain: await viemWarrantyChainFor(config, logger), usdc: config.payment.asset, clock, logger });
+  } catch (error) {
+    // A startup check's own message names addresses and codes only; anything else, only its name and code.
+    fail([`the warranty pipeline could not start (${error instanceof WarrantyStartupError ? error.message : describeError(error)}); check RESOLUTION_WARRANTY_REGISTRY_ADDRESS and ARBITRUM_SEPOLIA_RPC_URL, or unset the warranty settings`]);
+  }
+}
+
+// ERC-8004 reputation: jobs start only when configured, and no request waits on them. The warranty pipeline
+// supplies the finalized-outcome feed; without it there is nothing to attest.
+const reputation = startReputation({
+  config: config.reputation,
+  store,
+  feed: warranty?.feed ?? noOutcomes,
+  capabilities: [...new Set(index.releases.map((r) => r.release.capability))],
+  clock,
+  logger,
+});
+
 const app = createApp({
   config,
   index,
@@ -122,6 +160,12 @@ const app = createApp({
   storeKind,
   webRoot: dashboardRoot(),
   socketAddress: (c) => getConnInfo(c).remote.address,
+  registerPaidTools: payments?.registerPaidTools,
+  reputation: reputation.summaries,
+  // The catalog's compatibility confidence and buyer counts, and the warranty views: from the indexed registry.
+  outcomes: warranty?.source,
+  reputationBuyers: warranty?.feed,
+  warranty: warranty?.views,
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -133,6 +177,9 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     logger.log("info", "shutdown", { signal });
+    payments?.stop();
+    warranty?.stop();
+    reputation.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 10_000).unref();
   });

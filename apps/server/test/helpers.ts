@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import type { Hono } from "hono";
+import { generatePrivateKey } from "viem/accounts";
 
 import { type AppDeps, MemoryStore, ResolutionService, type ServerConfig, createApp, loadConfig, silentLogger } from "../src/index.js";
 
@@ -11,6 +12,15 @@ export const NOW = new Date("2026-10-01T00:00:00.000Z");
 
 export function config(env: Record<string, string> = {}): ServerConfig {
   return loadConfig({ NODE_ENV: "test", ...env });
+}
+
+/**
+ * Paid tools on, as config accepts them: a provider, a facilitator key made
+ * at runtime (never a literal) and an RPC URL nothing listens on. Tests that
+ * pay inject their own facilitator; nothing here reaches a chain.
+ */
+export function paidConfig(env: Record<string, string> = {}): ServerConfig {
+  return config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER, FACILITATOR_PRIVATE_KEY: generatePrivateKey(), ARBITRUM_SEPOLIA_RPC_URL: "http://127.0.0.1:9", ...env });
 }
 
 export function committedIndex(): CatalogIndex {
@@ -113,3 +123,16 @@ export async function mcpClient(app: Hono, headers: Record<string, string> = {})
 }
 
 export const app = (over: Partial<AppDeps> = {}) => createApp(deps(over));
+
+/**
+ * Every value in a JSON document that tells a time finer than a day, with its
+ * path: an ISO date-time string, or a number large enough to be Unix seconds
+ * or milliseconds.
+ */
+export function timesOfDay(value: unknown, path: readonly string[] = []): Array<readonly [string, unknown]> {
+  if (typeof value === "string") return /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value) ? [[path.join("."), value]] : [];
+  if (typeof value === "number") return Math.abs(value) >= 1_000_000_000 ? [[path.join("."), value]] : [];
+  if (Array.isArray(value)) return value.flatMap((v, i) => timesOfDay(v, [...path, String(i)]));
+  if (value !== null && typeof value === "object") return Object.entries(value).flatMap(([k, v]) => timesOfDay(v, [...path, k]));
+  return [];
+}

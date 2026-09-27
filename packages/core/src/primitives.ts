@@ -47,6 +47,20 @@ export const SignatureBytes = z
 /** CAIP-2 chain identifier restricted to EVM chains, for example `eip155:421614`. */
 export const Caip2 = z.string().regex(/^eip155:[1-9][0-9]{0,11}$/, "expected an eip155 CAIP-2 chain id");
 
+/**
+ * CAIP-10 account identifier on an EVM chain, `eip155:<chainId>:<address>`,
+ * with the address lowercase like every address in core. ERC-8004 names an
+ * identity registry (`agentRegistry`) and a feedback's client this way.
+ */
+export const Caip10 = z.string().regex(/^eip155:[1-9][0-9]{0,11}:0x[0-9a-f]{40}$/, "expected eip155:<chainId>:<lowercase address>");
+
+export type Caip10 = z.infer<typeof Caip10>;
+
+/** The CAIP-10 id of `address` on `chain` (a CAIP-2 id). */
+export function caip10(chain: string, address: Address): Caip10 {
+  return Caip10.parse(`${Caip2.parse(chain)}:${Address.parse(address)}`);
+}
+
 export const ARBITRUM_SEPOLIA = "eip155:421614" as const;
 
 /** Circle USDC on Arbitrum Sepolia (x402's default asset for eip155:421614), lowercased. */

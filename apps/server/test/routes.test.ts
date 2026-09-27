@@ -2,7 +2,7 @@ import { DemandView, LEMMA_TOOLS, PreviewResult, ResolutionDelivery, deriveResol
 import { describe, expect, it } from "vitest";
 
 import { MemoryStore, ResolutionService, silentLogger } from "../src/index.js";
-import { BUYER, NOW, PROVIDER, app, config, gatingTask, matchingProfile, mcpClient, sellableIndex } from "./helpers.js";
+import { BUYER, NOW, PROVIDER, app, config, gatingTask, matchingProfile, mcpClient, sellableIndex, timesOfDay } from "./helpers.js";
 
 /** An app over a sellable catalog with a shared store, so tests can play the payment work's part. */
 async function sellableApp() {
@@ -46,6 +46,28 @@ describe("paid path seam over HTTP", () => {
     await client.close();
   });
 
+  it("dates the public view to the day only, so an id published on chain cannot be timed to its settlement", async () => {
+    // Bought at a precise moment inside the paid request, as the payment work records it.
+    const paidAt = new Date("2026-10-01T12:00:03.123Z");
+    const store = new MemoryStore();
+    const index = sellableIndex();
+    await store.saveCatalog(index, NOW);
+    const service = new ResolutionService(store, () => paidAt, silentLogger);
+    const a = app({ index, store, service, clock: () => paidAt, config: config({ PROVIDER_ADDRESS: PROVIDER }) });
+    const client = await mcpClient(a);
+    const { preview } = PreviewResult.parse((await client.callTool({ name: LEMMA_TOOLS.preview, arguments: { task: gatingTask, profile: matchingProfile } })).structuredContent);
+    const prepared = await service.prepare(preview.previewId, { payer: BUYER, nonce: "0x01", validBefore: new Date(paidAt.getTime() + 300_000) });
+    const id = deriveResolutionId(preview.previewId, BUYER);
+    await service.commit(id, { nonce: "0x01", settlementRef: "0xsettlement" });
+    const view = await (await a.request(`/api/v1/resolutions/${id}`)).json();
+    expect(view).toMatchObject({ resolutionId: id, state: "settled", createdOn: "2026-10-01" });
+    expect(timesOfDay(view)).toEqual([]);
+    // The server and the buyer keep the precise time.
+    expect(prepared.ok && prepared.resolution.createdAt).toBe(paidAt.toISOString());
+    expect((await store.getResolution(id))?.resolution.createdAt).toBe(paidAt.toISOString());
+    await client.close();
+  });
+
   it("accepts the buyer's adoption receipt only for a settled resolution, once", async () => {
     const { a, client, service, preview } = await sellableApp();
     const id = deriveResolutionId(preview.previewId, BUYER);
@@ -63,6 +85,21 @@ describe("paid path seam over HTTP", () => {
     expect(await (await post(submission)).json()).toEqual({ result: "DUPLICATE" });
     expect((await post({ ...submission, receipt: { ...receipt, outcome: "bogus" } })).status).toBe(400);
     expect((await post(submission, { origin: "https://evil.example" })).status).toBe(403);
+    await client.close();
+  });
+
+  it("takes an optional ERC-8004 agent id with the receipt, as a decimal string only", async () => {
+    const { a, client, store, service, preview } = await sellableApp();
+    const id = deriveResolutionId(preview.previewId, BUYER);
+    await service.prepare(preview.previewId, { payer: BUYER, nonce: "0x01", validBefore: new Date(NOW.getTime() + 300_000) });
+    await service.commit(id, { nonce: "0x01", settlementRef: "0xsettlement" });
+    const receipt = { schemaVersion: "1", resolutionId: id, outcome: "passed", acceptance: { exitCode: 0, durationMs: 10, outputDigest: null }, recordedAt: "2026-10-01T00:00:00.000Z", signature: null };
+    const post = (body: unknown) => a.request("/api/v1/adoption-receipts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    for (const agentId of [42, "0x2a", "-1", "", "042"]) expect((await post({ receipt, previewId: preview.previewId, agentId })).status, String(agentId)).toBe(400);
+    expect((await post({ receipt, previewId: preview.previewId, agentId: "42" })).status).toBe(201);
+    expect((await store.getReceipt(id))?.buyerAgentId).toBe("42");
+    // The public view never shows it.
+    expect(await (await a.request(`/api/v1/resolutions/${id}`)).text()).not.toContain('"42"');
     await client.close();
   });
 

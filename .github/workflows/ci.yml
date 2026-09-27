@@ -71,13 +71,102 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # OpenZeppelin Contracts and forge-std, pinned by gitlink (contracts/README.md). Top
+          # level only: OpenZeppelin's own nested submodules are never compiled
+          # (foundry.toml turns off remapping auto-detection).
+          submodules: true
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # The Foundry release the ABIs in contracts/abi and the gas figures in
+          # docs/warranty-registry-review.md were produced with.
+          version: v1.7.1
+          # The job calls no RPC endpoint and needs no RPC cache; nothing is restored from or
+          # saved to the Actions cache.
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: forge fmt --check
+        working-directory: contracts
       - run: forge build
         working-directory: contracts
       - run: forge test
         working-directory: contracts
         env:
           FOUNDRY_OFFLINE: "true"
+      # contracts/abi/*.json must equal the ABIs of this build.
+      - run: npm run contracts:abi -- --check
+      # Both deploy-script steps against a local anvil posing as Arbitrum Sepolia, with a
+      # throwaway key made at run time; no network and no repository secret.
+      - run: bash contracts/script/rehearse-deploy.sh
+
+  stylus:
+    name: stylus engine (cargo test, ABI, reproducible wasm)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    # No secrets, no cache and no third-party action: rustup (preinstalled on the
+    # image) installs the toolchain pinned in rust-toolchain.toml, and cargo
+    # fetches crates checked against Cargo.lock.
+    defaults:
+      run:
+        working-directory: contracts/stylus
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Install the pinned toolchain (Rust 1.94.1, wasm32, clippy, rustfmt)
+        run: |
+          rustup toolchain install --no-self-update
+          rustc --version
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+      - name: The committed Solidity interface matches the contract
+        run: |
+          cargo run --locked --quiet -p confidence-contract --features export-abi -- abi > "$RUNNER_TEMP/ICompatibilityConfidence.sol"
+          diff -u confidence-contract/ICompatibilityConfidence.sol "$RUNNER_TEMP/ICompatibilityConfidence.sol"
+      - name: The contract builds for Stylus, fits and uses no floats (cargo stylus check needs an RPC)
+        run: |
+          cargo build --locked --release --target wasm32-unknown-unknown -p confidence-contract --lib
+          node scripts/contract-size.mjs
+      - name: lemma_confidence.wasm rebuilds byte for byte
+        working-directory: .
+        run: node packages/confidence/scripts/build-wasm.mjs --check
+
+  e2e:
+    name: end-to-end run on anvil (npm run e2e)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # No secret and no RPC: a local anvil (with no accounts of its own) poses as Arbitrum Sepolia,
+    # every key is made at run time, and the third-party contracts come from the sha256-checked
+    # fixtures in e2e/fixtures. Nothing is uploaded or cached besides npm's download cache.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The run builds the registry from contracts/, with its pinned OpenZeppelin and forge-std.
+          submodules: true
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # anvil and forge as in the contracts job and the fixtures' provenance.
+          version: v1.7.1
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Checks the fixtures and tools, builds the workspaces and contracts, then runs the scenarios.
+      - run: npm run e2e
+      # The warranty chain client against the real registry on anvil (built into contracts/out by the step above):
+      # refusals decoded from the simulation, consecutive nonces for concurrent sends, no nonce gap after a send
+      # past its deadline. npm run verify skips it, having no contracts build.
+      - run: npx vitest run apps/server/test/warranty-anvil.test.ts
+        env:
+          LEMMA_REGISTRY_ARTIFACTS: contracts/out
 
   secrets:
     name: gitleaks (full history)

@@ -31,3 +31,12 @@ keywords = ["postgres://", "postgresql://"]
 description = "the public local-development password documented in README.md and compose.yaml"
 regexTarget = "secret"
 regexes = ['''^lemma_local_only$''', '''^\$\{''']
+
+# Pinned third-party Solidity dependencies (the two git submodules under
+# contracts/lib, see contracts/README.md). Their public test fixtures and example
+# RPC URLs trip the generic rules. The trees are fixed by gitlink and never
+# edited here, so they are not scanned. Only these two roots are skipped: any
+# other file under contracts/lib/, and everything else Lemma writes, still is.
+[[allowlists]]
+description = "pinned Foundry dependencies vendored as git submodules"
+paths = ['''^contracts/lib/(?:openzeppelin-contracts|forge-std)/''']

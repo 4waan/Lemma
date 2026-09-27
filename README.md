@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lemma-logo-dark.png">
+  <img src="docs/brand/lemma-logo.png" alt="Lemma" width="280">
+</picture>
+
 # Lemma
 
 **Verified integration work for coding agents.**
@@ -30,12 +35,12 @@ flowchart LR
     B -->|Preview, apply, verify| F[Buyer repository]
     B -->|Adoption receipt| C
     C --> G[Dashboard and evidence]
-    E -. warranty activation .-> H[Warranty registry]
+    C -. warranty activation, outcome, refund .-> H[Warranty registry]
 ```
 
-The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. Repository source and buyer credentials do not belong on the hosted server.
+The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. The buyer key stays in a separate local signer process (`lemma-signer`), never in the bridge. Repository source and buyer credentials do not belong on the hosted server.
 
-The server owns deterministic matching, recoverable resolution state, catalog and dashboard APIs, privacy-thresholded demand data, and the persistence seam that the paid path will wrap.
+The server owns deterministic matching, recoverable resolution state, the x402 paid tool with its in-process facilitator and settlement reconciler, catalog and dashboard APIs, and privacy-thresholded demand data. Its warranty outcome pipeline activates each paid warranty, finalizes outcomes, expires warranties, and relays refunds on the warranty registry, and indexes the registry's events for the catalog's compatibility confidence and the ERC-8004 attester (see [Reputation and Confidence](docs/reputation-and-confidence.md)).
 
 ## Why Arbitrum
 
@@ -45,11 +50,11 @@ Lemma needs a cheap, programmable settlement layer because a resolution can cost
 2. Activation of a provider-funded warranty after settlement.
 3. An evaluator-confirmed pass or refundable failure outcome.
 
-The payment and warranty paths are not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that those paths must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+The x402 payment path and the warranty outcome pipeline are implemented for Arbitrum Sepolia (testnet) and run end to end on a local chain. The warranty registry and the compatibility engine are written and tested but not deployed; the [deployment runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) puts them on Arbitrum Sepolia in order. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
 
 ## Build status
 
-Lemma is an active MVP build. The compatibility path is substantially implemented; real payments and bonded warranties remain gated work.
+Lemma is an active MVP build. The compatibility path, the testnet purchase path, and the warranty outcome pipeline are implemented; public sales and bonded warranties on a deployed registry remain gated work.
 
 | Area | Status |
 | --- | --- |
@@ -59,9 +64,13 @@ Lemma is an active MVP build. The compatibility path is substantially implemente
 | Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
 | Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
 | Dashboard views and production bundle checks | Implemented |
+| Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; contract not deployed and no outcomes recorded yet |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
-| x402 facilitator, paid MCP tool, signer integration, and settlement reconciliation | Pending |
-| Warranty registry, deployment scripts, and evaluator outcomes | Pending |
+| x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented for Arbitrum Sepolia; not deployed, and no release is sellable yet |
+| ERC-8004 reputation: registration file, public feedback files, attester, cached pass rates, and opt-in buyer agents | Implemented and tested against the official registries on a local node; no agent registered |
+| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; not deployed |
+| Warranty outcome pipeline: activation, evaluator outcomes, expiry, credit relay, registry indexer, refund tool, and operator scripts | Implemented and run end to end on a local chain (`npm run e2e`); not deployed |
+| Registry and engine deployment on Arbitrum Sepolia | Pending; the runbook is written |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 
 This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, deployed contract, or public revenue claim is made today.
@@ -73,11 +82,13 @@ Requirements:
 - Node.js 22 or newer
 - npm 10 or newer
 - Foundry for Solidity builds and tests
+- Rust through rustup, only for the Stylus workspace and the engine's wasm (`contracts/stylus/rust-toolchain.toml` pins 1.94.1)
 - Docker or another Compose-compatible runtime when testing Postgres
 
 Install and run the repository checks:
 
 ```bash
+git submodule update --init
 npm ci
 npm run verify
 npm run catalog:check
@@ -87,6 +98,10 @@ npm run contracts:test
 
 `npm run verify` typechecks source and tests, runs Vitest, builds every TypeScript workspace, and validates the production web bundle. Some process-isolation tests require Linux facilities such as `/proc` and network namespaces.
 
+With Rust installed, `npm run stylus:test` runs the Stylus workspace's tests, and `npm run confidence:wasm:check` proves that the committed engine wasm rebuilds byte for byte. After an engine change, `npm run confidence:wasm` rebuilds it.
+
+With Foundry on `PATH`, `npm run e2e` runs the warranty outcome pipeline end to end on a local anvil chain, against real contracts and with no network or secret (see [e2e/README.md](e2e/README.md)). It is not part of `npm run verify`.
+
 Start the implemented applications in separate terminals:
 
 ```bash
@@ -94,6 +109,8 @@ npm run dev:server
 npm run dev:web
 npm run dev:bridge
 ```
+
+The dashboard explains the product, lists the catalog, shows the benchmark proof and the pricing rule, looks up resolutions and their warranties, ranks unmet demand, lists the contracts the server works with, and shows how to connect Cursor, Claude Code or any other MCP agent. The server serves the built dashboard at its root; `npm run dev:web` serves it with hot reload. See [apps/web/README.md](apps/web/README.md); the logo and brand files are in [docs/brand](docs/brand/README.md).
 
 The server uses an in-memory store when `DATABASE_URL` is absent. Copy `.env.example` to `.env` only when a workflow needs configured infrastructure. Never use the example database password outside local development.
 
@@ -106,9 +123,12 @@ apps/web/           Read-only React dashboard
 packages/core/      Versioned schemas, identifiers, pricing, policy, and read models
 packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
 packages/benchmark/ Controlled agent experiments and evidence derivation
-contracts/          Foundry project for the pending warranty registry
+packages/confidence/ Compatibility-confidence engine as reproducible wasm for the server
+contracts/          Foundry project for the warranty registry, its tests, and its deploy script
+contracts/stylus/   Rust confidence engine, its Node wasm build, and its Stylus contract
+e2e/                End-to-end run of the outcome pipeline on a local chain, with checked third-party bytecode
 docs/               Architecture, protocol, economics, security, and delivery decisions
-ops/                Container and Railway configuration
+ops/                Container and Railway configuration, and the Arbitrum Sepolia role setup
 ```
 
 Each workspace README explains how to develop that component. Start with the [documentation guide](docs/README.md) when changing behavior across more than one boundary.
@@ -118,8 +138,8 @@ Each workspace README explains how to develop that component. Start with the [do
 The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
 
 1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
-2. Complete the x402 purchase path, idempotent settlement recovery, signer integration, and facilitator.
-3. Implement and test the warranty registry, including one pass and one refunded failure on Arbitrum Sepolia.
+2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase, and a lost response recovered without a second payment.
+3. Run the [Arbitrum Sepolia runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation): deploy the registry and the compatibility engine, and demonstrate one pass and one refunded failure.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
 5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
 6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.
@@ -129,6 +149,7 @@ The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs
 - [Documentation guide](docs/README.md)
 - [Architecture](docs/architecture.md)
 - [Protocol](docs/protocol.md)
+- [Reputation and Confidence](docs/reputation-and-confidence.md)
 - [Economics](docs/economics.md)
 - [Security policy](SECURITY.md)
 - [Contributing](CONTRIBUTING.md)

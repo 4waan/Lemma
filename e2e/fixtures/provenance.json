@@ -1,0 +1,108 @@
+{
+  "schema": "lemma.e2e.fixtures.v1",
+  "sources": {
+    "circle": {
+      "repository": "https://github.com/circlefin/stablecoin-evm",
+      "commit": "fc85788bc7c23cefe3df1a757133048bfddadeaa",
+      "license": "Apache-2.0",
+      "dependencies": {
+        "@openzeppelin/contracts": "3.4.2 (the version the repository's package.json pins, unpacked from npm into node_modules; MIT)"
+      },
+      "compiler": {
+        "solc": "0.6.12+commit.27d51765",
+        "solcSha256": "f6cb519b01dabc61cab4c184a3db11aa591d18151e362fcae850e42cffdfb09a",
+        "optimizer": {
+          "enabled": true,
+          "runs": 10000000
+        },
+        "evmVersion": "istanbul",
+        "viaIR": false,
+        "bytecodeHash": "ipfs"
+      },
+      "build": "FOUNDRY_OFFLINE=true forge build contracts/v2/FiatTokenV2_2.sol, with the repository's own foundry.toml (optimizer_runs 10000000, output artifacts/foundry), Foundry 1.7.1"
+    },
+    "erc8004": {
+      "repository": "https://github.com/erc-8004/erc-8004-contracts",
+      "commit": "b9e466c250744a7e06b13dff9d3c2844ed64f825",
+      "license": "MIT (the SPDX identifier of each source file; the repository README states CC0-1.0)",
+      "dependencies": {
+        "@openzeppelin/contracts": "5.4.0 (npm, the repository's package-lock.json; MIT)",
+        "@openzeppelin/contracts-upgradeable": "5.4.0 (npm, the repository's package-lock.json; MIT)"
+      },
+      "compiler": {
+        "solc": "0.8.24+commit.e11b9ed9",
+        "solcSha256": "fb03a29a517452b9f12bcf459ef37d0a543765bb3bbc911e70a87d6a37c30d5f",
+        "optimizer": {
+          "enabled": true,
+          "runs": 200
+        },
+        "evmVersion": "shanghai",
+        "viaIR": true,
+        "bytecodeHash": "ipfs"
+      },
+      "build": "FOUNDRY_OFFLINE=true forge build contracts/IdentityRegistryUpgradeable.sol contracts/ReputationRegistryUpgradeable.sol contracts/HardhatMinimalUUPS.sol contracts/ERC1967Proxy.sol, after npm ci, with a foundry.toml equal to hardhat.config.ts's solidity profile (src contracts, out out, libs [node_modules], remappings [@openzeppelin/=node_modules/@openzeppelin/], solc 0.8.24, via_ir true, optimizer true, optimizer_runs 200, evm_version shanghai), Foundry 1.7.1"
+    }
+  },
+  "files": [
+    {
+      "file": "FiatTokenV2_2.runtime.hex",
+      "source": "circle",
+      "contract": "contracts/v2/FiatTokenV2_2.sol:FiatTokenV2_2",
+      "kind": "runtime",
+      "artifactField": "deployedBytecode.object",
+      "bytes": 23464,
+      "sha256": "3d06059ae651240fb4c7ab7565986ac8881db12dd8e47710980d2af99b9d76f8",
+      "linkReferences": {
+        "contracts/util/SignatureChecker.sol:SignatureChecker": [
+          18391,
+          20106
+        ]
+      }
+    },
+    {
+      "file": "SignatureChecker.runtime.hex",
+      "source": "circle",
+      "contract": "contracts/util/SignatureChecker.sol:SignatureChecker",
+      "kind": "runtime",
+      "artifactField": "deployedBytecode.object",
+      "bytes": 1741,
+      "sha256": "ccbdfa30bc968802fd966452ba701d9d81560d48bbd26e561af1f39ea07d0a0c"
+    },
+    {
+      "file": "HardhatMinimalUUPS.initcode.hex",
+      "source": "erc8004",
+      "contract": "contracts/HardhatMinimalUUPS.sol:HardhatMinimalUUPS",
+      "kind": "initcode",
+      "artifactField": "bytecode.object",
+      "bytes": 2327,
+      "sha256": "6c13bca9a04b5d25171f26ff64c94211b11a131d58850041fb4e0e43b82c1214"
+    },
+    {
+      "file": "ERC1967Proxy.initcode.hex",
+      "source": "erc8004",
+      "contract": "contracts/ERC1967Proxy.sol:ERC1967Proxy",
+      "kind": "initcode",
+      "artifactField": "bytecode.object",
+      "bytes": 690,
+      "sha256": "9cc5c4ed440f0f507891ea47ff1fd1ea95c06ce4f7666413df74232f78a803f4"
+    },
+    {
+      "file": "IdentityRegistryUpgradeable.initcode.hex",
+      "source": "erc8004",
+      "contract": "contracts/IdentityRegistryUpgradeable.sol:IdentityRegistryUpgradeable",
+      "kind": "initcode",
+      "artifactField": "bytecode.object",
+      "bytes": 14688,
+      "sha256": "91c24d150a046cec28baebe820690a9183677694610add8a11ef31dff4f487b4"
+    },
+    {
+      "file": "ReputationRegistryUpgradeable.initcode.hex",
+      "source": "erc8004",
+      "contract": "contracts/ReputationRegistryUpgradeable.sol:ReputationRegistryUpgradeable",
+      "kind": "initcode",
+      "artifactField": "bytecode.object",
+      "bytes": 10700,
+      "sha256": "fa7b1950252012af8769f8eee7a9b98b5f3e63464863e4657b818ec20397c401"
+    }
+  ]
+}

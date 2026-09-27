@@ -11,20 +11,22 @@ Use this page to find the document that owns a decision. Component READMEs cover
 ## Understand the system
 
 - [Architecture](architecture.md): components, trust boundaries, data flow, persistence, and failure behavior.
-- [Protocol](protocol.md): releases, previews, resolutions, receipts, canonical identifiers, pricing, and payment boundaries.
+- [Protocol](protocol.md): releases, previews, resolutions, receipts, canonical identifiers, pricing, payment boundaries, the warranty's voucher and outcome typed data and verdicts, and the public ERC-8004 adoption record.
+- [Reputation and Confidence](reputation-and-confidence.md): how a paid resolution becomes public records (the warranty outcome, the engine record, and ERC-8004 feedback), what each number means, the damper and distinct-buyer counts, what is public and what never is, and what the numbers trust.
 - [Security Model](security-model.md): assets, actors, threats, controls, and accepted MVP trust.
 - [Security Policy](../SECURITY.md): safe usage, current limitations, secret handling, and vulnerability reporting.
 
 ## Work on a runtime
 
-- [Bridge Runtime](bridge-runtime.md): repository profiling, resolution selection, atomic apply, crash recovery, dependency installs, and acceptance runs.
-- [Server Runtime](server-runtime.md): request handling, persistence, payment seams, demand privacy, startup gates, and operational failures.
-- [Deployment](deployment.md): target environment, role separation, migrations, release checks, rollout, and rollback.
+- [Bridge Runtime](bridge-runtime.md): repository profiling, the adoption record in previews, purchasing with the buyer signer and spend ledger, resolution selection, atomic apply, crash recovery, dependency installs, acceptance runs, receipt delivery with the opt-in agent id, and warranty refunds.
+- [Server Runtime](server-runtime.md): request handling, persistence, the x402 payment seam and its background jobs, demand privacy, ERC-8004 reputation (the attester and the summary cache), the warranty outcome pipeline (its jobs, outbox, indexer, credit relay route, and operator decisions), startup gates, and operational failures.
+- [Deployment](deployment.md): target environment, role separation, migrations, release checks, enabling paid tools, turning on ERC-8004 reputation, the Arbitrum Sepolia runbook for the warranty, engine, and reputation with its local rehearsal, rollout, rollback, and buyer setup.
 
 ## Produce evidence
 
 - [Benchmark Protocol](benchmark-protocol.md): frozen control and treatment experiment and its success criteria.
 - [Economic Gates and Iterations](economic-gates.md): build order, go-or-iterate decisions, unit economics, and scale requirements.
+- [Warranty Registry Review](warranty-registry-review.md): tests, static analysis, checklists, and dated gas figures for the unaudited registry contract.
 
 ## Component guides
 
@@ -34,7 +36,10 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Core protocol package](../packages/core/README.md)
 - [Capability catalog](../packages/catalog/README.md)
 - [Benchmark harness](../packages/benchmark/README.md)
+- [Compatibility confidence package](../packages/confidence/README.md)
 - [Warranty contract](../contracts/README.md)
+- [Stylus confidence engine](../contracts/README.md#stylus-compatibility-confidence-engine)
 - [Operations](../ops/README.md)
+- [End-to-end run](../e2e/README.md)
 
 When a public interface changes, update the owning component guide and the cross-component document that explains the behavior. Do not duplicate detailed rules in the root README.

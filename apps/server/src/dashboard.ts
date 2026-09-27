@@ -1,4 +1,4 @@
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Hono } from "hono";
@@ -55,6 +55,22 @@ export function serveDashboard(app: Hono, webRoot: string): void {
     c.header("Cache-Control", "public, max-age=31536000, immutable");
     return c.body(new Uint8Array(body));
   });
+}
+
+/**
+ * The built dashboard's 180-pixel PNG icon (Vite's `apple-touch-icon-<hash>.png`),
+ * as its path under `/assets/`, if it is there as a regular file the dashboard
+ * serves. The ERC-8004 registration file names it as the agent's image.
+ */
+export function dashboardIconPath(webRoot: string): string | undefined {
+  let names: string[];
+  try {
+    names = readdirSync(join(webRoot, "assets"));
+  } catch {
+    return undefined;
+  }
+  const name = names.find((n) => /^apple-touch-icon-[A-Za-z0-9_-]+\.png$/.test(n) && ASSET.test(n) && readRegular(join(webRoot, "assets", n)) !== undefined);
+  return name === undefined ? undefined : `/assets/${name}`;
 }
 
 function readRegular(path: string): Buffer | undefined {

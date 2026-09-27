@@ -1,9 +1,9 @@
 import { createHash } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
-import { Address, AdoptionReceipt, CapabilityId, CapabilityRelease, Hex32, IsoTimestamp, type Resolution, ResolutionDelivery, releaseDigest } from "@lemma/core";
+import { Address, AdoptionReceipt, CapabilityId, CapabilityRelease, Hex32, IsoTimestamp, type Resolution, ResolutionDelivery, WarrantyClaim, releaseDigest } from "@lemma/core";
 import { z } from "zod";
 
 import { ReceiptAnswer } from "./remote.js";
@@ -114,7 +114,7 @@ const Link = z.strictObject({ resolutionId: Hex32, ...PackageRef.shape });
 /** A package where apply answered adapt for a resolution. */
 const Adapting = z.strictObject({ resolutionId: Hex32, since: IsoTimestamp, ...PackageRef.shape });
 
-const SUBDIRS = ["", "pending", "resolutions", "releases", "receipts", "adapting", "links", "journal", "export", "recovered", "previews"] as const;
+const SUBDIRS = ["", "pending", "resolutions", "releases", "receipts", "adapting", "links", "journal", "export", "recovered", "previews", "claims"] as const;
 
 /** A per-package record's file name: one purchase can serve several packages, each with its own record. */
 const perPackage = (resolutionId: Hex32, packageDir: string) => `${Hex32.parse(resolutionId)}.${createHash("sha256").update(packageDir).digest("hex").slice(0, 16)}.json`;
@@ -262,6 +262,47 @@ export class ResolutionInbox {
         const parsed = Adapting.safeParse(this.read(join("adapting", name)));
         return parsed.success && samePackage({ packageDir: parsed.data.packageDir, rel: parsed.data.rel, name: parsed.data.name }, here);
       });
+  }
+
+  /**
+   * The warranty claim for a resolution (core `WarrantyClaim`), made by `make`
+   * and stored the first time (`claims/<resolutionId>.json`, mode 0600), and
+   * the stored one after that: a purchase retried for the same resolution
+   * sends the same claim hash.
+   * The file is linked into place, so it is never half written and a
+   * concurrent first write cannot replace it.
+   */
+  claimFor(resolutionId: Hex32, make: () => WarrantyClaim): WarrantyClaim {
+    const existing = this.claim(resolutionId);
+    if (existing !== undefined) return existing;
+    const made = WarrantyClaim.parse(make());
+    if (made.resolutionId !== resolutionId) throw new Error("a claim is for its own resolution only");
+    const path = join(this.dir, "claims", `${resolutionId}.json`);
+    const temp = `${path}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify(made)}\n`, { mode: 0o600, flag: "w" });
+    try {
+      linkSync(temp, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    } finally {
+      rmSync(temp, { force: true });
+    }
+    const stored = this.claim(resolutionId);
+    if (stored === undefined) throw new Error("the warranty claim could not be stored");
+    return stored;
+  }
+
+  claim(resolutionId: Hex32): WarrantyClaim | undefined {
+    const parsed = WarrantyClaim.safeParse(this.read(join("claims", `${Hex32.parse(resolutionId)}.json`)));
+    return parsed.success && parsed.data.resolutionId === resolutionId ? parsed.data : undefined;
+  }
+
+  /** Every stored warranty claim, in file name order: only files that parse and are stored under their own resolution id. */
+  claims(): WarrantyClaim[] {
+    return this.list("claims").flatMap((name) => {
+      const parsed = WarrantyClaim.safeParse(this.read(join("claims", name)));
+      return parsed.success && name === `${parsed.data.resolutionId}.json` ? [parsed.data] : [];
+    });
   }
 
   /** Where apply keeps its journal and backups, outside every workspace. */

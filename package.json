@@ -15,9 +15,11 @@
   "scripts": {
     "build": "tsc -b && npm run bundle -w @lemma/web",
     "typecheck": "tsc -b",
-    "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json",
+    "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json && tsc -p ops/sepolia/tsconfig.json && tsc -p e2e/tsconfig.json",
     "test": "vitest run",
     "verify": "npm run typecheck && npm run typecheck:tests && npm test && npm run build",
+    "e2e": "tsx e2e/prepare.ts && vitest run --config e2e/vitest.config.ts",
+    "sepolia:roles": "tsx ops/sepolia/setup-roles.ts",
     "secrets:scan": "gitleaks git --no-banner --redact --config .gitleaks.toml .",
     "hooks:install": "git config core.hooksPath .githooks",
     "dev:server": "npm run dev -w @lemma/server",
@@ -27,7 +29,12 @@
     "catalog:check": "npm run catalog:check -w @lemma/catalog",
     "catalog:pack": "npm run catalog:pack -w @lemma/catalog --",
     "contracts:build": "cd contracts && forge build",
-    "contracts:test": "cd contracts && FOUNDRY_OFFLINE=true forge test"
+    "contracts:test": "cd contracts && FOUNDRY_OFFLINE=true forge test",
+    "contracts:rehearse": "bash contracts/script/rehearse-deploy.sh",
+    "contracts:abi": "cd contracts && FOUNDRY_OFFLINE=true forge build && node script/export-abi.mjs",
+    "confidence:wasm": "node packages/confidence/scripts/build-wasm.mjs",
+    "confidence:wasm:check": "node packages/confidence/scripts/build-wasm.mjs --check",
+    "stylus:test": "cd contracts/stylus && cargo test --locked --workspace"
   },
   "devDependencies": {
     "@types/node": "26.6.2",

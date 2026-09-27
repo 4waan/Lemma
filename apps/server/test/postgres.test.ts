@@ -28,7 +28,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
   });
 
   it("lets exactly one of many concurrent payments for one resolution prepare", async () => {
-    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily`);
+    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts, warranty_actions, registry_events, chain_cursors`);
     const store = new PgStore(db);
     const index = sellableIndex();
     await store.saveCatalog(index, NOW);
@@ -48,7 +48,7 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
   });
 
   it("lets one authorization back exactly one of many concurrently prepared resolutions", async () => {
-    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily`);
+    await db.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts, warranty_actions, registry_events, chain_cursors`);
     const store = new PgStore(db);
     const index = sellableIndex();
     await store.saveCatalog(index, NOW);

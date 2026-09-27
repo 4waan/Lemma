@@ -14,8 +14,8 @@ const PG = ["postgres://lemma:", "s3cret", "@db.internal:5432/lemma"].join("");
 const PEM = ["-----BEGIN EC PRIVATE", " KEY-----\nMHQCAQEE\n-----END EC PRIVATE", " KEY-----"].join("");
 const WORDS = "test test test test test test test test test test test junk";
 
-// Each env name from .env.example that holds a credential.
-const ENV_NAMES = ["PROVIDER", "FACILITATOR", "EVALUATOR", "DEPLOYER", "BUYER"].map((r) => `${r}_PRIVATE_KEY`);
+// Each private key name from .env.example, and the buyer's, which never belongs there.
+const ENV_NAMES = ["PROVIDER", "FACILITATOR", "EVALUATOR", "DEPLOYER", "ATTESTER", "AGENT_OWNER", "REGISTRY_OWNER", "ENGINE_OWNER", "ARBITRUM_SEPOLIA_FUNDER", "BUYER"].map((r) => `${r}_PRIVATE_KEY`);
 
 describe("redactString leaks nothing in the forms agents and tools print", () => {
   const leaks: Array<[string, string]> = [

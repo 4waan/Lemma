@@ -4,7 +4,7 @@ Lemma handles repository metadata, generated patches, acceptance commands, payme
 
 ## Supported environment
 
-Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, and benchmark surfaces are implemented. Real payment signing, the x402 facilitator, and the warranty contract are not complete.
+Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, benchmark, testnet x402 payment, and warranty outcome pipeline surfaces are implemented. The warranty contract is tested but not deployed or audited.
 
 Do not use Lemma with mainnet assets or production signing keys. Use disposable Arbitrum Sepolia identities and public or synthetic repositories while developing the paid path.
 
@@ -65,21 +65,22 @@ See [Bridge Runtime](docs/bridge-runtime.md) for the process and crash-recovery 
 - A file readable by the same user is not isolation from an acceptance test. Prefer a hardware signer, remote signer, or process running as another user.
 - Rotate a leaked secret before removing it from Git history.
 
-## Pending payment controls
+## Payment controls
 
-The paid path must preserve these requirements before it is enabled:
+The testnet paid path implements these requirements. Keep them when changing it:
 
 - Accept only x402 v2 on `eip155:421614` with the configured Arbitrum Sepolia USDC contract and provider address.
-- Compare every payment challenge field with the stored quote.
+- Keep the buyer key in a separate signer process that enforces the spending policy itself (see the signer threat model in [Security Model](docs/security-model.md)).
+- Sign only the terms of the checked preview. Never pay an x402 challenge, and refuse one whose terms differ from the quote.
 - Enforce the per-resolution cap, daily cap, authorization lifetime, and committed-spend reservation before signing.
 - Derive an EIP-3009 nonce from secret and public resolution inputs rather than using the public resolution id alone.
 - Treat settlement timeouts as indeterminate and reconcile before retrying.
 - Keep resolution preparation, settlement, delivery, and recovery idempotent.
 - Verify buyer receipt signatures before using them for compatibility history or warranty outcomes.
 
-## Pending contract controls
+## Contract controls
 
-The warranty registry must include EIP-712 domain separation, replay protection, expiry, pause controls, pull-based withdrawals, and reentrancy protection.
+The warranty registry includes EIP-712 domain separation, replay protection, expiry, pause controls, pull-based withdrawals, and reentrancy protection. It is not deployed or audited yet; its limits are listed in the [contracts guide](contracts/README.md#limits).
 
 Provider withdrawals cannot consume bond reserved for active resolutions. Release deactivation cannot invalidate an active warranty. The accounting invariant is:
 
@@ -87,7 +88,7 @@ Provider withdrawals cannot consume bond reserved for active resolutions. Releas
 USDC balance >= available bond + reserved bond + withdrawal credits
 ```
 
-Unit, fuzz, and invariant tests must cover six-decimal accounting and the complete activation, pass, failure, expiry, and withdrawal state machine before deployment.
+Unit, fuzz, and invariant tests cover six-decimal accounting and the complete activation, pass, failure, expiry, and withdrawal state machine, and must keep passing before deployment.
 
 ## Dependency and release checks
 

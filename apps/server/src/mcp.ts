@@ -1,12 +1,13 @@
 import type { CatalogIndex } from "@lemma/catalog";
 import { resolve } from "@lemma/catalog";
-import { type Hex32, LEMMA_TOOLS, type Preview, PreviewInput, PreviewResult, RecoverInput, ResolutionDelivery } from "@lemma/core";
+import { type Hex32, LEMMA_TOOLS, type Preview, PreviewInput, PreviewResult, REPUTATION_META_KEY, RecoverInput, ResolutionDelivery } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ServerConfig } from "./config.js";
 import type { DemandRecorder } from "./demand.js";
 import { describeError } from "./errors.js";
 import type { Logger } from "./log.js";
+import type { ReputationReader } from "./reputation/summary.js";
 import type { ResolutionService } from "./service.js";
 import type { PreviewStore, ResolutionReader } from "./store.js";
 
@@ -32,6 +33,8 @@ export interface McpDeps {
   readonly registerPaidTools?: PaidToolRegistrar | undefined;
   /** The request's parsed JSON-RPC message, for the paid-tool registrar. */
   readonly request?: unknown;
+  /** Cached ERC-8004 adoption records, read without waiting on the chain; absent while reputation is off. */
+  readonly reputation?: ReputationReader | undefined;
 }
 
 export const SERVER_INFO = { name: "lemma", version: "0.1.0" } as const;
@@ -79,7 +82,13 @@ export async function buildMcpServer(deps: McpDeps): Promise<McpServer> {
       }
       await deps.demand?.record(preview, input.task.capability, input.profile, now, deps.source ?? "unknown");
       deps.logger.log("info", "preview", { decision: preview.decision, reasons: preview.reasons, offer: "offer" in preview && preview.offer !== null });
-      return { content: [{ type: "text", text: summarize(preview) }], structuredContent: { preview } };
+      // A matched release's public adoption record, from the cache only: the preview never waits on the chain.
+      const record = "release" in preview ? (deps.reputation?.current(input.task.capability) ?? null) : null;
+      return {
+        content: [{ type: "text", text: summarize(preview) }],
+        structuredContent: { preview },
+        ...(record === null ? {} : { _meta: { [REPUTATION_META_KEY]: record } }),
+      };
     },
   );
 

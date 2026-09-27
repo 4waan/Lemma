@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 import { type LoadedCatalog, buildIndex, loadFixtures } from "@lemma/catalog";
 import { CATALOG_ROOT } from "@lemma/catalog";
 import {
@@ -8,11 +10,13 @@ import {
   type RepositoryProfile,
   bundleDigest,
   releaseDigest,
+  toAddress,
 } from "@lemma/core";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 
 import { ConfigError, MAX_BODY_BYTES, MemoryStore, TokenBuckets, clientAddress, loadConfig, normalizeIp, startupProblems } from "../src/index.js";
-import { NOW, PROVIDER, app, committedIndex, config, gatingTask, matchingProfile, mcpClient, sellableIndex } from "./helpers.js";
+import { NOW, PROVIDER, app, committedIndex, config, gatingTask, matchingProfile, mcpClient, paidConfig, sellableIndex } from "./helpers.js";
 const post = (body: unknown, headers: Record<string, string> = {}) => ({
   method: "POST",
   headers: { "content-type": "application/json", accept: "application/json, text/event-stream", ...headers },
@@ -124,15 +128,15 @@ describe("MCP over stateless Streamable HTTP", () => {
     await client.close();
   });
 
-  it("refuses to start paid tools without the protocol lane's registrar", async () => {
-    const res = await app({ config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }) }).request("/mcp", post(listTools));
+  it("answers 500 when paid tools are on but the app was given no registrar", async () => {
+    const res = await app({ config: paidConfig() }).request("/mcp", post(listTools));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "internal error" });
   });
 
   it("waits for an async registrar before dispatching, and answers 500 when it fails", async () => {
     const slow = await mcpClient(app({
-      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      config: paidConfig(),
       // Like a registrar that quotes the named preview from the store before registering.
       registerPaidTools: async (server) => {
         await new Promise((resolve) => setTimeout(resolve, 20));
@@ -142,7 +146,7 @@ describe("MCP over stateless Streamable HTTP", () => {
     expect((await slow.listTools()).tools.map((t) => t.name)).toContain(LEMMA_TOOLS.buyResolution);
     await slow.close();
     const failing = app({
-      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      config: paidConfig(),
       registerPaidTools: async () => {
         throw new Error("store unavailable");
       },
@@ -155,7 +159,7 @@ describe("MCP over stateless Streamable HTTP", () => {
   it("never dispatches a call after the request timed out while the registrar ran", async () => {
     let ran = 0;
     const slow = app({
-      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      config: paidConfig(),
       requestTimeoutMs: 50,
       registerPaidTools: async (server) => {
         await new Promise((resolve) => setTimeout(resolve, 200));
@@ -174,7 +178,7 @@ describe("MCP over stateless Streamable HTTP", () => {
   it("registers paid tools through the registrar when enabled", async () => {
     const registered: unknown[] = [];
     const client = await mcpClient(app({
-      config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }),
+      config: paidConfig(),
       registerPaidTools: (server, _service, request) => {
         // The registrar sees each request's message, so it can quote the preview a paid call names.
         registered.push(request.message);
@@ -378,4 +382,40 @@ it("serves previews at the injected instant", async () => {
   const result = await client.callTool({ name: LEMMA_TOOLS.preview, arguments: { task, profile } });
   expect(PreviewResult.parse(result.structuredContent).preview.createdAt).toBe(NOW.toISOString());
   await client.close();
+});
+
+describe("paid-path configuration", () => {
+  const key = generatePrivateKey();
+  const base = { NODE_ENV: "test", PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER };
+
+  it("needs the facilitator key and the RPC URL before paid tools can be on", () => {
+    expect(() => loadConfig(base)).toThrow(/FACILITATOR_PRIVATE_KEY/);
+    expect(() => loadConfig({ ...base, FACILITATOR_PRIVATE_KEY: key })).toThrow(/ARBITRUM_SEPOLIA_RPC_URL/);
+    const c = loadConfig({ ...base, FACILITATOR_PRIVATE_KEY: key, ARBITRUM_SEPOLIA_RPC_URL: "https://rpc.example" });
+    expect(c.paidTools).toBe(true);
+    expect(c.chain.facilitatorAddress).toBe(toAddress(privateKeyToAccount(key).address));
+    expect(c.chain.facilitatorKey?.reveal()).toBe(key);
+  });
+
+  it("never repeats a key or an RPC URL, in errors or when the config is printed", () => {
+    const bad = [`${key}00`, key.slice(0, 60), `0x${"0".repeat(64)}`];
+    for (const value of bad) {
+      let message = "";
+      try {
+        loadConfig({ ...base, FACILITATOR_PRIVATE_KEY: value, ARBITRUM_SEPOLIA_RPC_URL: "https://rpc.example" });
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        message = (error as Error).message;
+      }
+      expect(message).toContain("FACILITATOR_PRIVATE_KEY");
+      expect(message).not.toContain(value.slice(2, 20));
+    }
+    const rpc = `https://arb-sepolia.rpc.example/v2/${key.slice(2, 34)}`;
+    expect(() => loadConfig({ ...base, FACILITATOR_PRIVATE_KEY: key, ARBITRUM_SEPOLIA_RPC_URL: "ftp://x" })).toThrow(/its value is not shown/);
+    const c = loadConfig({ ...base, FACILITATOR_PRIVATE_KEY: key, ARBITRUM_SEPOLIA_RPC_URL: rpc });
+    for (const printed of [JSON.stringify(c), inspect(c, { depth: 10 }), String(c.chain.rpcUrl)]) {
+      expect(printed).not.toContain(key.slice(2));
+      expect(printed).not.toContain(rpc);
+    }
+  });
 });

@@ -3,6 +3,7 @@
 ## Protected assets
 
 - Buyer, provider, facilitator, evaluator, and deployer private keys.
+- The ERC-8004 attester key (Lemma's public reviewer identity) and the provider agent's owner key.
 - Buyer spending authority and daily budget.
 - Provider bond and buyer refund credits.
 - Resolution payload integrity.
@@ -20,6 +21,7 @@
 - x402 facilitator.
 - Outcome evaluator.
 - Arbitrum Sepolia contracts and RPC providers.
+- The ERC-8004 identity and reputation registries (Draft, and upgradeable by their maintainers), and whoever reads Lemma's feedback there.
 - Public dashboard visitor.
 
 ## Principal threats
@@ -36,6 +38,10 @@
 - Cross-site scripting through catalog or chain metadata.
 - SQL injection, mass assignment, and direct-object access bugs.
 - Secrets in logs, benchmark records, source maps, or container layers.
+- Wash adoption: a provider, or anyone paid by one, buying its own release to inflate its public pass rate.
+- A buyer directing Lemma's attestations at an agent it does not control, to praise or smear it.
+- Theft of the attester key, which would let a thief post feedback as Lemma's reviewer identity.
+- A public record that joins a wallet to what it bought.
 
 ## Required controls
 
@@ -61,6 +67,7 @@
 - The server logs and returns database errors by name and code (SQLSTATE, or a connection code such as ECONNREFUSED) only, never their text, which carries SQL parameters or the connection string. Every store call is wrapped, so the paid path that calls the ResolutionService receives the same code-only error.
 - Demand is counted as distinct profile digests, salted with a daily secret, and distinct client addresses, keyed with a secret held outside the database and then salted, so neither the database nor a backup of it can recover an address by trying every IPv4 value. Both are collapsed to counts when the day closes, and published only for buckets with at least five of each. A caller can make up profiles freely, so the address count is what makes a single prober's bucket stay hidden; a prober with many addresses can still inflate a count, so demand is a roadmap signal, not a metric to pay on. Buckets carry a coarse repository class, never dependency names or versions.
 - The hosted MCP endpoint refuses browser-originated requests (any `Origin` header), limits bodies to 256 KB, and rate-limits per client address taken from the trusted proxy hop.
+- ERC-8004 feedback files never name the buyer or payer, the preview id, the payment nonce, or the settlement, and the attester key only publishes feedback (see the reputation threat model below).
 
 ## Signer threat model
 
@@ -71,6 +78,19 @@
 - **Worst case.** A hostile local process can make the signer sign purchases within the caps to the allowlisted payee, and no more. Funds can only reach the payee, so it cannot take money for itself; it can waste up to the daily cap, or use the cap up so that real purchases are refused for a day. It can also have receipts signed for this buyer's resolutions, so a receipt proves the buyer's signer signed it, not that the buyer's tests passed; the evaluator's finalization is what the warranty trusts.
 - **The key file.** The signer reads the key from the file `LEMMA_SIGNER_KEY_FILE` names (default `<state>/signer/key`); the key itself is never in the environment or an argument. It refuses a link, a file others can read, or one another user owns, and opens the file without following links. A file the user can read is still readable by the user's other processes: run the signer as a separate user (socket mode 0660 with a shared group) for isolation from acceptance tests, or use a hardware or remote signer.
 - **What it never does.** It never returns or logs the key, never signs arbitrary typed data or transactions, and never reads the chain.
+
+## Reputation threat model
+
+The server's attester posts each finalized outcome as ERC-8004 feedback on Arbitrum Sepolia, each with a public feedback file (see the [Server guide](../apps/server/README.md#reputation)).
+
+- **The attester key.** It signs every `giveFeedback` from one published address, the only reviewer Lemma's summaries count (`getSummary(agentId, [attester], ...)`). It is a hot server key that holds only testnet gas, and it is never logged or shown in errors (the config prints it as `[redacted]`). The key that owns the provider's agent must be a different key, kept off the server; [Deployment](deployment.md#role-separation) says how to keep the two apart.
+- **Rotating the attester key.** If it leaks, rotate it. A new attester address makes a new summary filter, and feedback from the old address can be revoked by whoever holds it. Posts still pending under the old key are skipped (`FILE_MISMATCH`) rather than sent by the new one, because their files name the old address as the client. Readers should trust only the attester address Lemma publishes with its deployment record; the server also logs it at startup (`reputation.on`).
+- **Feedback files.** Each feedback has its own public file, hashed on chain, in ERC-8004's off-chain feedback file format. It names the resolution, release, profile, capability, recipe digest, acceptance result, verdict and times, and the spec's required fields: the identity registry, the target agent, the client (Lemma's attester, public on chain anyway), the time, the value and its decimals. It never names the buyer or payer, the preview id, the payment nonce, or the settlement: core `AdoptionFeedbackFile` and the `AdoptionEvidence` under its `lemma` key are strict and have no field for them.
+- **No proof of payment.** ERC-8004 suggests an optional `proofOfPayment` in the file for x402 payments (payer, payee, chain and payment transaction). Lemma leaves it out on purpose: it would publish every buyer's paying wallet next to what it bought, including buyers who never opted in. Every outcome the attester posts already needs a paid, settled resolution that Lemma checked itself, so readers rely on the attester's address instead.
+- **Buyer agents.** Only a buyer that opted in with its own agent id is linked to its adoption on chain. The attester checks, off the request path, that the address that paid owns the agent or is its ERC-8004 agent wallet; otherwise the post is skipped, so a buyer cannot aim Lemma's attestations at someone else's agent. The agent id is stored with the receipt and shown by no read API except the buyer agent's own feedback file, which is served only after that check passed and a send has begun. The same rule means opting in publishes, on chain and for good, that the paying wallet adopted each resolution. The rule that Lemma's public records never name the buyer or payer therefore holds only for buyers who do not opt in; the bridge README and the dashboard's Setup page say so.
+- **Idempotency.** One ledger row per resolution and target. An attempt is claimed before it is sent and looked for on chain before any resend, so a crash or a second replica never double-posts. [Server Runtime](server-runtime.md#erc-8004-reputation) describes the claim, the send deadline, and what the resend check needs from the RPC endpoint.
+- **Wash adoption.** This is the main sybil risk: a provider that buys its own release gets most of its payment back, so it can buy passes cheaply. Every outcome needs a paid, settled resolution, a pinned acceptance recipe and an evaluator's finalization, which raises the cost but does not stop a determined provider. The plan is to publish distinct-buyer counts next to every pass rate (counted off chain from settled resolutions, without publishing the payers) and to weight outcomes by distinct, independently established buyer agents. Until then, read a pass rate with its count; it is a signal, not a guarantee.
+- **The registries** are Draft and upgradeable by their maintainers, so they are a public mirror of outcomes. Bonds, refunds, and pricing never depend on them.
 
 ## Accepted MVP trust
 

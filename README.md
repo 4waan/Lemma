@@ -67,6 +67,7 @@ Lemma is an active MVP build. The compatibility path and the testnet purchase pa
 | Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; contract not deployed and no outcomes recorded yet |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
 | x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented for Arbitrum Sepolia; not deployed, and no release is sellable yet |
+| ERC-8004 reputation: registration file, public feedback files, attester, cached pass rates, and opt-in buyer agents | Implemented and tested against the official registries on a local node; no agent registered, and no finalized outcomes to post until the warranty work |
 | Warranty registry, deployment scripts, and evaluator outcomes | Pending |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 

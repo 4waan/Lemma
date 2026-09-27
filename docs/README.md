@@ -11,15 +11,15 @@ Use this page to find the document that owns a decision. Component READMEs cover
 ## Understand the system
 
 - [Architecture](architecture.md): components, trust boundaries, data flow, persistence, and failure behavior.
-- [Protocol](protocol.md): releases, previews, resolutions, receipts, canonical identifiers, pricing, and payment boundaries.
+- [Protocol](protocol.md): releases, previews, resolutions, receipts, canonical identifiers, pricing, payment boundaries, and the public ERC-8004 adoption record.
 - [Security Model](security-model.md): assets, actors, threats, controls, and accepted MVP trust.
 - [Security Policy](../SECURITY.md): safe usage, current limitations, secret handling, and vulnerability reporting.
 
 ## Work on a runtime
 
-- [Bridge Runtime](bridge-runtime.md): repository profiling, purchasing with the buyer signer and spend ledger, resolution selection, atomic apply, crash recovery, dependency installs, acceptance runs, and receipt delivery.
-- [Server Runtime](server-runtime.md): request handling, persistence, the x402 payment seam and its background jobs, demand privacy, startup gates, and operational failures.
-- [Deployment](deployment.md): target environment, role separation, migrations, release checks, enabling paid tools, rollout, rollback, and buyer setup.
+- [Bridge Runtime](bridge-runtime.md): repository profiling, the adoption record in previews, purchasing with the buyer signer and spend ledger, resolution selection, atomic apply, crash recovery, dependency installs, acceptance runs, and receipt delivery with the opt-in agent id.
+- [Server Runtime](server-runtime.md): request handling, persistence, the x402 payment seam and its background jobs, demand privacy, ERC-8004 reputation (the attester and the summary cache), startup gates, and operational failures.
+- [Deployment](deployment.md): target environment, role separation, migrations, release checks, enabling paid tools, turning on ERC-8004 reputation, rollout, rollback, and buyer setup.
 
 ## Produce evidence
 

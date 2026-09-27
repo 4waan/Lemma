@@ -1,6 +1,6 @@
 # Deployment
 
-This runbook describes the target Arbitrum Sepolia submission environment. The server, container, and x402 paid path are implemented; warranty and public deployment remain pending.
+This runbook describes the target Arbitrum Sepolia submission environment. The server, container, x402 paid path, and ERC-8004 reputation are implemented; warranty and public deployment remain pending.
 
 ## Target environment
 
@@ -18,11 +18,15 @@ Create distinct testnet identities for:
 - capability provider and x402 recipient;
 - facilitator transaction signer;
 - outcome evaluator;
-- benchmark and pilot buyers.
+- benchmark and pilot buyers;
+- ERC-8004 agent owner, which registers the provider agent and stays off the server;
+- ERC-8004 attester, which posts feedback from the server.
 
 Record public addresses in the deployment evidence. Keep keys in scoped local or Railway secrets. Do not place a buyer or benchmark key in the hosted product service.
 
 The facilitator key (`FACILITATOR_PRIVATE_KEY`) pays settlement gas and needs Sepolia ETH. It never receives USDC, and it is a Railway secret of the server only. A buyer key lives in `lemma-signer`'s key file on the buyer's machine, never in an environment variable (see [Buyer setup](#buyer-setup)).
+
+The attester key (`ATTESTER_PRIVATE_KEY`) signs every ERC-8004 feedback and needs Sepolia ETH for gas; it is a Railway secret of the server only. The agent owner key (`AGENT_OWNER_PRIVATE_KEY`) is used only by the register script, on a machine that is not the server. The two keys must differ, and the owner must never approve the attester for the agent: the reputation registry refuses feedback from an agent's owner and from anyone the owner approved.
 
 ## Pre-deployment gate
 
@@ -47,8 +51,9 @@ Production releases must not load `packages/catalog/releases.provisional`. Publi
 4. Deploy one Railway replica from `ops/Dockerfile` with `TRUSTED_PROXY_HOPS=1`.
 5. Verify `/healthz`, the free MCP preview, immutable release reads, dashboard assets, security headers, and graceful shutdown.
 6. Set `PAID_TOOLS=on` as described in [Enabling paid tools](#enabling-paid-tools).
-7. Complete one successful payment, a deliberately lost response and recovery, warranty activation, evaluator pass, evaluator failure, refund credit, and withdrawal.
-8. Publish only scrubbed, secret-free deployment evidence.
+7. Optionally, register the provider agent and turn on reputation as described in [Turning on ERC-8004 reputation](#turning-on-erc-8004-reputation).
+8. Complete one successful payment, a deliberately lost response and recovery, warranty activation, evaluator pass, evaluator failure, refund credit, and withdrawal.
+9. Publish only scrubbed, secret-free deployment evidence.
 
 ## Database migrations
 
@@ -75,6 +80,21 @@ Set `PAID_TOOLS=on` only with `PROVIDER_ADDRESS` set, `FACILITATOR_PRIVATE_KEY` 
 At startup the server checks that the RPC serves chain 421614 and refuses to start otherwise. It logs the facilitator address, warns when the facilitator holds no ETH, and starts the settlement reconciler and the receipt verifier, which each run every minute. There are no public facilitator endpoints to verify.
 
 The reconciler needs `eth_getBlockByNumber` for past blocks and `eth_getLogs` filtered by address and topics. Choose an RPC plan that serves `eth_getLogs` over at least 10,000 blocks per request. A provider with a smaller limit still works, more slowly: the reconciler halves a range the RPC refuses with a JSON-RPC error, down to one block, and doubles it again after each accepted range, back up to 10,000.
+
+## Turning on ERC-8004 reputation
+
+Reputation is optional and changes nothing until it is configured. Its table (`reputation_posts`) and the receipts' `buyer_agent_id` column come with the normal migration.
+
+`PUBLIC_BASE_URL` is checked at startup even while reputation is off. It must be an absolute http(s) URL without credentials, query, or fragment, such as `https://lemma.example`; startup is refused otherwise, with an error that names the variable. Fix or clear an old value before deploying.
+
+1. Set `PUBLIC_BASE_URL` to the server's https URL and deploy, so the registration file answers at `/api/v1/agent/registration.json`.
+2. On a machine that holds the agent owner key, not the server, run `npm run agent:register -w @lemma/server` with `AGENT_OWNER_PRIVATE_KEY`, `ARBITRUM_SEPOLIA_RPC_URL`, and `PUBLIC_BASE_URL` in the environment. It prints the agentId. The owner key needs a little Sepolia ETH.
+3. Fund a separate attester key with a little Sepolia ETH for gas. Set `LEMMA_AGENT_ID` to the printed id, and `ATTESTER_PRIVATE_KEY` and `ARBITRUM_SEPOLIA_RPC_URL` as Railway secrets, then redeploy. The attester also needs `DATABASE_URL`, which production requires anyway.
+4. The server logs `reputation.on` with the attester address. Record that address in the deployment evidence: it is the only reviewer Lemma's summaries count. If the registry would refuse the attester's feedback to the provider's agent, the attester logs `reputation.self_feedback` or `reputation.no_such_agent` and stops.
+
+The attester's log search does not shrink its range the way the reconciler does. With an RPC plan that serves `eth_getLogs` over fewer than 10,000 blocks, set `ERC8004_LOG_RANGE` to what the plan allows; otherwise a post that was already attempted is never finished.
+
+The server also serves the registration file at `/.well-known/agent-registration.json` under its own root. ERC-8004's endpoint-domain check reads that path at the domain root, so when `PUBLIC_BASE_URL` has a path prefix, whatever serves the domain root must answer it with the same file.
 
 ## Runtime checks
 

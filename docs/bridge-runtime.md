@@ -10,6 +10,10 @@ Monorepo package selection is explicit. Parent traversal, dotfile segments, symb
 
 Before a purchase, the bridge fetches the release's base probe and hashes the relevant local files. A changed, missing, oversized, linked, or unexpected path is reported as drift without uploading its contents.
 
+## Adoption record in previews
+
+When a release matched, the server may add its capability's public adoption record to the preview result as `_meta["lemma/reputation"]`, `{ passBps, count }`. The bridge parses it with core `ReleaseReputation`; a missing or malformed record reads as none and never fails the preview, and a no-match preview never shows one. The answer then ends with ` Record: pass <p>%, n <count>.`, numbers only. The pass rate comes from basis points and is never rounded up (`9750` is `97.5%`, `9999` is `99.99%`), and the count is how many finalized adoptions Lemma's attester posted. The record is left out whole when adding it would take the answer past 600 characters.
+
 ## Purchasing
 
 `lemma_buy_resolution` is registered only when a signer answers at `LEMMA_SIGNER_SOCKET` (default `<state>/signer/signer.sock`) in a directory nobody else can write to, the spending policy variables parse, and `LEMMA_REFUND_TO`, when set, is a usable address. Otherwise the bridge says on stderr why purchases are off. One purchase is one MCP call, and nothing on it reads or writes the chain:
@@ -85,3 +89,5 @@ On Linux, optional offline mode creates a new network namespace with loopback en
 The first started acceptance run creates the receipt that counts. Retryable server responses and network failures are retried later. Final mismatches are retained and reported.
 
 `lemma-signer` signs the receipt over core `adoptionReceiptTypedData` when a signer answers. If signing fails, the bridge keeps the receipt and never submits it unsigned; it is signed at the next verify. Without a signer, the receipt is sent unsigned and the server stores it as unverified. The receipt is posted with the preview id, which proves the sender is the buyer, and the server's receipt verifier then checks its signature against the resolution's buyer.
+
+With `LEMMA_AGENT_ID` set, the receipt is posted with `agentId`, this agent's own ERC-8004 agent id, beside the receipt rather than inside it. The bridge checks the value at startup and refuses to start with an invalid one; without it, no receipt names an agent. The server stores the id with the receipt, and once the outcome is finalized its attester gives that agent the same feedback it gives the provider, but only when the address that paid owns the agent or is its ERC-8004 agent wallet. Opting in therefore publishes that the paying wallet adopted each resolution (see [Security Model](security-model.md#reputation-threat-model)). The value is the buyer agent's id, never the server's `LEMMA_AGENT_ID`.

@@ -31,6 +31,8 @@ The bridge creates a receipt after the release's acceptance command starts. The 
 
 Receipts are compatibility observations. They can update pass-rate estimates and support a warranty outcome, but they do not replace the paired benchmark as evidence of savings.
 
+A bridge that opted in sends its agent's ERC-8004 id beside the receipt, not inside it, so the receipt and its digest do not change.
+
 ## Canonical data and identifiers
 
 All signed or paid objects use strict versioned schemas. Unknown fields fail validation.
@@ -84,3 +86,14 @@ The digest vectors pin a payment nonce, a claim hash, and a receipt's typed-data
 - Evaluator outcomes, expiry, and buyer withdrawal credit.
 
 Those additions must preserve the existing identifiers, payment terms, recovery behavior, and adoption receipt digest. Any required schema change belongs in `@lemma/core` before paid records are persisted.
+
+## Public adoption record
+
+Finalized outcomes are mirrored as a public record on the ERC-8004 registries on Arbitrum Sepolia (testnet). Matching, pricing, sale decisions, bonds, and refunds never depend on it.
+
+- **Feedback.** For each finalized `passed` or `failed` outcome, Lemma's attester posts `giveFeedback(agentId, value, 0, "lemma.adoption", capability, "", feedbackURI, feedbackHash)` to the provider's agent, with value 100 for a pass and 0 for a failure. Void and abandoned outcomes are never posted. A buyer whose bridge opted in with its own agent id gets the same feedback, but only when the address that paid owns that agent or is its agent wallet.
+- **Feedback file.** `feedbackURI` serves that feedback's own file, and `feedbackHash` is the keccak256 of its bytes: the RFC 8785 canonical JSON of core `AdoptionFeedbackFile`. Its ERC-8004 fields equal the call, and Lemma's evidence sits under `lemma`: resolution, release and profile, capability, recipe digest (digest kind `acceptance-recipe`), acceptance result, verdict, finalization time, and warranty registry. Anyone can fetch the file and check it against the hash on chain.
+- **What it never says.** A file has no field for the buyer or payer, the preview id, the payment nonce, or the settlement, and no `proofOfPayment`. Only a buyer that opts in is linked to its adoptions, through its own agent.
+- **Summary.** The pass rate and count a preview or the catalog shows come from `getSummary(providerAgentId, [attester], "lemma.adoption", capability)`, which counts only Lemma's attester. The bridge receives it as `_meta["lemma/reputation"]` on the preview result; `PreviewResult` does not change.
+
+The digest vectors pin an example feedback file's bytes and hash. See [Server Runtime](server-runtime.md#erc-8004-reputation) for how the attester posts, and [Security Model](security-model.md#reputation-threat-model) for what the record reveals.

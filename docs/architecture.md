@@ -20,6 +20,8 @@ The Hono server hosts the stateless MCP endpoint, deterministic resolver, durabl
 
 Free preview, recovery, and the x402 paid tool are implemented. The paid tool runs an in-process x402 facilitator with no public endpoints, a settlement reconciler, and a receipt signature verifier. The provider voucher signer remains pending with the warranty work.
 
+In the background, the server's attester posts each finalized outcome as ERC-8004 feedback on Arbitrum Sepolia, each feedback with its own public feedback file. The server caches the resulting public record for previews and the catalog. It is off until configured, and the outcome pipeline that feeds it finalized outcomes is still pending.
+
 ### Curated catalog
 
 The catalog contains immutable release manifests, patch bundles, supported profiles, fixtures, provenance, acceptance recipes, evidence, prices, and expiry. Catalog validation runs in tests and before the server listens.
@@ -52,12 +54,13 @@ The planned Arbitrum Sepolia contract holds provider bond, activates signed warr
 - The server receives typed repository metadata, not source by default.
 - The catalog is curated and validated before it can influence a preview.
 - Provider, facilitator, evaluator, buyer, and deployer identities are separate roles.
+- The ERC-8004 attester key only publishes feedback: it holds gas and nothing else, and it is not the key that owns the provider's agent.
 - The evaluator is trusted for MVP pass and failure attestations.
 - The dashboard is informational and cannot mutate product or chain state.
 
 ## End-to-end flow
 
-Every step is implemented except the warranty voucher in step 7 and the onchain outcome in step 10, which require the warranty work.
+Every step is implemented except the warranty voucher in step 7 and the onchain outcome in step 10, which require the warranty work. Step 11 is implemented but waits for the outcome pipeline to feed it finalized outcomes.
 
 1. The agent calls the bridge's `lemma_preview` tool with a typed capability.
 2. The bridge reads allowlisted package metadata and asks the server for a free preview.
@@ -69,8 +72,9 @@ Every step is implemented except the warranty voucher in step 7 and the onchain 
 8. The bridge stores the delivery after checking it against the offer, or recovers a lost paid response for free; it never pays twice. It verifies the manifest and bundle, and previews or applies it.
 9. The bridge runs the reviewed acceptance recipe and creates an Adoption Receipt, which the signer signs.
 10. The server records the receipt and checks its signature against the buyer. The evaluator can later finalize the onchain warranty outcome.
+11. Lemma's attester posts the finalized outcome as ERC-8004 feedback to the provider's agent, and to the buyer's agent if it opted in and the paying address controls it. Previews and the catalog show the cached pass rate and count.
 
-Nothing on an agent's tool call reads or writes the chain except the payment itself, and the agent never holds ETH: the facilitator pays gas. See [Server Runtime](server-runtime.md) and [Bridge Runtime](bridge-runtime.md) for the paid path's details.
+Nothing on an agent's tool call reads or writes the chain except the payment itself; a preview's reputation record comes from the server's cache. The agent never holds ETH: the facilitator pays gas. See [Server Runtime](server-runtime.md) and [Bridge Runtime](bridge-runtime.md) for the paid path's details.
 
 ## Hosted interfaces
 
@@ -88,7 +92,7 @@ See [Protocol](protocol.md) for identifiers, evidence binding, pricing, and rece
 
 ## Persistence
 
-Postgres stores immutable releases and bundles, catalog snapshots, offer-bearing previews, prepared and settled resolutions with the buyer's warranty claim hash, adoption receipts with their signature verdict, and privacy-thresholded demand data.
+Postgres stores immutable releases and bundles, catalog snapshots, offer-bearing previews, prepared and settled resolutions with the buyer's warranty claim hash, adoption receipts with their signature verdict and the buyer's opted-in ERC-8004 agent id, the ERC-8004 attester's ledger (one feedback per finalized outcome and target, with its feedback file's bytes), and privacy-thresholded demand data.
 
 `ResolutionService` is the payment integration seam. Conditional transitions prevent duplicate preparation, payment reuse, and duplicate settlement. Settlement is keyed by the payment authorization, not the transaction, since one transaction can carry several authorizations. The reconciler commits or expires a row only by the authorization it checked, and commits it only when that authorization's transaction paid the quoted amount to the quoted payee.
 

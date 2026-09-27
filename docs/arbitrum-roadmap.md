@@ -21,7 +21,7 @@ Today's design, which the paid path is building:
 
 A delegation moves the daily cap, the token, the payee and an expiry onto the chain. Then a compromised bridge, a leaked session key, or an acceptance test that reads the key can spend at most the daily cap, only in USDC, only to Lemma's provider, and only until the expiry. Money can only reach the payee, so a thief cannot take funds; the worst case is unwanted purchases within the cap. That bounded worst case is what would let the bridge keep its own session key and retire the separate signer.
 
-| | Today (EIP-3009, being built) | With a delegation (roadmap) |
+| | Paid path (EIP-3009, being built) | With a delegation (roadmap) |
 | --- | --- | --- |
 | Where the buyer's main key lives | In `lemma-signer`, used for every purchase; ideally another user or a hardware or remote signer | Used twice at setup, then can go offline (a hardware wallet or cold storage) |
 | What signs each purchase | The main key, through the signer | A session key the bridge holds |
@@ -47,7 +47,7 @@ What stays the same: `checkPurchase`, the ledger, recovery after a lost answer, 
   - The session account spends a permission by calling `redeemDelegations(permissionContexts, modes, executionCallData)` on the delegation manager.
   - A delegation names a delegate, a delegator, an authority (for chains of delegations), caveats (each an enforcer contract with its terms), a salt and a signature.
   - The spec says to check a delegation by simulating the call.
-- **How MetaMask's `DelegationManager` executes a transfer** (from its source [3]): the last delegation's delegate must be the caller; each signature is checked (ECDSA for a plain account, ERC-1271 for a contract); disabled delegations are refused; every caveat's hooks run before and after the call; the root delegator executes the transfer; and a `RedeemedDelegation` event logs the full delegation.
+- **How MetaMask's `DelegationManager` executes a transfer** (from its source [3]): the leaf delegation, which comes first in the permission context (ordered leaf to root), must name the caller as its delegate, or the open delegate `ANY_DELEGATE` (`0xa11`); each signature is checked (ECDSA for a plain account, ERC-1271 for a contract); disabled delegations are refused; every caveat's hooks run before and after the call; the root delegator executes the transfer; and a `RedeemedDelegation` event logs the full delegation.
 - **EIP-7702 on Arbitrum.** ArbOS 40 added EIP-7702 on Arbitrum Sepolia on May 6, 2025 and on Arbitrum One on June 17, 2025 [13][14]. An existing externally owned account signs an authorization that points it at delegation code, and a type-4 transaction carries that authorization; the address does not change [12]. Any account may send that transaction and pay its gas [12], so Lemma's facilitator can do it and the user needs no ETH. After the upgrade to MetaMask's `EIP7702StatelessDeleGatorImpl`, the account still accepts signatures by its own key through ERC-1271 [3], so the plain EIP-3009 path keeps working.
 
 ### 1.3 MetaMask Delegation Framework on Arbitrum
@@ -99,14 +99,14 @@ MetaMask's own x402 guide describes a local root key as "Best for AI agents and 
 One-time setup, run by one command (a future `lemma-mcp setup`):
 
 1. The bridge creates a session key in its private state directory.
-2. The user's key (the buyer wallet the signer holds today) signs an EIP-7702 authorization that points the account at `EIP7702StatelessDeleGatorImpl`. Lemma's facilitator sends the type-4 transaction, so the user needs no ETH. It costs about 21,000 gas plus 25,000 per authorization, part of which is refunded for an account that already exists [12].
+2. The user's key (the buyer wallet that the paid path's signer holds) signs an EIP-7702 authorization that points the account at `EIP7702StatelessDeleGatorImpl`. Lemma's facilitator sends the type-4 transaction, so the user needs no ETH. It costs about 21,000 gas plus 25,000 per authorization, part of which is refunded for an account that already exists [12].
 3. The same key signs one root delegation to the session key, with these caveats: `ERC20PeriodTransferEnforcer` (USDC, the daily cap, a period of 86,400 seconds), `AllowedCalldataEnforcer` (the payee), `TimestampEnforcer` (the expiry) and `ValueLteEnforcer` (0). The root delegation is an off-chain signature and costs nothing until it is used.
 4. The user's key is then not needed for purchases, and can go offline.
 
 Each purchase afterwards:
 
 - The bridge's session key signs a per-payment delegation to the facilitator, chained to the root delegation, limited to the price, the payee and a short expiry. This is local, takes milliseconds, and makes no chain call.
-- **No second payment per resolution.** Today USDC refuses a reused EIP-3009 nonce, and the nonce is derived from the resolution and the preview id. ERC-7710 has no such nonce, so the design must carry the property over. A proposal to prove in a fork test first: derive every field of the per-payment delegation from the resolution (the salt from the same derived nonce, the amount and payee from the terms, the expiry from the quote), and add `LimitedCallsEnforcer` with a limit of 1. That enforcer counts redemptions per delegation hash [3], and the hash does not cover the signature, so a retry signs the same delegation and the chain refuses to redeem it twice. The server's own one-payment-per-resolution guard stays.
+- **No second payment per resolution.** In the paid path, USDC refuses a reused EIP-3009 nonce, and the nonce is derived from the resolution and the preview id. ERC-7710 has no such nonce, so the design must carry the property over. A proposal to prove in a fork test first: derive every field of the per-payment delegation from the resolution (the salt from the same derived nonce, the amount and payee from the terms, the expiry from the quote), and add `LimitedCallsEnforcer` with a limit of 1. That enforcer counts redemptions per delegation hash [3], and the hash does not cover the signature, so a retry signs the same delegation and the chain refuses to redeem it twice. The server's own one-payment-per-resolution guard stays.
 - **Budget checks.** `ERC20PeriodTransferEnforcer` has a view, `getAvailableAmount`, that shows the remaining daily budget [3]. The bridge must not call it inside a tool call (UX rule 1), so it keeps its own ledger as the first check, and the facilitator's simulation is the last one. A budget that is used up fails the simulation, and the paid call answers with a code and charges nothing.
 
 Renewal and revocation:
@@ -121,7 +121,7 @@ This path fits UX rule 5: one automated setup step, then no clicks.
 Funds stay in the user's MetaMask. The steps [4][6][7]:
 
 1. MetaMask's browser extension, version 13.23.0 or later. That release (March 19, 2026) "Enables token permissions via EIP-7715"; 13.32.1 (May 28) added allowance types, and 13.38.0 (July 3) enabled ERC-7715 requests "over the Multichain API and MetaMask Connect". MetaMask Mobile's changelog has no entry adding the method. MetaMask lists Arbitrum One and Arbitrum Sepolia as supported.
-2. The account must be upgraded to a MetaMask smart account (EIP-7702). MetaMask prompts for the upgrade during the request; whether that needs Sepolia ETH could not be verified.
+2. The account must be upgraded to a MetaMask smart account (EIP-7702). MetaMask prompts for the upgrade during the request (search summary only, not verified [32]); whether that needs Sepolia ETH could not be verified either.
 3. The bridge opens a local page (for example `http://127.0.0.1:<port>/grant`) that requests `erc20-token-periodic` for USDC with the daily cap, a period of 86,400 seconds, an expiry, a `payee` rule and `isAdjustmentAllowed: false`. The user clicks Approve, which is a signature, not a transaction. The bridge stores the context and the delegation manager's address.
 4. At each expiry, step 3 repeats. Revoking costs gas.
 
@@ -153,7 +153,7 @@ All gas figures in this table are **estimates** from MetaMask's code paths (an x
 - That is about 2.5 to 3.5 times a plain EIP-3009 transfer (about 80,000 gas, also an estimate; [arbitrum.md](arbitrum.md) section 1).
 - The first purchase under a new permission costs about 90,000 more (estimate), because the period enforcer fills empty storage slots.
 - **In ETH.** Arbitrum One's minimum L2 base fee was set to 0.02 gwei on January 8, 2026, and since ArbOS 61 it can change without a governance vote [14], so re-check it before quoting. At 0.02 gwei, 200,000 to 280,000 gas is 0.000004 to 0.0000056 ETH, against 0.0000016 ETH for a plain transfer, plus an L1 data fee that grows with the larger calldata.
-- **Against the price bound.** At an assumed 3,000 USD per ETH, the difference is about one US cent per purchase, before the L1 data fee. In the worked example of [economic-gates.md](economic-gates.md) (assumptions, not data: C = 2.50, S = 1.30), the 30% rule caps the price at 0.39 USDC for any chain cost `g` up to 0.285 USDC, so an extra cent leaves the price unchanged. The facilitator pays the gas, so it comes out of the provider's margin, about 0.34 USDC per resolution in that example.
+- **Against the price bound.** At an assumed 3,000 USD per ETH, the difference is about one US cent per purchase, before the L1 data fee. In the worked example of [economic-gates.md](economic-gates.md) (assumptions, not data: C = 2.50, S = 1.30), the 30% rule caps the price at 0.39 USDC for any chain cost `g` up to 0.285 USDC, so an extra cent leaves the price unchanged. The facilitator pays the gas, so it comes out of the provider's margin: about 0.34 USDC per resolution before evidence cost in that example (q = 0.10, g = 0.01; assumptions, not data).
 - **Latency.** Per purchase, the bridge signs locally and the facilitator runs one simulation and one transaction: the same shape as today's EIP-3009 settlement. Setup adds one type-4 transaction, sent by Lemma's facilitator.
 
 ### 1.7 Trust points
@@ -191,7 +191,7 @@ Contracts, x402 facilitator code, signing and typed-data layouts belong to the p
 
 ### 2.1 The idea
 
-Today the bridge sends the server an allowlisted repository profile: language, Node major, package manager, module system, frameworks, and the exact versions of the dependencies in the catalog's published interest set. The server matches it against the catalog. A zero-knowledge proof would let a buyer show that its repository fits a release's supported profile without revealing the profile: "privacy-preserving procurement for agents". It is also the private form of idea H in [arbitrum.md](arbitrum.md) section 3, an on-chain fit check that would otherwise need the buyer's profile on chain.
+Today the bridge sends the server an allowlisted repository profile: language, Node major, package manager, module system, frameworks, and the exact versions of the dependencies in the catalog's published interest set. The server matches it against the catalog. A zero-knowledge proof would let a buyer show that its repository fits a release's supported profile without revealing the profile: privacy-preserving procurement for agents. It is also the private form of idea H in [arbitrum.md](arbitrum.md) section 3, an on-chain fit check that would otherwise need the buyer's profile on chain.
 
 ### 2.2 What a proof can say, and what it cannot
 
@@ -210,14 +210,14 @@ Today the bridge sends the server an allowlisted repository profile: language, N
 
 | System | Proving time | Install size | On-chain verification | Setup |
 | --- | --- | --- | --- | --- |
-| Noir with Barretenberg (UltraHonk) | 137.6 ms median for a trivial circuit in Node on 2 CPUs [21]; with the native prover, 0.52 s at 2^12 gates up to 1.73 s at 2^16 [22] | `@aztec/bb.js` 5.2.0: 156,572,374 bytes unpacked (about 157 MB) [24]; the native `bb` binary about 44.6 MB [23] | About 2.43 million gas [20]; raw generated verifiers came out 64 to 65 bytes over the 24,576-byte contract limit until patched [20] | No per-circuit trusted setup |
+| Noir with Barretenberg (UltraHonk) | 137.6 ms median for a trivial circuit in Node on 2 CPUs [21]; with the native prover (`bb` 0.63.0, on a laptop), 0.52 s at 2^12 gates, 1.13 s at 2^15 and 1.73 s at 2^16 [22] | `@aztec/bb.js` 5.2.0: 156,572,374 bytes unpacked (about 157 MB) [24]; the native `bb` binary about 44.6 MB [23] | About 2.43 million gas [20]; raw generated verifiers came out 64 to 65 bytes over the 24,576-byte contract limit until patched [20] | No per-circuit trusted setup |
 | Circom with snarkjs (Groth16) | 143 ms for a trivial circuit [21]; 4.1 to 4.7 s for AegisClear's 115,066-constraint circuit [25] | `snarkjs` 0.7.6: 9,671,132 bytes unpacked (about 9.7 MB) [24], plus the circuit's files and proving key | 229,241 gas measured by AegisClear with 6 public inputs [25]; about 181,000 plus 6,150 per public input by the pairing prices of EIP-1108 [26] (derived) | A trusted setup: whoever runs a single-party setup can forge proofs [25] |
 | zkVMs (SP1, RISC Zero) [28] | About 19 s for a trivial RISC Zero receipt on a CPU, and compressing it for on-chain use "needs GPU" [21] | Large | About 270,000 to 300,000 gas for SP1 (search summary only) | Ruled out for per-purchase use |
 
-- **Per purchase** (derived from the rows above): a small predicate of 2^12 to 2^15 gates should prove in roughly 0.15 to 1.1 seconds. **UX gap: holds implementation.** It lifts when proving happens outside the purchase call, for example in the background right after a preview that found an offer, and is reused while the profile is unchanged, and when a measurement shows no added wait on the purchase path.
+- **Per purchase** (derived from the native prover's figures above): a small predicate of 2^12 to 2^15 gates should prove in about 0.5 to 1.1 seconds. A trivial circuit in `bb.js` takes about 0.14 seconds, but a real predicate is larger. **UX gap: holds implementation.** It lifts when proving happens outside the purchase call, for example in the background right after a preview that found an offer, and is reused while the profile is unchanged, and when a measurement shows no added wait on the purchase path.
 - **Install:** about 157 MB for the Noir prover package, or a 44.6 MB native binary, next to a bridge that is small today. **UX gap: holds implementation.** It lifts when the prover is an optional component installed only for users who opt in, with the default install unchanged. snarkjs is smaller, but Groth16 needs a trusted setup with several independent contributors.
 - **Stylus does not make verification cheaper.** The pairing check is a precompile at the same price either way. A Groth16 verifier written for Stylus cost 256,334 gas against 194,396 in Solidity [27], and AegisClear kept its verifier in Solidity: "We do not claim that Stylus makes ZK cheaper" [25].
-- **On-chain cost, and why to verify only in disputes** (estimates, assuming Arbitrum One's 0.02 gwei minimum base fee [14] and 3,000 USD per ETH): a Groth16 check is about 0.0000046 ETH (about 1.4 cents), and an UltraHonk check about 0.00005 ETH (about 15 cents) plus the L1 fee for a 14.6 KB proof. Charged on every purchase, 15 cents would cut the worked example's provider margin in [economic-gates.md](economic-gates.md) from about 0.34 to about 0.20 USDC. Verification belongs off chain by default, and on chain only in a dispute.
+- **On-chain cost, and why to verify only in disputes** (estimates, assuming Arbitrum One's 0.02 gwei minimum base fee [14] and 3,000 USD per ETH): a Groth16 check is about 0.0000046 ETH (about 1.4 cents), and an UltraHonk check about 0.00005 ETH (about 15 cents) plus the L1 fee for a 14.6 KB proof. Charged on every purchase, 15 cents would cut the worked example's provider margin in [economic-gates.md](economic-gates.md) (about 0.34 USDC before evidence cost, with q = 0.10 and g = 0.01; assumptions, not data) to about 0.19 USDC. Verification belongs off chain by default, and on chain only in a dispute.
 - **Privacy stays partial.** The constraints R are public, and the sender of an on-chain proof links purchases unless a relayer sends it.
 
 ### 2.4 The salted profile commitment it needs first
@@ -262,7 +262,7 @@ Each row holds implementation until the condition in the last column is met.
 | Bounded spending, path A | An emergency revoke is a transaction from the buyer's account and needs gas | A sponsored `lemma-mcp revoke` |
 | Bounded spending, path B | Desktop extension only, a smart-account upgrade that may need ETH, a browser approval per grant, a renewal at each expiry | A proven one-click local grant page on Arbitrum Sepolia, a sponsored or ETH-free upgrade, a long expiry with a revoke button, and a working path without the extension |
 | ERC-8004 validation requests from buyer agents ([arbitrum.md](arbitrum.md) section 6) | A transaction from the agent's owner for every adoption | A delegated, sponsored call through path A's machinery |
-| ZK proofs | About 0.15 to 1.1 seconds of proving per purchase | Proving outside the purchase call, reused while the profile is unchanged, measured to add no wait |
+| ZK proofs | About 0.5 to 1.1 seconds of proving per purchase (2^12 to 2^15 gates, native prover) | Proving outside the purchase call, reused while the profile is unchanged, measured to add no wait |
 | ZK proofs | About 157 MB for the Noir prover package | An optional prover installed only on opt-in |
 | ZK proofs, CI binding | Needs a GitHub Actions run, so it is not hands-free for local work | An opt-in for teams whose CI already runs, set up by one command |
 
@@ -299,5 +299,6 @@ Each row holds implementation until the condition in the last column is met.
 29. [GitHub Actions OpenID Connect reference](https://docs.github.com/en/actions/reference/security/oidc).
 30. [noir-jwt](https://github.com/zkemail/noir-jwt).
 31. [Reclaim zk-fetch](https://github.com/reclaimprotocol/zk-fetch).
+32. [MetaMask support: Advanced Permissions](https://support.metamask.io/more-web3/dapps/advanced-permissions/) (search summary only; the page could not be opened).
 
-All sources were read on September 27, 2026 as raw files on GitHub or through the npm registry. The Arbitrum, MetaMask and GitHub docs were read from their source repositories, because their websites could not be opened from the build environment. The SP1 verification gas in section 2.3 comes from a search summary only, and is marked there.
+Sources 1 to 31 were read on September 27, 2026 as raw files on GitHub or through the npm registry. The Arbitrum, MetaMask and GitHub docs were read from their source repositories, because their websites could not be opened from the build environment. Two facts come from search summaries only, and are marked where they appear: the SP1 verification gas in section 2.3, and MetaMask's upgrade prompt in section 1.5 (source 32). Re-check both before quoting them.

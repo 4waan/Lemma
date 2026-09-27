@@ -11,7 +11,7 @@ export function Status({ view }: { view: StatusView }) {
   return (
     <>
       <PageHead eyebrow="Status" title="System status">
-        <p className="lead">What this server is running right now. The dashboard itself is read-only: it holds no keys and cannot sign or change anything.</p>
+        <p className="lead">What this server is running right now.</p>
       </PageHead>
       <dl className="stats">
         <Stat

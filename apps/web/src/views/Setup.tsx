@@ -1,9 +1,12 @@
+import { useState } from "react";
+
 import { CodeBlock } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
-import { Badge, Built, Callout, PageHead, Section } from "../components/ui.js";
+import { Badge, Built } from "../components/ui.js";
 
 const CHECKOUT = "<path to your Lemma checkout>";
 const PLACEHOLDER_SERVER = "https://<this server>";
+const BRIDGE = `${CHECKOUT}/apps/bridge/dist/main.js`;
 
 /**
  * Where the bridge should reach this server. The built dashboard is served by
@@ -17,123 +20,183 @@ export function serverOrigin(): string {
   return /^https?:\/\/[^/]+$/.test(origin) ? origin : PLACEHOLDER_SERVER;
 }
 
+type AgentId = "cursor" | "claude" | "other";
+
+const AGENTS: ReadonlyArray<{ readonly id: AgentId; readonly label: string }> = [
+  { id: "cursor", label: "Cursor" },
+  { id: "claude", label: "Claude Code" },
+  { id: "other", label: "Other agents" },
+];
+
 /** Static: how to build, register and use the local bridge. Nothing here comes from the API. */
 export function Setup() {
-  const mcpConfig = JSON.stringify({ mcpServers: { lemma: { command: "node", args: [`${CHECKOUT}/apps/bridge/dist/main.js`], env: { LEMMA_API_URL: serverOrigin() } } } }, null, 2);
+  const [agent, setAgent] = useState<AgentId>("cursor");
+  const server = serverOrigin();
+  const stdioConfig = JSON.stringify({ mcpServers: { lemma: { command: "node", args: [BRIDGE], env: { LEMMA_API_URL: server } } } }, null, 2);
+  const register: Readonly<Record<AgentId, { title: string; label: string; code: string; note: string }>> = {
+    cursor: { title: "Add it to Cursor", label: ".cursor/mcp.json", code: stdioConfig, note: "Paste it into your project's .cursor/mcp.json. The page fills in this server's address." },
+    claude: {
+      title: "Add it to Claude Code",
+      label: "in your project",
+      code: `claude mcp add --env LEMMA_API_URL=${server} lemma -- node ${BRIDGE}`,
+      note: "Registers the bridge for this project. Check the flags against claude mcp add --help if your version differs.",
+    },
+    other: { title: "Add it to your agent", label: "MCP configuration", code: stdioConfig, note: "Any MCP client that starts servers over stdio accepts this shape. Use your agent's own file and key names." },
+  };
+  const rule: Readonly<Record<AgentId, { code: string; note: string }>> = {
+    cursor: { code: `node ${BRIDGE} install-rule --agent cursor .`, note: "Writes .cursor/rules/lemma.mdc. It tells the agent to check Lemma before building an x402 integration." },
+    claude: { code: `node ${BRIDGE} install-rule --agent claude .`, note: "Writes .claude/rules/lemma.md, which Claude Code loads at the start of every session." },
+    other: { code: `node ${BRIDGE} install-rule --agent agents .`, note: "Adds a marked block to AGENTS.md, which many coding agents read. Your own text in the file is left as it is." },
+  };
   return (
-    <>
-      <PageHead eyebrow="Setup" title="Connect your coding agent">
-        <p className="lead">
-          The Lemma bridge is a local MCP server that runs beside your agent. It keeps repository access, spending limits and patch application on your machine, and asks this
-          server for previews.
-        </p>
-      </PageHead>
-      <Callout title="Built from a checkout for now">
-        <p>The bridge is not published as a package yet. Build it from a Lemma checkout with Node 22 or newer.</p>
-      </Callout>
-      <ol className="setup-steps">
-        <li>
-          <h3>Build the bridge</h3>
-          <CodeBlock label="in your Lemma checkout" code={"npm ci\nnpm run build"} />
-        </li>
-        <li>
-          <h3>Register it with your agent</h3>
-          <p>
-            Add the bridge to your agent's MCP configuration. For Cursor that is <code>.cursor/mcp.json</code>.
-          </p>
-          <CodeBlock label=".cursor/mcp.json" code={mcpConfig} />
-        </li>
-        <li>
-          <h3>Install the Lemma rule</h3>
-          <p>The rule tells the agent to call lemma_preview before building an x402 integration. It stays under 600 characters, because the agent reads it on every turn.</p>
-          <CodeBlock label="in your project" code={`node ${CHECKOUT}/apps/bridge/dist/main.js install-rule .`} />
-        </li>
-        <li>
-          <h3>Ask for the integration</h3>
-          <p>
-            Ask your agent to add x402 payment gating to a TypeScript MCP server, or to build an x402-paying MCP client. It checks with Lemma first and follows the answer. In a
-            monorepo it passes the package directory.
-          </p>
-        </li>
-      </ol>
-
-      <Section title="Tools your agent sees" intro="The bridge answers in short text built from codes and numbers, so catalog prose never reaches the model.">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Tool</th>
-                <th scope="col">What it does</th>
-                <th scope="col">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {TOOLS.map((t) => (
-                <tr key={t.name}>
-                  <td>
-                    <code>{t.name}</code>
-                  </td>
-                  <td>{t.text}</td>
-                  <td>
-                    <Built built={t.built} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Section>
-
-      <Section title="Configuration" intro="An empty value counts as unset. The state directory must sit outside the workspace.">
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Variable</th>
-                <th scope="col">Meaning</th>
-                <th scope="col">Default</th>
-              </tr>
-            </thead>
-            <tbody>
-              {SETTINGS.map((s) => (
-                <tr key={s.name}>
-                  <td>
-                    <code>{s.name}</code>
-                    {s.later ? (
-                      <>
-                        {" "}
-                        <Badge tone="warn">payment work</Badge>
-                      </>
-                    ) : null}
-                  </td>
-                  <td>{s.text}</td>
-                  <td>{s.fallback}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="small muted">
-          Keep the buyer key out of the bridge's environment: acceptance tests run as your user and could read it, so the verify tool refuses to run while a wallet secret is
-          present. Use a signer that runs as another user, or a hardware or remote signer.
-        </p>
-      </Section>
-
-      <Section title="What the bridge never does">
-        <ul className="check-list warn">
-          {NEVER.map((item) => (
-            <li key={item}>
-              <Icon name="shield" />
-              <span>{item}</span>
+    <div className="start">
+      <aside className="start-aside">
+        <span className="eyebrow">Get started</span>
+        <h1>Connect your agent</h1>
+        <p className="lead">About three minutes. The bridge runs on your machine and never sends your code.</p>
+        <div className="need">
+          <span className="field-label">You need</span>
+          <ul className="check-list">
+            <li>
+              <Icon name="check" />
+              <span>Node 22 or newer</span>
             </li>
+            <li>
+              <Icon name="check" />
+              <span>A copy of the Lemma repository. The bridge is built from a checkout for now.</span>
+            </li>
+          </ul>
+        </div>
+      </aside>
+      <div>
+        <div className="tabs" role="tablist" aria-label="Your agent">
+          {AGENTS.map((a) => (
+            <button key={a.id} type="button" role="tab" id={`tab-${a.id}`} aria-selected={agent === a.id} aria-controls="setup-steps" onClick={() => setAgent(a.id)}>
+              {a.label}
+            </button>
           ))}
-        </ul>
-      </Section>
+        </div>
+        <ol className="start-steps" id="setup-steps" role="tabpanel" aria-labelledby={`tab-${agent}`}>
+          <li>
+            <div>
+              <h3>Build the bridge</h3>
+              <CodeBlock label="in your Lemma checkout" code="npm ci && npm run build" />
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>{register[agent].title}</h3>
+              <CodeBlock label={register[agent].label} code={register[agent].code} />
+              <p className="note">{register[agent].note}</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Install the rule</h3>
+              <CodeBlock label="in your project" code={rule[agent].code} />
+              <p className="note">{rule[agent].note}</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Ask for an integration</h3>
+              <p className="prompt-bubble">Add x402 payment gating to my MCP server.</p>
+              <p className="note">Your agent checks Lemma first and follows the answer. In a monorepo it also passes the package directory.</p>
+            </div>
+          </li>
+        </ol>
 
-      <Section title="Agent support">
-        <p>Cursor is supported today through its MCP configuration and rules. Any MCP client can start the bridge over stdio; the rule file is specific to Cursor.</p>
-      </Section>
-    </>
+        <details className="accordion">
+          <summary>
+            Tools your agent sees <Icon name="chevron" size={18} />
+          </summary>
+          <div className="accordion-body">
+            <p>The bridge answers in short text built from codes and numbers, so catalog prose never reaches the model.</p>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Tool</th>
+                    <th scope="col">What it does</th>
+                    <th scope="col">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {TOOLS.map((t) => (
+                    <tr key={t.name}>
+                      <td>
+                        <code>{t.name}</code>
+                      </td>
+                      <td>{t.text}</td>
+                      <td>
+                        <Built built={t.built} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>
+
+        <details className="accordion">
+          <summary>
+            Settings and spending limits <Icon name="chevron" size={18} />
+          </summary>
+          <div className="accordion-body">
+            <p>An empty value counts as unset. The state directory must sit outside the workspace.</p>
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Variable</th>
+                    <th scope="col">Meaning</th>
+                    <th scope="col">Default</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {SETTINGS.map((s) => (
+                    <tr key={s.name}>
+                      <td>
+                        <code>{s.name}</code>
+                        {s.later ? (
+                          <>
+                            {" "}
+                            <Badge tone="warn">coming soon</Badge>
+                          </>
+                        ) : null}
+                      </td>
+                      <td>{s.text}</td>
+                      <td>{s.fallback}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="small muted">
+              Keep the buyer key out of the bridge's environment: acceptance tests run as your user and could read it, so the verify tool refuses to run while a wallet secret is
+              present. Use a signer that runs as another user, or a hardware or remote signer.
+            </p>
+          </div>
+        </details>
+
+        <details className="accordion">
+          <summary>
+            What the bridge never does <Icon name="chevron" size={18} />
+          </summary>
+          <div className="accordion-body">
+            <ul className="check-list warn">
+              {NEVER.map((item) => (
+                <li key={item}>
+                  <Icon name="shield" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </details>
+      </div>
+    </div>
   );
 }
 

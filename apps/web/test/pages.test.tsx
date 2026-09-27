@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { WORKED_EXAMPLE, evaluatePricing } from "../src/calculator.js";
 import { CostComparison } from "../src/components/CostChart.js";
 import { Hash } from "../src/components/copy.js";
+import { Logo, LogoMark, MarkMono } from "../src/components/Logo.js";
 import { usdcAmount } from "../src/format.js";
 import { explorerAddressUrl } from "../src/links.js";
 import { parseRoute, titleFor } from "../src/routes.js";
@@ -171,8 +172,14 @@ describe("formatting, links and routes", () => {
     for (const bad of ["0x123", "javascript:alert(1)", `${ARBITRUM_SEPOLIA_USDC}/../x`, `${ARBITRUM_SEPOLIA_USDC} `]) expect(explorerAddressUrl(bad)).toBeNull();
   });
 
-  it("routes the setup page and titles every view", () => {
+  it("routes the setup page, the in-page anchors, and titles every view", () => {
     expect(parseRoute("#/setup")).toEqual({ view: "setup" });
+    expect(parseRoute("#/how-it-works")).toEqual({ view: "overview", anchor: "how-it-works" });
+    expect(parseRoute("#/what-to-trust")).toEqual({ view: "evidence", anchor: "what-to-trust" });
+    expect(parseRoute("#/evidence")).toEqual({ view: "evidence", anchor: null });
+    expect(titleFor({ view: "overview", anchor: null })).toBe("Lemma · Verified integrations for coding agents");
+    expect(titleFor({ view: "evidence", anchor: null })).toBe("Proof · Lemma");
+    expect(titleFor({ view: "setup" })).toBe("Get started · Lemma");
     expect(titleFor({ view: "catalog" })).toBe("Catalog · Lemma");
     expect(titleFor({ view: "resolution", id: null })).toBe("Resolutions · Lemma");
     expect(titleFor({ view: "not-found" })).toBe("Not found · Lemma");
@@ -187,19 +194,42 @@ describe("formatting, links and routes", () => {
 });
 
 describe("pages", () => {
-  it("explains the product and marks what is still being built", () => {
+  it("explains the product in one screen and marks what is still being built", () => {
     const html = renderToStaticMarkup(<Overview />);
-    for (const text of ["What Lemma sells", "How it works", "What leaves your machine", "The pricing rule", "What to trust"]) expect(html).toContain(text);
-    expect(html).toContain("Built");
-    expect(html).toContain("In progress");
-    expect(html).toContain("The warranty registry is not deployed yet");
+    for (const text of ["already proven", "Example session", "How it works", "Why Arbitrum", "Try it in your agent", 'id="how-it-works"']) expect(html).toContain(text);
+    expect(html).toContain("Live");
+    expect(html).toContain("Coming soon");
+    // The example session uses the worked example's numbers and says it is illustrative.
+    expect(html).toContain("Illustrative");
+    expect(html).toContain(`price ${WORKED_EXAMPLE.price} USDC`);
     expect(html).not.toContain("lemma-mcp");
+    // What to trust moved to the proof page, with its anchor.
+    const proof = renderToStaticMarkup(<Evidence view={previewOnly} />);
+    expect(proof).toContain('id="what-to-trust"');
+    expect(proof).toContain("The warranty registry is not deployed yet");
+  });
+
+  it("draws the mark with ids that stay distinct when it appears twice, and a one-color version", () => {
+    const html = renderToStaticMarkup(
+      <>
+        <LogoMark size={28} />
+        <LogoMark size={28} />
+      </>,
+    );
+    const ids = [...html.matchAll(/<linearGradient id="([^"]+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(6);
+    expect(new Set(ids).size).toBe(6);
+    for (const id of ids) expect(id).toMatch(/^[A-Za-z0-9]+$/);
+    expect(html).not.toContain("style=");
+    expect(renderToStaticMarkup(<MarkMono size={20} />)).toContain('fill="currentColor"');
+    expect(renderToStaticMarkup(<Logo />)).toContain('<span class="wordmark">Lemma</span>');
   });
 
   it("gives setup instructions from a checkout, without inventing this server's address when there is no window", () => {
     expect(serverOrigin()).toBe("https://<this server>");
     const html = renderToStaticMarkup(<Setup />);
-    expect(html).toContain("install-rule .");
+    expect(html).toContain("install-rule --agent cursor .");
+    for (const tab of ["Cursor", "Claude Code", "Other agents"]) expect(html).toContain(tab);
     expect(html).toContain("&lt;path to your Lemma checkout&gt;/apps/bridge/dist/main.js");
     expect(html).toContain("lemma_buy_resolution");
   });
@@ -207,7 +237,8 @@ describe("pages", () => {
   it("says why nothing is for sale, and shows capabilities that have no release", () => {
     const html = renderToStaticMarkup(<Catalog view={previewOnly} />);
     expect(html).toContain("Nothing is for sale yet");
-    expect(html).toContain("0 USDC (not for sale)");
+    expect(html).toContain("not for sale yet");
+    expect(html).toContain("Preview only");
     expect(html).toContain("not sold: no frozen benchmark supports this profile");
     expect(html).toContain("An Arbitrum x402 facilitator for a Node service");
     expect(html).toContain("no release exists for this capability yet");

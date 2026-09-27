@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Icon, type IconName } from "./Icon.js";
+import { MarkMono } from "./Logo.js";
 
 export type Tone = "neutral" | "accent" | "ok" | "warn" | "danger";
 
@@ -32,9 +33,9 @@ export function PageHead({ eyebrow, title, children }: { eyebrow?: string | unde
   );
 }
 
-export function Section({ title, intro, children }: { title: string; intro?: ReactNode; children: ReactNode }) {
+export function Section({ title, intro, id, children }: { title: string; intro?: ReactNode; id?: string | undefined; children: ReactNode }) {
   return (
-    <section className="section">
+    <section className="section" id={id}>
       <div className="section-head">
         <h2>{title}</h2>
         {intro === undefined ? null : <p>{intro}</p>}
@@ -74,6 +75,7 @@ export function Stat({ label, value, note, tone }: { label: string; value: React
 export function EmptyState({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="empty">
+      <MarkMono size={30} />
       <h3>{title}</h3>
       {children}
     </div>

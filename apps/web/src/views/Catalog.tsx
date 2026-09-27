@@ -2,7 +2,8 @@ import { CAPABILITY_IDS, type CapabilityId, type CatalogView, type ProfileSummar
 import { useState } from "react";
 
 import { Hash } from "../components/copy.js";
-import { Badge, Callout, PageHead } from "../components/ui.js";
+import { Icon } from "../components/Icon.js";
+import { Badge, Callout, KeyValue, PageHead } from "../components/ui.js";
 import { CAPABILITY_TEXT, percent, reasonText, usdc, when } from "../format.js";
 import { sourceUrl } from "../links.js";
 
@@ -12,11 +13,8 @@ export function Catalog({ view }: { view: CatalogView }) {
   const capabilities = CAPABILITY_IDS.filter((c) => filter === "all" || c === filter);
   return (
     <>
-      <PageHead eyebrow="Catalog" title="Capability releases">
-        <p className="lead">
-          Each release is a curated integration, proven on narrow repository profiles by frozen compatibility fixtures. A profile is sold only when fresh benchmark evidence
-          supports its price.
-        </p>
+      <PageHead eyebrow="Catalog" title="What your agent can reuse">
+        <p className="lead">Each release is a curated integration, proven on the repository profiles it fits. A release is sold only when benchmark evidence supports its price.</p>
         <p className="meta-line">
           <span>
             Catalog <Hash value={view.catalogDigest} what="catalog digest" />
@@ -24,21 +22,21 @@ export function Catalog({ view }: { view: CatalogView }) {
           <span>as of {when(view.generatedAt)}</span>
           <span>
             chain cost {usdc(view.economics.chainCostUsdc)} per resolution
-            {view.economics.status === "placeholder" ? " (a placeholder: not measured yet, so nothing is sold)" : ""}
+            {view.economics.status === "placeholder" ? " (a placeholder: not measured yet)" : ""}
           </span>
         </p>
       </PageHead>
       {sellable === 0 ? (
         <Callout tone="warn" title="Nothing is for sale yet">
           <p>
-            Every release below can be previewed for free. A profile becomes purchasable once a frozen benchmark measures its saving and the price passes both pricing rules. See{" "}
-            <a href="#/evidence">Evidence</a>.
+            Every release can be previewed for free. A release becomes purchasable once a frozen benchmark measures its saving and the price passes both pricing rules. See{" "}
+            <a href="#/evidence">Proof</a>.
           </p>
         </Callout>
       ) : null}
       <div className="filters" role="group" aria-label="Filter by capability">
         <button type="button" className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
-          All capabilities
+          All
         </button>
         {CAPABILITY_IDS.map((c) => (
           <button type="button" key={c} className="chip" aria-pressed={filter === c} onClick={() => setFilter(c)}>
@@ -56,12 +54,9 @@ export function Catalog({ view }: { view: CatalogView }) {
 
 function NoRelease({ capability }: { capability: CapabilityId }) {
   return (
-    <article className="card capability-empty">
-      <div className="card-head">
-        <h3>{CAPABILITY_TEXT[capability]}</h3>
-        <Badge>{capability}</Badge>
-      </div>
-      <p className="muted">
+    <article className="capability-empty">
+      <h3>{CAPABILITY_TEXT[capability]}</h3>
+      <p>
         No release yet. An agent asking for this gets a free build answer ({reasonText("NO_RELEASE_FOR_CAPABILITY")}), and the request is counted in{" "}
         <a href="#/demand">unmet demand</a>.
       </p>
@@ -69,71 +64,110 @@ function NoRelease({ capability }: { capability: CapabilityId }) {
   );
 }
 
+/** The platforms a release fits, as short chips: one entry per distinct value across its profiles. */
+function fitChips(release: ReleaseSummary): string[] {
+  const chips = new Set<string>();
+  for (const p of release.profiles) {
+    for (const language of p.platform.languages) chips.add(language);
+    chips.add(p.platform.nodeMajor.min === p.platform.nodeMajor.max ? `Node ${p.platform.nodeMajor.min}` : `Node ${p.platform.nodeMajor.min}–${p.platform.nodeMajor.max}`);
+    for (const pm of p.platform.packageManagers) chips.add(pm);
+    for (const ms of p.platform.moduleSystems) chips.add(ms);
+    for (const fw of p.platform.frameworks) chips.add(fw);
+    for (const name of Object.keys(p.platform.dependencies)) chips.add(name);
+  }
+  return [...chips];
+}
+
 function Release({ release }: { release: ReleaseSummary }) {
   const source = sourceUrl(release.provenance);
+  const sellable = release.profiles.some((p) => p.blocker === null);
   return (
-    <article className="card">
-      <div className="card-head">
-        <h3>{release.title}</h3>
-        <Badge tone="accent">{release.capability}</Badge>
-        {release.provisional ? <Badge tone="warn">provisional (testnet only)</Badge> : null}
+    <article className="release">
+      <div className="release-head">
+        <h3>{CAPABILITY_TEXT[release.capability]}</h3>
+        <div className="badges">
+          {sellable ? <Badge tone="ok">For sale</Badge> : <Badge>Preview only</Badge>}
+          {release.provisional ? <Badge tone="warn">provisional (testnet only)</Badge> : null}
+        </div>
       </div>
-      <p className="meta-line release-sub">
-        <code>
-          {release.releaseId}@{release.version}
-        </code>
-        <span>
-          release <Hash value={release.releaseDigest} what="release digest" />
-        </span>
-        <span>
-          source{" "}
-          {source === null ? (
-            "unavailable"
-          ) : (
-            <a href={source} rel="noopener noreferrer nofollow" target="_blank">
-              {release.provenance.repository.replace("https://github.com/", "")} at {release.provenance.commit.slice(0, 10)}
-            </a>
-          )}{" "}
-          ({release.provenance.spdxLicense})
-        </span>
-      </p>
-      <dl className="release-meta">
+      <p>{release.title}</p>
+      <div className="fits">
+        <span className="fits-label">Fits</span>
+        <ul className="chips" aria-label="Fits">
+          {fitChips(release).map((chip) => (
+            <li key={chip}>{chip}</li>
+          ))}
+        </ul>
+      </div>
+      <dl className="release-facts">
         <div>
           <dt>Price</dt>
-          <dd>{release.priceUsdc === "0" ? "0 USDC (not for sale)" : usdc(release.priceUsdc)}</dd>
+          <dd>{release.priceUsdc === "0" ? "not for sale yet" : usdc(release.priceUsdc)}</dd>
         </div>
         <div>
           <dt>Warranty</dt>
           <dd>{release.warrantyHours} h claim window</dd>
         </div>
         <div>
+          <dt>Source</dt>
+          <dd>
+            {source === null ? (
+              "unavailable"
+            ) : (
+              <a href={source} rel="noopener noreferrer nofollow" target="_blank">
+                {release.provenance.repository.replace("https://github.com/", "")}
+              </a>
+            )}{" "}
+            <span className="muted">({release.provenance.spdxLicense})</span>
+          </dd>
+        </div>
+        <div>
           <dt>Expires</dt>
           <dd>{when(release.expiresAt)}</dd>
         </div>
       </dl>
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Profile</th>
-              <th scope="col">Platform</th>
-              <th scope="col">Evidence</th>
-              <th scope="col">Sale</th>
-              <th scope="col" className="num">
-                All-in reduction at list price
-              </th>
-              <th scope="col" className="num">
-                Highest price that keeps the target
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {release.profiles.map((p) => (
-              <Profile key={p.profileIndex} profile={p} />
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <details className="release-details">
+        <summary>
+          <Icon name="chevron" size={18} />
+          Details
+        </summary>
+        <KeyValue
+          items={[
+            [
+              "Release",
+              <code key="id">
+                {release.releaseId}@{release.version}
+              </code>,
+            ],
+            ["Release digest", <Hash key="digest" full value={release.releaseDigest} what="release digest" />],
+            ["Commit", <code key="commit">{release.provenance.commit}</code>],
+            ["Published", when(release.publishedAt)],
+          ]}
+        />
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Profile</th>
+                <th scope="col">Platform</th>
+                <th scope="col">Evidence</th>
+                <th scope="col">Sale</th>
+                <th scope="col" className="num">
+                  All-in reduction at list price
+                </th>
+                <th scope="col" className="num">
+                  Highest price that keeps the target
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {release.profiles.map((p) => (
+                <Profile key={p.profileIndex} profile={p} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </article>
   );
 }

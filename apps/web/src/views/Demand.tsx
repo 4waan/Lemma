@@ -11,10 +11,10 @@ export function Demand({ view }: { view: DemandView }) {
   return (
     <>
       <PageHead eyebrow="Demand" title="Unmet demand">
-        <p className="lead">What agents asked for that Lemma could not sell, ranked by how many repositories asked. This is the list of what to build or benchmark next.</p>
+        <p className="lead">What agents asked for that Lemma could not sell, ranked by how many repositories asked. It is the list of what to build next.</p>
         <p className="small muted">
-          Every preview is counted once per repository and day, by a salted profile digest that is discarded when the day closes. Only groups with at least {view.minProfiles}{" "}
-          repositories are published, and they carry a coarse class, never dependency names or versions.
+          Each preview counts once per repository and day, through a salted digest that is discarded when the day closes. A group is published only with at least {view.minProfiles}{" "}
+          repositories, and it carries a coarse class, never dependency names.
         </p>
       </PageHead>
       {ranked.length === 0 ? (

@@ -32,10 +32,7 @@ export function ResolutionLookup() {
   return (
     <>
       <PageHead eyebrow="Resolutions" title="Look up a resolution">
-        <p className="lead">
-          Every paid resolution has a public id. Its page shows what was bought, on which terms, and what happened after: never the buyer, the secret that recovers the purchase, or
-          the patch itself.
-        </p>
+        <p className="lead">Every purchase has a public id. Its page shows what was bought, on which terms, and what happened after. Never the buyer, and never the patch.</p>
       </PageHead>
       <div className="card">
         <div className="lookup">
@@ -114,7 +111,7 @@ export function Resolution({ view }: { view: ResolutionView }) {
             <Step
               mark="todo"
               title="Warranty"
-              text="Warranty activation arrives with the warranty registry, which the payment work is building. Until then no provider bond backs this resolution."
+              text="Warranty activation arrives with the warranty registry, which is still being built. Until then no provider bond backs this resolution."
             />
           </ol>
         </section>

@@ -105,10 +105,14 @@ describe("views render only from read models", () => {
     expect(renderToStaticMarkup(<Resolution view={{ ...resolution, release: { ...resolution.release, version: "1.0.0+provisional-1" } }} />)).toContain("provisional (testnet only)");
   });
 
-  it("renders the shell with its testnet banner, and loading and error states", () => {
+  it("renders the shell with its testnet pill, a collapsed phone menu, and loading and error states", () => {
     const shell = renderToStaticMarkup(<App initialHash="#/" />);
     expect(shell).toContain("Testnet");
     expect(shell).toContain('aria-current="page"');
+    expect(shell).toContain('aria-expanded="false"');
+    expect(shell).toContain('class="wordmark"');
+    for (const label of ["How it works", "Catalog", "Proof", "Get started", "Resolutions", "Demand", "Status", "What to trust"]) expect(shell).toContain(label);
+    expect(renderToStaticMarkup(<Shown loaded={{ state: "loading" }} render={() => null} />)).toContain("Loading");
     // The setup uses the bridge as built from a checkout; nothing installs a lemma-mcp command yet.
     const setup = renderToStaticMarkup(<App initialHash="#/setup" />);
     expect(setup).not.toContain("lemma-mcp");
@@ -131,7 +135,7 @@ describe("safety helpers", () => {
   });
 
   it("routes by fragment and refuses malformed resolution ids", () => {
-    expect(parseRoute("")).toEqual({ view: "overview" });
+    expect(parseRoute("")).toEqual({ view: "overview", anchor: null });
     expect(parseRoute("#/catalog")).toEqual({ view: "catalog" });
     expect(parseRoute(`#/resolutions/${hex("ab")}`)).toEqual({ view: "resolution", id: hex("ab") });
     expect(parseRoute("#/resolutions/../../api")).toEqual({ view: "not-found" });

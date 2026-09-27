@@ -2,9 +2,10 @@ import { CatalogView, DemandView, ResolutionView, StatusView } from "@lemma/core
 import { type ReactNode, useEffect, useState } from "react";
 
 import { type Loaded, useView } from "./api.js";
-import { Logo } from "./components/Logo.js";
+import { Icon } from "./components/Icon.js";
+import { Logo, MarkMono } from "./components/Logo.js";
 import { Callout, EmptyState } from "./components/ui.js";
-import { NAV, type Route, parseRoute, titleFor } from "./routes.js";
+import { FOOTER_NAV, NAV, type Route, parseRoute, titleFor } from "./routes.js";
 import { Catalog } from "./views/Catalog.js";
 import { Demand } from "./views/Demand.js";
 import { Evidence } from "./views/Evidence.js";
@@ -13,9 +14,10 @@ import { Resolution, ResolutionLookup } from "./views/Resolution.js";
 import { Setup } from "./views/Setup.js";
 import { Status } from "./views/Status.js";
 
-/** The dashboard shell: a testnet banner, the header and navigation, and the view the URL fragment names. */
+/** The dashboard shell: the header and its navigation, the view the URL fragment names, and the footer with the explorer pages. */
 export function App({ initialHash = typeof window === "undefined" ? "" : window.location.hash }: { initialHash?: string }) {
   const [route, setRoute] = useState<Route>(() => parseRoute(initialHash));
+  const [menuOpen, setMenuOpen] = useState(false);
   useEffect(() => {
     const update = () => setRoute(parseRoute(window.location.hash));
     window.addEventListener("hashchange", update);
@@ -23,24 +25,41 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
   }, []);
   useEffect(() => {
     document.title = titleFor(route);
-    window.scrollTo(0, 0);
+    setMenuOpen(false);
+    const anchor = "anchor" in route ? route.anchor : null;
+    const target = anchor === null ? null : document.getElementById(anchor);
+    if (target === null) window.scrollTo(0, 0);
+    else target.scrollIntoView();
   }, [route]);
   return (
     <>
-      <p className="banner">Testnet: every amount is test USDC on Arbitrum Sepolia, and nothing here is financial or production advice.</p>
+      <a className="skip" href="#main">
+        Skip to content
+      </a>
       <header className="site-header">
         <div className="container header-inner">
-          <a className="brand" href="#/" aria-label="Lemma overview">
+          <a className="brand" href="#/" aria-label="Lemma home">
             <Logo />
-            Lemma
           </a>
-          <nav className="site-nav" aria-label="Main">
+          <nav id="site-nav" className={menuOpen ? "site-nav open" : "site-nav"} aria-label="Main">
             {NAV.map((item) => (
               <a key={item.href} href={item.href} aria-current={item.view === route.view ? "page" : undefined}>
                 {item.label}
               </a>
             ))}
+            <span className="pill testnet" title="Every amount is test USDC on Arbitrum Sepolia">
+              Testnet
+            </span>
           </nav>
+          <div className="header-actions">
+            <a className="btn btn-primary btn-sm" href="#/setup" aria-current={route.view === "setup" ? "page" : undefined}>
+              Get started
+            </a>
+            <button type="button" className="menu-btn" aria-expanded={menuOpen} aria-controls="site-nav" onClick={() => setMenuOpen((open) => !open)}>
+              <Icon name={menuOpen ? "x" : "menu"} size={20} />
+              <span className="sr-only">Menu</span>
+            </button>
+          </div>
         </div>
       </header>
       <main className="container" id="main">
@@ -48,8 +67,20 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
       </main>
       <footer className="site-footer">
         <div className="container footer-inner">
-          <p>Lemma: verified, benchmarked integrations for coding agents, paid in USDC through x402 on Arbitrum.</p>
-          <p>Read-only dashboard. It holds no keys and cannot sign or change anything.</p>
+          <div className="footer-brand">
+            <span className="lockup small-lockup">
+              <MarkMono size={20} />
+              <span className="wordmark">Lemma</span>
+            </span>
+            <p className="small muted">Testnet only: every amount is test USDC on Arbitrum Sepolia. This read-only dashboard holds no keys and cannot sign or change anything.</p>
+          </div>
+          <nav className="footer-nav" aria-label="More">
+            {FOOTER_NAV.map((item) => (
+              <a key={item.href} href={item.href}>
+                {item.label}
+              </a>
+            ))}
+          </nav>
         </div>
       </footer>
     </>
@@ -80,7 +111,7 @@ function RouteView({ route }: { route: Route }) {
       return (
         <EmptyState title="Nothing at this address">
           <p>
-            There is nothing at this address. <a href="#/">Back to the overview</a>.
+            There is nothing at this address. <a href="#/">Back to the home page</a>.
           </p>
         </EmptyState>
       );
@@ -97,7 +128,7 @@ function View<T>(props: { path: string; schema: Parameters<typeof useView<T>>[1]
 }
 
 export function Shown<T>({ loaded, render }: { loaded: Loaded<T>; render: (view: T) => ReactNode }) {
-  if (loaded.state === "loading") return <p className="loading">Loading…</p>;
+  if (loaded.state === "loading") return <Loading />;
   if (loaded.state === "error")
     return (
       <Callout tone="danger" title="This view could not be loaded">
@@ -105,4 +136,14 @@ export function Shown<T>({ loaded, render }: { loaded: Loaded<T>; render: (view:
       </Callout>
     );
   return <>{render(loaded.data)}</>;
+}
+
+/** The mark, nudging down like its arrow, while a view loads. */
+export function Loading() {
+  return (
+    <p className="loading" role="status">
+      <MarkMono size={22} className="mark-loading" />
+      Loading…
+    </p>
+  );
 }

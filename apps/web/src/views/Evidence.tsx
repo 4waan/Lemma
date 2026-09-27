@@ -2,25 +2,48 @@ import type { CatalogView, ProfileSummary, ReleaseSummary } from "@lemma/core";
 
 import { CostComparison } from "../components/CostChart.js";
 import { Hash } from "../components/copy.js";
+import { Icon } from "../components/Icon.js";
 import { Badge, Callout, EmptyState, PageHead, Section, Stat } from "../components/ui.js";
 import { percent, usdc, when } from "../format.js";
+import { PricingCalculator } from "./PricingCalculator.js";
 
-/** Every profile that carries evidence, with the benchmark numbers behind its price. */
+/** The proof page: how savings are measured, every profile that carries evidence, the pricing math, and what to trust. */
 export function Evidence({ view }: { view: CatalogView }) {
   const rows = view.releases.flatMap((r) => r.profiles.filter((p) => p.evidence !== null).map((p) => ({ release: r, profile: p })));
   return (
     <>
-      <PageHead eyebrow="Evidence" title="Benchmark evidence">
-        <p className="lead">
-          A price is only as good as the measurement behind it. Lemma sells a profile only when a frozen, paired benchmark shows it lowers the all-in cost of reaching passing
-          tests, without lowering correctness.
-        </p>
+      <PageHead eyebrow="Proof" title="Measured, not promised">
+        <p className="lead">A release is sold only when a frozen, paired benchmark shows it lowers the cost of reaching passing tests. This is how that is measured, and what has been measured.</p>
       </PageHead>
 
-      <Section
-        title="How savings are measured"
-        intro="A benchmarked profile is backed by a frozen, paired benchmark: control runs without Lemma and treatment runs with it, on the same task, model and fixture. These are the protocol's fixed parameters, set before any measured run."
-      >
+      <Section title="The benchmark" intro="Two arms run the same task on the same model and fixture. The only difference is Lemma.">
+        <div className="arms">
+          <div className="arm">
+            <h3>
+              <Icon name="x" size={18} />
+              Control: the agent alone
+            </h3>
+            <ol>
+              <li>Gets the task and the fixture repository.</li>
+              <li>Builds the integration itself.</li>
+              <li>Its model cost to passing tests is recorded.</li>
+            </ol>
+          </div>
+          <div className="arm-vs" aria-hidden="true">
+            vs
+          </div>
+          <div className="arm treatment">
+            <h3>
+              <Icon name="check" size={18} />
+              Treatment: the agent with Lemma
+            </h3>
+            <ol>
+              <li>Gets the same task, plus the Lemma rule and bridge.</li>
+              <li>Checks Lemma, then buys and applies the patch.</li>
+              <li>Its model cost, price and chain cost are recorded.</li>
+            </ol>
+          </div>
+        </div>
         <dl className="stats">
           <Stat label="Paired runs" value="20" note="3 tasks × 2 arms × 3 repetitions, plus a no-match task in both arms" />
           <Stat label="Success target" value="25% lower" note="median all-in cost and total tokens, same acceptance results" />
@@ -40,10 +63,7 @@ export function Evidence({ view }: { view: CatalogView }) {
         ) : null}
         {rows.length === 0 ? (
           <EmptyState title="No frozen benchmark has run yet">
-            <p>No profile carries evidence yet: nothing is sold until a frozen benchmark measures it.</p>
-            <p className="small muted">
-              When one does, each profile appears here with its paired control and treatment numbers, the run set they came from, and the expected cost to reach green.
-            </p>
+            <p>No profile carries evidence yet, so nothing is sold. When a benchmark runs, each measured profile appears here with its numbers and the run set they came from.</p>
           </EmptyState>
         ) : (
           <>
@@ -57,9 +77,45 @@ export function Evidence({ view }: { view: CatalogView }) {
           </>
         )}
       </Section>
+
+      <Section title="Try the pricing math" intro="Both rules are code in the shared core package, and the catalog check refuses any price that breaks them.">
+        <div className="rules">
+          <div className="rule">
+            <strong>At most 30% of the saving</strong>
+            <span>The price is capped at 30% of the conservative model-cost saving the benchmark measured.</span>
+          </div>
+          <div className="rule">
+            <strong>At least 25% cheaper all-in</strong>
+            <span>After the price and chain cost, the buyer still spends a quarter less than building it alone.</span>
+          </div>
+          <div className="rule">
+            <strong>Free when it does not fit</strong>
+            <span>A build or decline answer never carries a price, and an unbenchmarked profile is never sold.</span>
+          </div>
+        </div>
+        <PricingCalculator />
+      </Section>
+
+      <Section id="what-to-trust" title="What to trust" intro="This is a hackathon MVP that demonstrates an economic mechanism. These limits are stated wherever they apply.">
+        <ul className="check-list warn">
+          {TRUST.map((item) => (
+            <li key={item}>
+              <Icon name="alert" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
+      </Section>
     </>
   );
 }
+
+const TRUST: readonly string[] = [
+  "Everything runs on Arbitrum Sepolia. Amounts are test USDC, not revenue.",
+  "Evidence marked provisional comes from an exploratory probe, not the frozen benchmark, and exists only on testnet.",
+  "The server, the provider and the outcome evaluator are operated by the Lemma team. This demonstrates an economic mechanism, not trustless software correctness.",
+  "The warranty registry is not deployed yet. Until it is, no provider bond backs a purchase.",
+];
 
 function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary; profile: ProfileSummary; chainCost: bigint }) {
   const e = profile.evidence;

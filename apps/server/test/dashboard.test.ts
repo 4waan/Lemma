@@ -6,7 +6,7 @@ import { CatalogView, DemandView, StatusView } from "@lemma/core";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { ASSET, DASHBOARD_CSP, MemoryStore, ResolutionService, silentLogger } from "../src/index.js";
-import { NOW, PROVIDER, app, config, sellableIndex } from "./helpers.js";
+import { NOW, PROVIDER, app, config, paidConfig, sellableIndex } from "./helpers.js";
 
 const temps: string[] = [];
 afterEach(() => {
@@ -52,7 +52,7 @@ describe("read models", () => {
   it("reports purchases as enabled only when paid tools are actually registered", async () => {
     const registrar = () => undefined;
     expect(StatusView.parse(await (await app({ registerPaidTools: registrar }).request("/api/v1/status")).json()).paidTools).toBe(false);
-    const on = app({ registerPaidTools: registrar, config: config({ PAID_TOOLS: "on", PROVIDER_ADDRESS: PROVIDER }) });
+    const on = app({ registerPaidTools: registrar, config: paidConfig() });
     expect(StatusView.parse(await (await on.request("/api/v1/status")).json()).paidTools).toBe(true);
   });
 

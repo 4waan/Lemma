@@ -1,4 +1,6 @@
 import { ARBITRUM_SEPOLIA, ARBITRUM_SEPOLIA_USDC, type Address, MAX_AUTHORIZATION_SECONDS, MAX_OFFER_TTL_SECONDS, toAddress } from "@lemma/core";
+import type { Hex } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { z } from "zod";
 
 // `.env.example` leaves unset values empty (`PROVIDER_ADDRESS=`); treat them as absent.
@@ -30,11 +32,57 @@ const DatabaseUrl = z.string().refine(isPostgresUrl, "must be a postgres:// or p
 /** At least 32 characters: the key that hides client addresses in demand counts (never stored in the database). */
 const SourceKey = z.string().min(32, "must be at least 32 characters; its value is not shown");
 
+/**
+ * A value that must never reach a log, an error message or an API answer: a
+ * private key, or an RPC URL (providers put their API key in the path). It
+ * prints and serializes as a placeholder; only `reveal()` gives the value.
+ */
+export class Secret {
+  readonly #value: string;
+
+  constructor(value: string) {
+    this.#value = value;
+  }
+
+  reveal(): string {
+    return this.#value;
+  }
+
+  toString(): string {
+    return "[secret]";
+  }
+
+  toJSON(): string {
+    return "[secret]";
+  }
+
+  [Symbol.for("nodejs.util.inspect.custom")](): string {
+    return "Secret([secret])";
+  }
+}
+
+/** An http(s) URL. Checked without echoing it: an RPC URL often carries the provider's key. */
+export function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
+const RpcUrl = z.string().refine(isHttpUrl, "must be an http(s) URL; its value is not shown");
+
+/** 0x and 64 hex digits, a valid secp256k1 key (checked in loadConfig). The message never repeats the value. */
+const PrivateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "must be 0x followed by 64 hex digits; its value is not shown");
+
 const Env = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
   DATABASE_URL: optional(DatabaseUrl),
   DEMAND_SOURCE_KEY: optional(SourceKey),
+  ARBITRUM_SEPOLIA_RPC_URL: optional(RpcUrl),
+  FACILITATOR_PRIVATE_KEY: optional(PrivateKey),
   ARBITRUM_SEPOLIA_CHAIN_ID: z.coerce.number().int().default(421_614),
   USDC_ADDRESS: optional(AddressInput),
   PROVIDER_ADDRESS: optional(AddressInput),
@@ -62,6 +110,13 @@ export interface ServerConfig {
   /** The only x402 recipient the server will quote for (server README). */
   readonly provider: Address | undefined;
   readonly paidTools: boolean;
+  /**
+   * The payment path's chain access: the Arbitrum Sepolia RPC (settlement,
+   * reconciliation, receipt signatures) and the in-process facilitator's key,
+   * which pays settlement gas. Both are required with paid tools on, and both
+   * are secrets: an RPC URL often carries the provider's API key.
+   */
+  readonly chain: { readonly rpcUrl: Secret | undefined; readonly facilitatorKey: Secret | undefined; readonly facilitatorAddress: Address | undefined };
   /** Load the testnet-only provisional overlay. Never set on the public deployment. */
   readonly allowProvisionalEvidence: boolean;
   readonly offerTtlSeconds: number;
@@ -93,6 +148,17 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
   if (e.NODE_ENV === "production" && e.DATABASE_URL === undefined) throw new ConfigError("DATABASE_URL is required in production");
   if (e.NODE_ENV === "production" && e.DEMAND_SOURCE_KEY === undefined) throw new ConfigError("DEMAND_SOURCE_KEY is required in production");
   if (e.PAID_TOOLS === "on" && e.PROVIDER_ADDRESS === undefined) throw new ConfigError("PAID_TOOLS=on requires PROVIDER_ADDRESS");
+  if (e.PAID_TOOLS === "on" && e.FACILITATOR_PRIVATE_KEY === undefined) throw new ConfigError("PAID_TOOLS=on requires FACILITATOR_PRIVATE_KEY (the key that pays settlement gas)");
+  if (e.PAID_TOOLS === "on" && e.ARBITRUM_SEPOLIA_RPC_URL === undefined) throw new ConfigError("PAID_TOOLS=on requires ARBITRUM_SEPOLIA_RPC_URL");
+  let facilitatorAddress: Address | undefined;
+  if (e.FACILITATOR_PRIVATE_KEY !== undefined) {
+    try {
+      facilitatorAddress = toAddress(privateKeyToAccount(e.FACILITATOR_PRIVATE_KEY as Hex).address);
+    } catch {
+      // Never the library's message: it could quote the key.
+      throw new ConfigError("FACILITATOR_PRIVATE_KEY is not a valid secp256k1 private key; its value is not shown");
+    }
+  }
   return {
     env: e.NODE_ENV,
     port: e.PORT,
@@ -101,6 +167,11 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     payment: { network: ARBITRUM_SEPOLIA, asset, maxTimeoutSeconds: e.PAYMENT_TIMEOUT_SECONDS },
     provider: e.PROVIDER_ADDRESS,
     paidTools: e.PAID_TOOLS === "on",
+    chain: {
+      rpcUrl: e.ARBITRUM_SEPOLIA_RPC_URL === undefined ? undefined : new Secret(e.ARBITRUM_SEPOLIA_RPC_URL),
+      facilitatorKey: e.FACILITATOR_PRIVATE_KEY === undefined ? undefined : new Secret(e.FACILITATOR_PRIVATE_KEY.toLowerCase()),
+      facilitatorAddress,
+    },
     allowProvisionalEvidence: e.ALLOW_PROVISIONAL_EVIDENCE ?? false,
     offerTtlSeconds: e.OFFER_TTL_SECONDS,
     dashboardOrigin: e.DASHBOARD_ORIGIN === undefined ? undefined : new URL(e.DASHBOARD_ORIGIN).origin,

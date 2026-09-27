@@ -14,6 +14,7 @@ import { latestMigration, schemaIsCurrent } from "./db/migrations.js";
 import { describeError, isUnparseableUrl, safeStore } from "./errors.js";
 import { PgStore } from "./db/store.js";
 import { jsonLogger } from "./log.js";
+import { type PaymentPath, startPaymentPath } from "./payments/index.js";
 import { type LemmaStore, MemoryStore } from "./persistence.js";
 import { ResolutionService } from "./service.js";
 import { startupProblems } from "./startup.js";
@@ -34,9 +35,6 @@ try {
 } catch (error) {
   fail([error instanceof ConfigError ? error.message : String(error)]);
 }
-
-// The payment work's paid-tool registrar is not part of this build yet.
-if (config.paidTools) fail(["PAID_TOOLS=on needs the paid-tool registrar from the payment work, which this build does not include"]);
 
 const check = checkCatalog();
 if (check.problems.length > 0) fail(check.problems);
@@ -110,6 +108,19 @@ const housekeeping = async () => {
 setInterval(() => void housekeeping(), HOUR).unref();
 void housekeeping();
 
+// The paid path (PAID_TOOLS=on, which config accepts only with FACILITATOR_PRIVATE_KEY and ARBITRUM_SEPOLIA_RPC_URL):
+// the x402 registrar, and the settlement reconciler and receipt verifier jobs, which start only here.
+let payments: PaymentPath | undefined;
+if (config.paidTools) {
+  try {
+    payments = await startPaymentPath({ config, store, service, clock, logger });
+  } catch (error) {
+    // Never the error's message: an RPC error can quote the RPC URL, which often carries a provider key.
+    fail([`the payment path could not start (${describeError(error)}); check ARBITRUM_SEPOLIA_RPC_URL, or set PAID_TOOLS=off`]);
+  }
+  logger.log("info", "startup.paid_tools", { network: config.payment.network, facilitator: config.chain.facilitatorAddress });
+}
+
 const app = createApp({
   config,
   index,
@@ -122,6 +133,7 @@ const app = createApp({
   storeKind,
   webRoot: dashboardRoot(),
   socketAddress: (c) => getConnInfo(c).remote.address,
+  registerPaidTools: payments?.registerPaidTools,
 });
 
 const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
@@ -133,6 +145,7 @@ const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
   process.once(signal, () => {
     logger.log("info", "shutdown", { signal });
+    payments?.stop();
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 10_000).unref();
   });

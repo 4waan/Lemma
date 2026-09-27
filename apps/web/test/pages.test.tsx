@@ -240,6 +240,14 @@ describe("pages", () => {
     expect(html).not.toContain("ARBITRUM_SEPOLIA_RPC_URL");
   });
 
+  it("lists LEMMA_AGENT_ID, says what it publishes, and does not claim the bridge sends no environment value", () => {
+    const html = renderToStaticMarkup(<Setup />);
+    expect(html).toContain("<code>LEMMA_AGENT_ID</code>");
+    expect(html).toContain("the wallet that paid");
+    expect(html).toContain("environment values, except LEMMA_AGENT_ID when you set it");
+    expect(html).not.toContain("file paths or environment values to the server.");
+  });
+
   it("says why nothing is for sale, and shows capabilities that have no release", () => {
     const html = renderToStaticMarkup(<Catalog view={previewOnly} />);
     expect(html).toContain("Nothing is for sale yet");
@@ -249,6 +257,14 @@ describe("pages", () => {
     expect(html).toContain("An Arbitrum x402 facilitator for a Node service");
     expect(html).toContain("no release exists for this capability yet");
     expect(renderToStaticMarkup(<Catalog view={withEvidence} />)).not.toContain("Nothing is for sale yet");
+  });
+
+  it("shows each release's public adoption record, or says there is none yet", () => {
+    expect(renderToStaticMarkup(<Catalog view={previewOnly} />)).toContain("no public record yet");
+    const withRecord = CatalogView.parse({ ...withEvidence, releases: withEvidence.releases.map((r) => ({ ...r, reputation: { passBps: 9750, count: 34 } })) });
+    const html = renderToStaticMarkup(<Catalog view={withRecord} />);
+    expect(html).toContain("pass 97.50 %, n 34");
+    expect(html).not.toContain("no public record yet");
   });
 
   it("shows an honest empty state until evidence exists, and the cost chart once it does", () => {

@@ -213,6 +213,12 @@ const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; re
   { name: "LEMMA_WORKSPACE", text: "The repository root the bridge may read. Nothing above it is read.", fallback: "the working directory", later: false },
   { name: "LEMMA_STATE_DIR", text: "Purchases, receipts, apply journals and exports, private to you.", fallback: "~/.local/state/lemma", later: false },
   { name: "LEMMA_ACCEPTANCE_OFFLINE", text: "Set to 1 to run acceptance tests without network, on Linux.", fallback: "off", later: false },
+  {
+    name: "LEMMA_AGENT_ID",
+    text: "Optional: this agent's own ERC-8004 agent id, sent with each adoption receipt so the agent gets public feedback on its adoptions. It publishes on chain that the wallet that paid (the agent's owner or agent wallet) adopted each resolution.",
+    fallback: "unset: no agent is named",
+    later: false,
+  },
   { name: "LEMMA_SIGNER_SOCKET", text: "The socket of lemma-signer, the separate process that holds the buyer key. Purchases stay off while no signer answers.", fallback: "the signer's own default, <state>/signer/signer.sock", later: false },
   { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost, in atomic USDC (250000 is 0.25 USDC).", fallback: "none: purchases stay off", later: false },
   { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a rolling day, in atomic USDC.", fallback: "none: purchases stay off", later: false },
@@ -221,7 +227,7 @@ const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; re
 ];
 
 const NEVER: readonly string[] = [
-  "Send source files, file paths or environment values to the server.",
+  "Send source files, file paths or environment values, except LEMMA_AGENT_ID when you set it, to the server.",
   "Let model text authorize a payment: spending limits are checked in code.",
   "Run a shell string from a release. Acceptance tests are a script name and fixed arguments, spawned without a shell.",
   "Write outside the workspace or through a symbolic link.",

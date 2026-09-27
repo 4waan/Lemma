@@ -126,6 +126,18 @@ function Release({ release }: { release: ReleaseSummary }) {
           <dt>Expires</dt>
           <dd>{when(release.expiresAt)}</dd>
         </div>
+        <div>
+          <dt>Adoption record</dt>
+          <dd>
+            {release.reputation === null ? (
+              <span className="muted">no public record yet</span>
+            ) : (
+              <>
+                pass {percent(BigInt(release.reputation.passBps))}, n {release.reputation.count} <span className="muted">(ERC-8004, testnet)</span>
+              </>
+            )}
+          </dd>
+        </div>
       </dl>
       <details className="release-details">
         <summary>
@@ -143,6 +155,10 @@ function Release({ release }: { release: ReleaseSummary }) {
             ["Release digest", <Hash key="digest" full value={release.releaseDigest} what="release digest" />],
             ["Commit", <code key="commit">{release.provenance.commit}</code>],
             ["Published", when(release.publishedAt)],
+            [
+              "Adoption record",
+              "Finalized adoptions of this capability that passed their pinned acceptance tests, and how many were counted: ERC-8004 feedback on the provider's agent from Lemma's attester only, on Arbitrum Sepolia.",
+            ],
           ]}
         />
         <div className="table-wrap">

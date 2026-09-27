@@ -3,7 +3,7 @@ import { VERDICT_FAILED, type WarrantyWithdrawalAnswer, type WarrantyWithdrawalR
 import type { Logger } from "../log.js";
 import type { LemmaStore, WarrantyAction, WarrantyPayload } from "../persistence.js";
 import { type ActionJobDeps, type ActionReport, type ActionRules, ActionSender, type Decision, type RunContext,
-  type SettledDecision, emptyReport, refPayload, runContext } from "./actions.js";
+  type SettledDecision, StaleReadError, emptyReport, refPayload, runContext } from "./actions.js";
 import { ACTIONS_INTERVAL_MS } from "./activator.js";
 import type { RegistryResolution, RegistryRevert, WarrantyChain } from "./chain.js";
 import { runEvery } from "./loop.js";
@@ -51,7 +51,9 @@ function withdrawalRules(chain: WarrantyChain): ActionRules {
     fn: "withdrawCredit",
 
     async prepare(action: WarrantyAction, resolution: RegistryResolution): Promise<Decision> {
-      // Withdrawn already (by this job, or the buyer's own relay), or no credit to withdraw.
+      // The indexer confirmed a FAILED outcome: only its credit or the credit's withdrawal can follow. A node answering anything else is behind it.
+      if (resolution.status !== "failed" && resolution.status !== "refunded") throw new StaleReadError();
+      // Withdrawn already (by this job, or the buyer's own relay).
       if (resolution.status !== "failed") return endedBy(resolution);
       const claim = WarrantyWithdrawal.safeParse(action.payload);
       if (!claim.success) return { kind: "finish", state: "abandoned", code: "NO_CLAIM" };

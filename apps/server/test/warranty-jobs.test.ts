@@ -8,6 +8,7 @@ import {
   DAMPER_WINDOW_MS,
   type LemmaStore,
   type RegistryCall,
+  type RegistryStatus,
   type WarrantyChain,
   WarrantyActivator,
   WarrantyEvaluator,
@@ -47,6 +48,19 @@ function refusing(chain: FakeRegistry, errorName: string, args: readonly unknown
     },
   });
 }
+
+/**
+ * Answers the next resolution read as a node behind the indexed events would:
+ * a lagging backend of a load-balanced endpoint answers `getBlockNumber` with
+ * an old block, and reads the registry there.
+ */
+function behind(chain: FakeRegistry, status: RegistryStatus): void {
+  const read = chain.resolution.bind(chain);
+  vi.spyOn(chain, "resolution").mockImplementationOnce(async (id) => ({ ...(await read(id)), status }));
+}
+
+/** The one line the outbox logs when an attempt failed on the chain's side, here a stale read. */
+const staleReadLogged = (w: World, kind: string) => w.logger.lines.some((l) => l.event === "warranty.attempt_failed" && l.fields["kind"] === kind && l.fields["error"] === "StaleReadError STALE_READ");
 
 const common = (w: World, over: { chain?: WarrantyChain; store?: LemmaStore } = {}) => ({ store: over.store ?? w.store, chain: over.chain ?? w.chain, clock: () => w.clock.now, logger: w.logger, jitter: () => 0 });
 
@@ -412,6 +426,19 @@ describe("the evaluator", () => {
     expect(w.chain.sentOf("finalizeOutcome")).toHaveLength(0);
   });
 
+  it("retries a finalization, never abandons it, when a node behind the indexed activation answers none", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    await w.receipt(b, "passed");
+    behind(w.chain, "none");
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 1, failed: 1, abandoned: 0, sent: 0 });
+    expect(await w.store.getWarrantyAction(b.id, "finalize")).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+    expect(staleReadLogged(w, "finalize")).toBe(true);
+    w.advance(30);
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.status(b.id)).toBe("passed");
+  });
+
   it("closes a failure still in review once its warranty ended", async () => {
     const w = await warrantyWorld();
     const b = await w.activeWarranty();
@@ -480,6 +507,19 @@ describe("the expirer", () => {
     expect(await w.store.getWarrantyAction(finalized!.id, "expire")).toMatchObject({ state: "skipped", lastCode: "RESOLUTION_NOT_ACTIVE" });
     expect(w.chain.sentOf("expireResolution")).toHaveLength(0);
   });
+
+  it("retries an expiry, never skips it, when a node behind the indexed activation answers none", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    w.advance(WINDOW + 1);
+    behind(w.chain, "none");
+    expect(await w.jobs.expirer.runOnce()).toMatchObject({ queued: 1, failed: 1, skipped: 0, sent: 0 });
+    expect(await w.store.getWarrantyAction(b.id, "expire")).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+    expect(staleReadLogged(w, "expire")).toBe(true);
+    w.advance(30);
+    expect(await w.jobs.expirer.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.status(b.id)).toBe("expired");
+  });
 });
 
 describe("the credit relay", () => {
@@ -539,6 +579,21 @@ describe("the credit relay", () => {
     await w.chain.relay({ fn: "withdrawCredit", resolutionId: other.id, claimSecret: other.secret, to: other.refundTo });
     await w.jobs.indexer.runOnce();
     expect(await requestWithdrawal({ store: w.store, clock: () => w.clock.now, logger: w.logger }, { resolutionId: other.id, claimSecret: other.secret, to: other.refundTo })).toEqual({ status: 409, body: { error: "NO_CREDIT" } });
+  });
+
+  it("retries a withdrawal, never abandons it, when a node behind the indexed FAILED outcome answers another status", async () => {
+    const w = await warrantyWorld({ failures: "auto" });
+    const b = await failedWarranty(w);
+    await requestWithdrawal({ store: w.store, clock: () => w.clock.now, logger: w.logger }, { resolutionId: b.id, claimSecret: b.secret, to: b.refundTo });
+    for (const status of ["none", "active", "passed", "voided", "expired"] as const) {
+      behind(w.chain, status);
+      expect(await w.jobs.relay.runOnce(), status).toMatchObject({ failed: 1, abandoned: 0, sent: 0 });
+      expect(await w.store.getWarrantyAction(b.id, "withdraw"), status).toMatchObject({ state: "queued", lastCode: "STALE_READ" });
+      w.advance(30);
+    }
+    expect(staleReadLogged(w, "withdraw")).toBe(true);
+    expect(await w.jobs.relay.runOnce()).toMatchObject({ sent: 1, done: 1 });
+    expect(w.chain.paid.get(b.refundTo)).toBe(250_000n);
   });
 });
 
@@ -602,7 +657,8 @@ describe("registry refusals", () => {
     expect((await refused("expire", "ResolutionNotActive", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "expired"))).action).toMatchObject({ state: "done" });
     expect((await refused("expire", "EnforcedPause")).action).toMatchObject({ state: "sent", lastCode: "ENFORCED_PAUSE" });
     expect((await refused("withdraw", "NoCredit", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "refunded"))).action).toMatchObject({ state: "done" });
-    expect((await refused("withdraw", "NoCredit", [idOf("x")], (w, b) => void (w.chain.resolutions.get(b.id)!.status = "passed"))).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
+    // Refused while the registry still shows the credit: nothing to withdraw after all. (A status a FAILED outcome rules out is a stale read, retried.)
+    expect((await refused("withdraw", "NoCredit", [idOf("x")])).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
     expect((await refused("withdraw", "InvalidClaim")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_CLAIM", payload: { schemaVersion: "1" } });
     expect((await refused("withdraw", "InvalidRecipient")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_RECIPIENT" });
   });

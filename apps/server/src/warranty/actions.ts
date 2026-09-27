@@ -89,6 +89,25 @@ export const CONTEXT_MAX_AGE_MS = 5_000;
 export const PENDING_TX = "PENDING_TX";
 export const REVERTED = "REVERTED";
 export const UNCONFIRMED = "UNCONFIRMED";
+export const STALE_READ = "STALE_READ";
+
+/**
+ * A registry status the event an action came from rules out. Finalizations,
+ * expiries and withdrawals are written only for events the indexer stored at
+ * its confirmation depth, so a correct node never answers such a status for
+ * them; a lagging backend of a load-balanced endpoint does, since the read's
+ * block is its own old head. A `prepare` throws it rather than close the
+ * action for good on a state that is not the chain's: the attempt then fails
+ * like any other chain failure and is retried (30 s, doubling per attempt).
+ */
+export class StaleReadError extends Error {
+  override name = "StaleReadError";
+  readonly code = STALE_READ;
+
+  constructor() {
+    super("the registry answered a status the indexed events rule out");
+  }
+}
 
 /** What a run did with its due actions. */
 export interface ActionReport {

@@ -3,7 +3,7 @@ import { type Address, type AdoptionReceipt, type Hex32, MAX_OUTCOME_WEIGHT_BPS,
 import { describeError } from "../errors.js";
 import type { RegistryEventRow, WarrantyAction } from "../persistence.js";
 import { type ActionJobDeps, type ActionReport, type ActionRules, ActionSender, type Decision, RELEASE_ROLES_MISMATCH, type RunContext,
-  type SettledDecision, emptyReport, releaseProblem, runContext } from "./actions.js";
+  type SettledDecision, StaleReadError, emptyReport, releaseProblem, runContext } from "./actions.js";
 import { ACTIONS_INTERVAL_MS, SIGN_MARGIN_SECONDS } from "./activator.js";
 import type { RegistryResolution, RegistryRevert, WarrantyChain } from "./chain.js";
 import { runEvery } from "./loop.js";
@@ -168,7 +168,9 @@ function finalizationRules(chain: WarrantyChain, logger: ActionJobDeps["logger"]
     fn: "finalizeOutcome",
 
     async prepare(action: WarrantyAction, resolution: RegistryResolution, ctx: RunContext): Promise<Decision> {
-      // Finalized already (by this job's earlier send, or anyone relaying its signature), expired, or never activated.
+      // The indexer confirmed the activation: a node that answers none is behind it.
+      if (resolution.status === "none") throw new StaleReadError();
+      // Finalized already (by this job's earlier send, or anyone relaying its signature), or expired.
       if (resolution.status !== "active") return endedBy(resolution, resolution.status === "expired" ? "RESOLUTION_EXPIRED" : "RESOLUTION_NOT_ACTIVE");
       const parsed = WarrantyOutcome.safeParse(action.payload);
       if (!parsed.success) return { kind: "finish", state: "abandoned", code: "NO_OUTCOME" };

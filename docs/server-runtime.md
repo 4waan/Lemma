@@ -176,7 +176,7 @@ The production entrypoint refuses to listen unless:
 - the database is reachable and migrated;
 - the current catalog snapshot is persisted;
 - `PUBLIC_BASE_URL`, when set, is an http(s) URL without credentials, query, or fragment, and a set `ATTESTER_PRIVATE_KEY` comes with the RPC URL, `LEMMA_AGENT_ID`, an https `PUBLIC_BASE_URL`, and `DATABASE_URL`;
-- with any warranty setting, every setting the pipeline needs is set, and no two of the provider, evaluator, facilitator, and attester keys that are set belong to one account;
+- with any warranty setting, every setting the pipeline needs is set, no two of the provider, evaluator, facilitator, and attester keys that are set belong to one account, and `PROVIDER_ADDRESS` is the provider key's address (offers pay it, and the activator sends from that key);
 - with the warranty pipeline on, its chain client and registry pass their checks.
 
 Before any warranty job starts, the pipeline checks the chain client and the registry, and a failed check stops the server with a `WarrantyStartupError` whose message names addresses and codes only:

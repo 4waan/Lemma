@@ -279,7 +279,9 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
  * provider, evaluator, facilitator and attester (when set) must be four
  * different accounts: the registry refuses a provider that is its own
  * evaluator, and one sender's transaction order must never join a buyer's
- * settlement to the warranty it paid for.
+ * settlement to the warranty it paid for. The provider key must be
+ * `PROVIDER_ADDRESS`'s: sales require each release to pay that address, and
+ * the activator acts only for releases registered to the key's account.
  */
 function warrantyConfig(e: z.infer<typeof Env>, facilitator: Address | undefined, reputation: ReputationConfig): WarrantyConfig | undefined {
   const switched = WARRANTY_SWITCHES.filter((name) => e[name] !== undefined);
@@ -303,6 +305,9 @@ function warrantyConfig(e: z.infer<typeof Env>, facilitator: Address | undefined
     for (const [b, y] of roles.slice(i + 1)) {
       if (x !== undefined && x === y) throw new ConfigError(`${a} and ${b} are the same account: the provider, evaluator, facilitator and attester keys must all differ`);
     }
+  }
+  if (provider !== e.PROVIDER_ADDRESS) {
+    throw new ConfigError("PROVIDER_ADDRESS is not the address of PROVIDER_PRIVATE_KEY: offers would pay one account while activations are sent from another, so no warranty sold would activate");
   }
   return {
     registry: e.RESOLUTION_WARRANTY_REGISTRY_ADDRESS as Address,

@@ -151,7 +151,7 @@ For the complete state transitions, locking rules, demand privacy model, and fai
 | `DATABASE_URL` | Memory store | Postgres connection; required in production. |
 | `ARBITRUM_SEPOLIA_CHAIN_ID` | `421614` | Fixed MVP chain. |
 | `USDC_ADDRESS` | Arbitrum Sepolia USDC | Fixed settlement asset. |
-| `PROVIDER_ADDRESS` | unset | Required when a release becomes sellable. |
+| `PROVIDER_ADDRESS` | unset | Required when a release becomes sellable. With the warranty pipeline on, it must be `PROVIDER_PRIVATE_KEY`'s address. |
 | `PAID_TOOLS` | `off` | `on` registers the paid tool and starts the reconciler and the receipt verifier. Needs the next two variables. |
 | `FACILITATOR_PRIVATE_KEY` | unset | Key of the in-process facilitator, which pays settlement gas (fund it with Sepolia ETH). A secret: never logged, and no error repeats it. |
 | `ARBITRUM_SEPOLIA_RPC_URL` | unset | Arbitrum Sepolia RPC for settlement, reconciliation, receipt checks, the warranty pipeline, the attester, and reputation summaries. Treated as a secret, since providers put their key in it. |

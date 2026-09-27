@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lemma-logo-dark.png">
+  <img src="docs/brand/lemma-logo.png" alt="Lemma" width="280">
+</picture>
+
 # Lemma
 
 **Verified integration work for coding agents.**
@@ -94,6 +99,8 @@ npm run dev:server
 npm run dev:web
 npm run dev:bridge
 ```
+
+The dashboard explains the product, lists the catalog, shows the benchmark proof and the pricing rule, looks up resolutions, ranks unmet demand, and shows how to connect Cursor, Claude Code or any other MCP agent. The server serves the built dashboard at its root; `npm run dev:web` serves it with hot reload. See [apps/web/README.md](apps/web/README.md); the logo and brand files are in [docs/brand](docs/brand/README.md).
 
 The server uses an in-memory store when `DATABASE_URL` is absent. Copy `.env.example` to `.env` only when a workflow needs configured infrastructure. Never use the example database password outside local development.
 

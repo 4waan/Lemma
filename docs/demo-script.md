@@ -12,16 +12,16 @@ The full demo requires the pending x402 path, warranty registry, public deployme
 
 1. Show a TypeScript MCP fixture and ask the agent to add x402 on Arbitrum Sepolia.
 2. The agent calls `lemma_preview` before writing code.
-3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms.
+3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms. The dashboard's Catalog shows the release, and the calculator on its Proof page shows why the price is allowed.
 4. Show the local bridge checking drift, spend policy, network, asset, recipient, and authorization window.
 5. Complete the x402 payment and open the Arbitrum Sepolia settlement transaction.
 6. Deliberately lose the paid response, then recover the same resolution without a second payment.
 7. Preview and atomically apply the delivered patch.
 8. Run the acceptance recipe and publish the signed Adoption Receipt.
-9. Show the resolution, evidence, payment, activated warranty, and pass outcome on the dashboard.
+9. Show the resolution, evidence, payment, activated warranty, and pass outcome on the dashboard's resolution page (`#/resolutions/<id>`).
 10. Switch to an incompatible fixture and show a free no-match with zero payment.
 11. Run the prepared failure case and show the provider-bond refund credit.
-12. End with the frozen control and treatment benchmark and its raw evidence references.
+12. End with the frozen control and treatment benchmark and its raw evidence references on the dashboard's Proof page.
 
 ## Claims supported by the design
 

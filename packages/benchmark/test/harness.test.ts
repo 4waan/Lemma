@@ -804,7 +804,18 @@ function running(pid: number): boolean {
   }
 }
 
-describe("CursorAdapter process boundary", () => {
+/**
+ * Waits up to two seconds for a killed process to stop running. SIGKILL takes
+ * effect only once the kernel schedules the process, which on a busy machine
+ * can come well after the kill call returned.
+ */
+async function waitUntilGone(pid: number): Promise<void> {
+  for (let i = 0; i < 40 && running(pid); i++) await new Promise((r) => setTimeout(r, 50));
+}
+
+// Spawning and killing processes slows down a lot on a busy machine; the tests'
+// own time assertions, not Vitest's 5-second default, decide what is too slow.
+describe("CursorAdapter process boundary", { timeout: 20_000 }, () => {
   const child = (body: string) => {
     const dir = temp("lemma-child-");
     const script = join(dir, "child.mjs");
@@ -840,6 +851,7 @@ describe("CursorAdapter process boundary", () => {
     expect(outcome).toMatchObject({ status: "timeout", agentId: "agent-10" });
     expect(Date.now() - started).toBeLessThan(5000);
     const pid = Number(readFileSync(join(dir, "grandchild.pid"), "utf8"));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 
@@ -848,7 +860,7 @@ describe("CursorAdapter process boundary", () => {
     const outcome = await new CursorAdapter("k", script, quick).run(request);
     expect(outcome).toMatchObject({ agentId: "agent-11" });
     const pid = Number(readFileSync(join(dir, "orphan.pid"), "utf8"));
-    for (let i = 0; i < 20 && running(pid); i++) await new Promise((r) => setTimeout(r, 50));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 
@@ -869,7 +881,7 @@ describe("CursorAdapter process boundary", () => {
     const p = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: { ...process.env, HOME: home }, detached: true, stdio: "ignore" });
     p.unref();
     killByHome(home);
-    for (let i = 0; i < 20 && running(p.pid as number); i++) await new Promise((r) => setTimeout(r, 50));
+    await waitUntilGone(p.pid as number);
     expect(running(p.pid as number)).toBe(false);
   });
 
@@ -880,6 +892,7 @@ describe("CursorAdapter process boundary", () => {
     expect(outcome).toMatchObject({ status: "finished", agentId: "child" });
     expect(Date.now() - started).toBeLessThan(5000);
     const pid = Number(readFileSync(join(dir, "server.pid"), "utf8"));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 });

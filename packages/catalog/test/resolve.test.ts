@@ -216,7 +216,9 @@ describe("resolve: no match", () => {
   });
 });
 
-describe("resolve: properties", () => {
+// Each property resolves hundreds of generated catalogs: well under a second on
+// an idle machine, but past Vitest's 5-second default on a busy one.
+describe("resolve: properties", { timeout: 20_000 }, () => {
   const releasesArb = fc.array(
     fc.record({
       id: fc.constantFrom("alpha", "beta", "gamma"),

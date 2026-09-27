@@ -14,7 +14,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 - On the demo machine: `lemma-signer serve` with the buyer's key file and the bridge with its spending policy (see [Buyer setup](deployment.md#buyer-setup)). The buyer holds testnet USDC and no ETH.
 - Three fixture repositories: one the release fits whose tests pass with it, one it fits whose tests fail, and one it does not fit.
 - The dashboard open on the Catalog page, and an Arbiscan tab.
-- A short activation delay keeps the wait short: `WARRANTY_ACTIVATION_JITTER_SECONDS=30`. The default (up to 300 s at random) keeps an activation from being timed with the settlement that paid for it, though at testnet volume its amount usually still matches that settlement; say so if asked.
+- A short activation delay keeps the wait short: `WARRANTY_ACTIVATION_BATCH_SECONDS=60` (or `0` with `WARRANTY_ACTIVATION_JITTER_SECONDS=30`). The default sends activations together once an hour, so one activation cannot be paired with the one settlement just before it; with a one-minute batch on a quiet testnet, a batch often holds a single activation, so say so if asked.
 - If Arbitrum Sepolia is unreachable, show the same flow on a local chain with `npm run e2e` instead (about a minute; see below).
 
 ## Three-minute sequence

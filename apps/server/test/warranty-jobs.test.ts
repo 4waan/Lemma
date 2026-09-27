@@ -11,6 +11,7 @@ import {
   type RegistryStatus,
   type WarrantyChain,
   WarrantyActivator,
+  activationDueAt,
   WarrantyEvaluator,
   WarrantyExpirer,
   decideReview,
@@ -747,6 +748,33 @@ describe("registry refusals", () => {
     expect((await refused("withdraw", "NoCredit", [idOf("x")])).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
     expect((await refused("withdraw", "InvalidClaim")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_CLAIM", payload: { schemaVersion: "1" } });
     expect((await refused("withdraw", "InvalidRecipient")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_RECIPIENT" });
+  });
+
+  it("activates in hourly batches: every activation of an hour is due at the same whole hour", async () => {
+    const w = await warrantyWorld();
+    const hour = 3600_000;
+    const start = w.clock.now.getTime();
+    const nextHour = Math.ceil((start + 1) / hour) * hour;
+    // Two purchases minutes apart, in the same hour: neither goes out before the hour, and both go out together at it.
+    w.clock.now = new Date(nextHour - 50 * 60_000);
+    w.chain.advance((w.clock.now.getTime() - start) / 1000);
+    const first = await w.buy();
+    const activator = new WarrantyActivator({ ...common(w), jitterSeconds: 300, batchSeconds: 3600 });
+    expect(await activator.runOnce()).toMatchObject({ queued: 1, sent: 0 });
+    w.clock.now = new Date(nextHour - 10 * 60_000);
+    w.chain.advance(40 * 60);
+    const second = await w.buy(OTHER_BUYER);
+    expect(await activator.runOnce()).toMatchObject({ queued: 1, sent: 0 });
+    for (const b of [first, second]) expect((await w.store.getWarrantyAction(b.id, "activate"))?.nextAttemptAt.getTime()).toBe(nextHour);
+    w.clock.now = new Date(nextHour);
+    w.chain.advance(10 * 60);
+    expect(await activator.runOnce()).toMatchObject({ sent: 2, done: 2 });
+    // A purchase on the hour itself is due at once; the jitter is not used while batches are on.
+    const never = vi.fn(() => 0);
+    expect(activationDueAt(new Date(nextHour), 3600, 300, never).getTime()).toBe(nextHour);
+    expect(activationDueAt(new Date(nextHour + 1), 3600, 300, never).getTime()).toBe(nextHour + hour);
+    expect(never).not.toHaveBeenCalled();
+    expect(activationDueAt(new Date(nextHour), 0, 300, (max) => max).getTime()).toBe(nextHour + 300_000);
   });
 
   it("backs off with jitter, doubling from 30 seconds up to an hour", async () => {

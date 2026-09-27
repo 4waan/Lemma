@@ -194,6 +194,7 @@ async function world(options: { readonly test?: string; readonly pipeline?: bool
             evaluatorAddress: chain.evaluator,
             failures: "auto",
             activationJitterSeconds: 0,
+            activationBatchSeconds: 0,
             indexerConfirmations: 0n,
           },
           store,

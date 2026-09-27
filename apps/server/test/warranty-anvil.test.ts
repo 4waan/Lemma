@@ -225,7 +225,7 @@ describe.skipIf(artifacts === undefined || artifacts === "")("the warranty chain
     await sendAs(keys.provider, registry, registryAbi, "depositBond", [digest, 1_000_000n]);
     const logger = recordingLogger();
     const pipeline = await startWarrantyPipeline({
-      config: { registry, startBlock: 0n, providerKey: new Secret("held by the chain client"), providerAddress: chain.provider, evaluatorKey: new Secret("held by the chain client"), evaluatorAddress: chain.evaluator, failures: "auto", activationJitterSeconds: 0, indexerConfirmations: 0n },
+      config: { registry, startBlock: 0n, providerKey: new Secret("held by the chain client"), providerAddress: chain.provider, evaluatorKey: new Secret("held by the chain client"), evaluatorAddress: chain.evaluator, failures: "auto", activationJitterSeconds: 0, activationBatchSeconds: 0, indexerConfirmations: 0n },
       store: w.store,
       index: w.index,
       chain,

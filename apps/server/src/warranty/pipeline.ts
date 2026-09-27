@@ -121,7 +121,7 @@ export async function startWarrantyPipeline(deps: WarrantyPipelineDeps): Promise
   const views = new WarrantyViews({ store, snapshot, clock });
   const indexer = new RegistryIndexer({ store, chain, startBlock: config.startBlock, confirmations: config.indexerConfirmations, clock, logger, onIndexed: () => snapshot.refresh() });
   const common = { store, chain, clock, logger };
-  const activator = new WarrantyActivator({ ...common, jitterSeconds: config.activationJitterSeconds });
+  const activator = new WarrantyActivator({ ...common, jitterSeconds: config.activationJitterSeconds, batchSeconds: config.activationBatchSeconds });
   const evaluator = new WarrantyEvaluator({ ...common, failures: config.failures });
   const expirer = new WarrantyExpirer(common);
   const relay = new CreditRelay(common);

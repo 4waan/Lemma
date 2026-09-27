@@ -22,8 +22,41 @@ const SignedBps = z.string().regex(/^-?(0|[1-9][0-9]{0,17})$/, "expected an inte
 /** Where a profile's evidence comes from: a frozen benchmark, the testnet-only provisional overlay, or none. */
 export const EvidenceLabel = z.enum(["benchmarked", "provisional", "none"]);
 
+const U64_MAX = 2n ** 64n - 1n;
+const U64Decimal = z
+  .string()
+  .regex(/^(0|[1-9][0-9]{0,19})$/, "expected a non-negative decimal integer")
+  .refine((s) => !/^(0|[1-9][0-9]{0,19})$/.test(s) || BigInt(s) <= U64_MAX, "exceeds 2^64 - 1");
+
+/**
+ * What a profile's compatibility confidence is built from: the benchmark prior
+ * alone, the prior plus finalized adoption outcomes, or outcomes alone (no evidence).
+ */
+export const CompatibilitySource = z.enum(["benchmark", "benchmark+outcomes", "outcomes"]);
+
+/**
+ * Compatibility confidence for one (release, profile): the 90% Wilson lower bound
+ * on the acceptance pass rate, over the evidence's treatment arm as a prior
+ * (`passes = passed.treatment`, `failures = runs.treatment - passed.treatment`)
+ * plus finalized adoption outcomes whose weight halves every 30 days. Computed by
+ * `@lemma/confidence`, the same engine as the Stylus contract. A read-model
+ * value only: it is never signed, paid for or persisted.
+ */
+export const ProfileCompatibility = z
+  .strictObject({
+    confidenceBps: z.int().min(0).max(10_000),
+    /** The effective sample size in thousandths of an outcome, after decay. */
+    effectiveNMilli: U64Decimal,
+    /** Finalized adoption outcomes counted. */
+    outcomes: z.int().min(0),
+    source: CompatibilitySource,
+  })
+  .refine((c) => (c.source === "benchmark") === (c.outcomes === 0), { path: ["outcomes"], message: "only a benchmark-only confidence has no outcomes" });
+
+export type ProfileCompatibility = z.infer<typeof ProfileCompatibility>;
+
 /** One supported profile of a release, with what its evidence means for a buyer at the list price. */
-export const ProfileSummary = z.strictObject({
+const ProfileSummaryFields = z.strictObject({
   profileIndex: z.int().min(0),
   platform: z.strictObject({
     languages: z.array(Language),
@@ -41,7 +74,17 @@ export const ProfileSummary = z.strictObject({
   allInReductionBps: SignedBps.nullable(),
   /** `maxPriceFor(evidence, g)`: the highest price that keeps the benchmark target; null without evidence. */
   maxPriceUsdc: UsdcAtomic.nullable(),
+  /**
+   * Compatibility confidence, or null when the profile has neither evidence nor an
+   * outcome, or when the server could not read its outcomes (it logs that).
+   */
+  compatibility: ProfileCompatibility.nullable(),
 });
+
+export const ProfileSummary = ProfileSummaryFields.refine(
+  (p) => p.compatibility === null || (p.compatibility.source === "outcomes") === (p.evidence === null),
+  { path: ["compatibility", "source"], message: "a confidence without evidence comes from outcomes alone, and one with evidence includes it" },
+);
 
 export type ProfileSummary = z.infer<typeof ProfileSummary>;
 
@@ -81,12 +124,15 @@ const PROVISIONAL_BUILD = /\+provisional-/;
 /**
  * The dashboard's view of one release at `now`: per profile, whether it can be
  * sold and why not, and what its evidence promises the buyer at the list price
- * once chain cost `g` is paid.
+ * once chain cost `g` is paid. `compatibility` maps a profile index to its
+ * confidence (the server computes it with `@lemma/confidence`); a profile missing
+ * from it shows null.
  */
 export function summarizeRelease(
   entry: { readonly release: CapabilityRelease; readonly releaseDigest: Hex32; readonly baseReleaseDigest: Hex32; readonly provisional: boolean },
   economics: { readonly chainCostAtomic: bigint },
   now: Date,
+  compatibility?: ReadonlyMap<number, ProfileCompatibility>,
 ): ReleaseSummary {
   const { release } = entry;
   const price = BigInt(release.price);
@@ -115,6 +161,7 @@ export function summarizeRelease(
         blocker: expired ? "RELEASE_EXPIRED" : saleBlocker(price, evidence, now),
         allInReductionBps: evidence === null ? null : allInReductionBps(evidence, price, economics.chainCostAtomic).toString(),
         maxPriceUsdc: evidence === null ? null : maxPriceFor(evidence, { chainCostAtomic: economics.chainCostAtomic }).toString(),
+        compatibility: compatibility?.get(profileIndex) ?? null,
       };
     }),
   });

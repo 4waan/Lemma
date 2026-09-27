@@ -51,7 +51,7 @@ Deployment records must contain only public chain data, compiler settings, and t
 
 ## Stylus compatibility-confidence engine
 
-`contracts/stylus/` is a Rust workspace, separate from the Foundry project. It computes compatibility confidence: for one release digest and profile index, the 90% Wilson lower bound on how often the release's acceptance recipe passes. The prior is the frozen benchmark's treatment arm. Each finalized outcome adds its weight, and weights halve every 30 days. The server runs the same crate as wasm for the catalog ([`@lemma/confidence`](../packages/confidence/README.md)), so the catalog and the contract agree exactly when they use the same inputs.
+`contracts/stylus/` is a Rust workspace, separate from the Foundry project. It computes compatibility confidence for one release digest and profile index. The [confidence package guide](../packages/confidence/README.md#the-model) describes the model, and the crate docs in [`lemma-confidence/src/lib.rs`](stylus/lemma-confidence/src/lib.rs) give each integer step. The server runs the same crate as wasm for the catalog, so the catalog and the contract agree when they use [the same inputs](../packages/confidence/README.md#when-the-catalog-and-the-chain-agree).
 
 The contract is not deployed, and nothing records outcomes into it yet.
 

@@ -32,9 +32,9 @@ The harness runs controlled agent experiments, reconciles provider usage, create
 
 ### Compatibility confidence engine
 
-An integer-only Rust crate (`contracts/stylus/lemma-confidence`) scores how likely a release is to pass its acceptance recipe on one supported profile: the 90% Wilson lower bound over the frozen benchmark's treatment arm and finalized outcomes whose weight halves every 30 days. The server runs it as a committed, reproducibly built wasm module (`packages/confidence`) to fill the catalog read model. The dashboard only displays the number.
+An integer-only Rust crate (`contracts/stylus/lemma-confidence`) scores how likely a release is to pass its acceptance recipe on one supported profile. The server runs it as a committed wasm module ([`@lemma/confidence`](../packages/confidence/README.md)) to fill the catalog read model. The dashboard only displays the number.
 
-A Stylus contract runs the same crate on Arbitrum, and the warranty registry is to record each finalized outcome into it. The contract and the catalog then compute the same number from the same prior, the same outcomes at the same block times, and the same time. The contract is not deployed, and no outcomes flow yet.
+A Stylus contract runs the same crate on Arbitrum, and the warranty registry is to record each finalized outcome into it. The contract is not deployed, and no outcomes flow yet.
 
 ### Warranty registry
 

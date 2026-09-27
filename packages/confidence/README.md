@@ -9,10 +9,10 @@ The math is not written in TypeScript. It is the `lemma-confidence` Rust crate f
 For one release digest and profile index:
 
 - The prior is the frozen benchmark's treatment arm: `passes = passed.treatment` and `failures = runs.treatment - passed.treatment`, counted as whole outcomes.
-- Each finalized adoption outcome adds its weight, in basis points of a full outcome. Weights halve every 30 days, so old results fade as dependencies move.
+- Each adoption outcome that the evaluator finalized through the warranty registry adds its weight, in basis points of a full outcome. Raw adoption receipts do not count. Weights halve every 30 days, so old results fade as dependencies move.
 - The score is the 90% Wilson lower bound over both. `effectiveNMilli` is the effective sample size in thousandths of an outcome. No data scores zero.
 
-Every step is integer arithmetic that rounds down. WAD values (fixed point, `10^18`) are `bigint`.
+Every step is integer arithmetic that rounds down. The crate docs in [`lemma-confidence/src/lib.rs`](../../contracts/stylus/lemma-confidence/src/lib.rs) give each one. WAD values (fixed point, `10^18`) are `bigint`.
 
 ## Public interface
 

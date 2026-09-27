@@ -1,6 +1,7 @@
 import {
   AdoptionReceipt,
   type Address,
+  BuyInput,
   CapabilityRelease,
   type Hex32,
   LEMMA_TOOLS,
@@ -9,11 +10,13 @@ import {
   type PreviewInput,
   PreviewResult,
   ResolutionDelivery,
+  type SpendRequest,
   releaseDigest,
 } from "@lemma/core";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
+import { PaymentRequiredV2Schema } from "@x402/core/schemas";
 import { z } from "zod";
 
 const Hex = z.string().regex(/^0x[0-9a-f]{64}$/);
@@ -41,6 +44,21 @@ export const ReceiptAnswer = z.enum(["ACCEPTED", "DUPLICATE", "NOT_SETTLED", "TO
 export const FINAL_RECEIPT_ANSWERS: ReadonlySet<ReceiptAnswer> = new Set(["ACCEPTED", "DUPLICATE", "UNKNOWN_RESOLUTION", "MISMATCH"]);
 
 export type ReceiptAnswer = z.infer<typeof ReceiptAnswer>;
+
+/** The x402 meta key a payment payload travels under (`MCP_PAYMENT_META_KEY` in @x402/mcp). */
+export const PAYMENT_META_KEY = "x402/payment";
+
+/** How long the paid call may take: verification, the handler and settlement on chain. */
+export const PAID_CALL_TIMEOUT_MS = 30_000;
+
+/**
+ * What the paid call answered. A challenge is an x402 v2 `PaymentRequired`,
+ * kept to its reason and the requirement fields core `checkPurchase` reads.
+ */
+export type BuyAnswer =
+  | { readonly kind: "delivery"; readonly delivery: unknown }
+  | { readonly kind: "challenge"; readonly required: { readonly error: string | undefined; readonly accepts: readonly SpendRequest[] } }
+  | { readonly kind: "refused"; readonly code: string };
 
 export class RemoteError extends Error {
   override name = "RemoteError";
@@ -142,6 +160,29 @@ export class LemmaRemote {
     return parsed.data.result;
   }
 
+  /**
+   * The paid call: one `tools/call` of `lemma_buy_resolution` carrying the
+   * signed payment in `_meta["x402/payment"]`. It answers with the delivery
+   * (unvalidated here; the buy tool checks it against the offer), an x402
+   * challenge (the payment was not accepted, or the terms changed), or a
+   * refusal code. A transport failure or timeout throws: the answer is lost,
+   * and the caller recovers instead of paying again.
+   */
+  async buy(input: BuyInput, payment: unknown, timeoutMs = PAID_CALL_TIMEOUT_MS): Promise<BuyAnswer> {
+    const client = await this.mcp();
+    const result = await client.callTool({ name: LEMMA_TOOLS.buyResolution, arguments: BuyInput.parse(input), _meta: { [PAYMENT_META_KEY]: payment } }, undefined, { timeout: timeoutMs });
+    const text = textOf(result.content);
+    if (result.isError !== true) return { kind: "delivery", delivery: safeJson(text) };
+    const challenge = PaymentRequiredV2Schema.safeParse(result.structuredContent ?? safeJson(text));
+    if (challenge.success) {
+      const accepts = challenge.data.accepts.map((a) => ({ scheme: a.scheme, network: a.network, asset: a.asset, amount: a.amount, payTo: a.payTo, maxTimeoutSeconds: a.maxTimeoutSeconds }));
+      return { kind: "challenge", required: { error: challenge.data.error, accepts } };
+    }
+    const code = /^([A-Z][A-Z_]{1,39}): /.exec(text)?.[1];
+    if (code !== undefined) return { kind: "refused", code };
+    throw new RemoteError("the purchase answer carried no code");
+  }
+
   /** Free recovery of a settled resolution (server tool `lemma_recover_resolution`). */
   async recover(previewId: Hex32, buyer: Address): Promise<ResolutionDelivery | "IN_FLIGHT" | "NOT_FOUND"> {
     const result = await (await this.mcp()).callTool({ name: LEMMA_TOOLS.recoverResolution, arguments: { previewId, buyer } }, undefined, { timeout: this.timeoutMs });
@@ -168,6 +209,14 @@ export class LemmaRemote {
     await client.connect(transport as unknown as Transport, { timeout: this.timeoutMs });
     this.client = client;
     return client;
+  }
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return undefined;
   }
 }
 

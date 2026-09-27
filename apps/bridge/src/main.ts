@@ -10,6 +10,7 @@ import { recoverJournals } from "./apply.js";
 import { killInstalls } from "./install.js";
 import { createBridgeServer } from "./bridge.js";
 import { ResolutionInbox, stateDirFor } from "./inbox.js";
+import { paymentsFromEnv } from "./payments.js";
 import { flushReceipts, recoverPending } from "./recovery.js";
 import { LemmaRemote } from "./remote.js";
 import { installRule } from "./rule.js";
@@ -47,6 +48,9 @@ async function serve(): Promise<void> {
   if (recovery.left > 0) console.error(`lemma-mcp: ${recovery.left} files changed after an interrupted apply were left as they are; the originals of files it had replaced are kept in ${inbox.recoveredDir}`);
   const scanner = new ScanCache();
   const runningNodeMajor = Number(process.versions.node.split(".")[0]);
+  const clock = () => new Date();
+  const payments = await paymentsFromEnv(process.env, { stateDir, root, clock });
+  if (payments.note !== undefined) console.error(`lemma-mcp: ${payments.note}`);
   const server = createBridgeServer({
     remote,
     scanner,
@@ -56,6 +60,7 @@ async function serve(): Promise<void> {
     cwd: () => root,
     runningNodeMajor,
     monotonic: () => performance.now(),
+    registerPaidTools: payments.registerPaidTools,
     registerAdoptionTools: adoptionTools({
       inbox,
       remote,
@@ -63,9 +68,10 @@ async function serve(): Promise<void> {
       root,
       cwd: () => root,
       runningNodeMajor,
-      clock: () => new Date(),
+      clock,
       offlineAcceptance: process.env["LEMMA_ACCEPTANCE_OFFLINE"] === "1",
       installTimeoutSec: 600,
+      signReceipt: payments.signReceipt,
     }),
   });
   // Installs are killed when the bridge exits or is stopped by a signal; after a crash, the next start's recovery kills a verified one before undoing its apply.

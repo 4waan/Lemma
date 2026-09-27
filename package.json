@@ -14,9 +14,11 @@
   "scripts": {
     "build": "tsc -b && npm run bundle -w @lemma/web",
     "typecheck": "tsc -b",
-    "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json",
+    "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json && tsc -p ops/sepolia/tsconfig.json && tsc -p e2e/tsconfig.json",
     "test": "vitest run",
     "verify": "npm run typecheck && npm run typecheck:tests && npm test && npm run build",
+    "e2e": "tsx e2e/prepare.ts && vitest run --config e2e/vitest.config.ts",
+    "sepolia:roles": "tsx ops/sepolia/setup-roles.ts",
     "secrets:scan": "gitleaks git --no-banner --redact --config .gitleaks.toml .",
     "hooks:install": "git config core.hooksPath .githooks",
     "dev:server": "npm run dev -w @lemma/server",

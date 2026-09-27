@@ -33,6 +33,8 @@
 - A server changing the price or recipient after the quote (the bridge signs only the terms of the preview it checked and never pays a challenge; the signer signs only to allowlisted payees within its caps).
 - Forged provider vouchers or evaluator outcomes.
 - Provider withdrawal of bond backing an active resolution.
+- A registry pause that lets a buyer's claim window run out.
+- A leaked resolution ID or payment reference activated first on another release.
 - Buyer fabrication of failure evidence.
 - Server-side request forgery through provenance or icon URLs.
 - Cross-site scripting through catalog or chain metadata.
@@ -52,12 +54,12 @@
 - Acceptance recipes run only when the run is evidence about the resolution (it is in place, the package still fits the profile it was bought for, and the recipe's script exists), without a shell, with only a minimal `PATH`, a fresh `HOME`, the user's corepack cache (`COREPACK_HOME`, with corepack's downloads off; the tests can write to it) and the variables the recipe lists, under the recipe's timeout, and with output capped and only digested; no acceptance output or recipe argument reaches the model. They are still the release's and the buyer's code running as the user: the network is on unless offline mode is used, writes are not confined to the package, and the user's real home and the bridge's start environment (`/proc`) are readable. The bridge therefore refuses to run them while a wallet secret is in its environment or the one it started with (the same names installs never get). The bridge never holds the buyer key: `lemma-signer` does (see the signer threat model below). A key file the user can read is readable by the tests as well, so for real isolation the signer runs as another user, or is replaced by a hardware or remote signer behind the same interface.
 - Settlement and recovery are idempotent.
 - Typed signatures bind chain, contract, buyer, release, payload, amount, expiry, and nonce.
-- Contract accounting reserves bond before a warranty becomes active.
+- The warranty registry reserves bond before a warranty becomes active, never lets a provider withdraw reserved bond, stores no buyer or payer address, and pays a failure credit only to the refund address committed in the claim hash. A pause also stops the claim clock. Unit, fuzz, and invariant tests cover it; see the [contracts guide](../contracts/README.md#invariants).
 - Browser rendering escapes untrusted values and restricts external destinations.
 - Database operations are parameterized and resource access uses non-guessable identifiers.
 - Logs and run records are scrubbed before persistence.
 - Agent-facing answers are built from enums, numbers, codes and bundle paths. Paths are chosen by the release, so they are validated (core `PatchPath`) and shown only when short (at most 100 characters, segments of at most 40, 120 characters of paths per answer); a release can put no more than a few short file names in front of the model.
-- Preview IDs are bearer secrets for recovery. They are random, returned only to the requesting bridge, never logged, and never exposed by a read API. Recovery needs the preview ID and the buyer, so a published resolution ID recovers nothing.
+- Preview IDs are bearer secrets for recovery. They are random, returned only to the requesting bridge, never logged, and never exposed by a read API. Recovery needs the preview ID and the buyer, so a published resolution ID recovers nothing. Still, keep a resolution ID and its payment reference private until the warranty is active on chain: the registry keys warranties by those values alone, so a provider of another release that learned one first could activate it on its own release and block the real warranty.
 - Adoption receipts are accepted only from the buyer (the holder of the preview id), only for settled resolutions, and once each. They count for nothing until the receipt verifier has checked their signature against the resolution's buyer (viem `verifyTypedData` on a public client, so smart accounts verify too); an unsigned receipt or another signer's stays unverified.
 - One payment authorization backs one resolution and settles it once, and the reconciler's decisions are bound to the authorization it checked. Settlement is keyed by the authorization, not the transaction: anyone may submit EIP-3009 authorizations, so one transaction can use several, each a payment for its own resolution, and each of those resolutions settles. The EIP-3009 nonce is derived from the resolution and the preview id (core `derivePaymentNonce`), so USDC itself refuses a second payment for a resolution, and the public nonce cannot be joined to the public resolution id without the preview id. The server refuses any other nonce before settling.
 - The reconciler settles a row only when the transaction that used its authorization paid the quoted terms: the log right after USDC's `AuthorizationUsed` must be USDC's `Transfer` of exactly the quoted amount from the buyer to the quoted payee. EIP-3009 nonces are the signer's to choose, so a buyer can spend the derived nonce on a transfer of their own before the settlement lands; such a row expires, and recovery never delivers it.
@@ -95,6 +97,8 @@ The server's attester posts each finalized outcome as ERC-8004 feedback on Arbit
 ## Accepted MVP trust
 
 The evaluator is a separate team-operated key, not decentralized arbitration. External pilots use public repositories so the evaluator can inspect evidence without receiving private source. The server and provider remain first-party infrastructure.
+
+The registry also trusts each provider to sign a voucher after payment and keep enough bond available, and its owner to unpause. USDC is centrally controlled: Circle can block a refund address or pause the token. The [contracts guide](../contracts/README.md#limits) lists the registry's other limits.
 
 These assumptions must be visible in the dashboard and submission. The MVP demonstrates an economic mechanism, not trustless software correctness.
 

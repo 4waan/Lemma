@@ -71,13 +71,34 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # OpenZeppelin Contracts and forge-std, pinned by gitlink (contracts/README.md). Top
+          # level only: OpenZeppelin's own nested submodules are never compiled
+          # (foundry.toml turns off remapping auto-detection).
+          submodules: true
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # The Foundry release the ABIs in contracts/abi and the gas figures in
+          # docs/warranty-registry-review.md were produced with.
+          version: v1.7.1
+          # The job calls no RPC endpoint and needs no RPC cache; nothing is restored from or
+          # saved to the Actions cache.
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+      - run: forge fmt --check
+        working-directory: contracts
       - run: forge build
         working-directory: contracts
       - run: forge test
         working-directory: contracts
         env:
           FOUNDRY_OFFLINE: "true"
+      # contracts/abi/*.json must equal the ABIs of this build.
+      - run: npm run contracts:abi -- --check
+      # Both deploy-script steps against a local anvil posing as Arbitrum Sepolia, with a
+      # throwaway key made at run time; no network and no repository secret.
+      - run: bash contracts/script/rehearse-deploy.sh
 
   stylus:
     name: stylus engine (cargo test, ABI, reproducible wasm)

@@ -5,10 +5,20 @@ libs = ["lib"]
 test = "test"
 script = "script"
 solc = "0.8.30"
-evm_version = "shanghai"
+# Cancun: OpenZeppelin v5.6 uses MCOPY. Arbitrum has run Cancun opcodes since ArbOS 20.
+evm_version = "cancun"
 optimizer = true
 optimizer_runs = 200
 bytecode_hash = "none"
+# Remappings come from remappings.txt only, so nested submodules of a dependency
+# (OpenZeppelin carries its own forge-std) can never change what an import resolves to.
+auto_detect_remappings = false
+# The deploy script reads build metadata and its own broadcast, and writes one record.
+fs_permissions = [
+    { access = "read", path = "./out" },
+    { access = "read", path = "./broadcast" },
+    { access = "read-write", path = "./deployments" },
+]
 
 [rpc_endpoints]
 arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC_URL}"
@@ -20,6 +30,11 @@ runs = 256
 runs = 64
 depth = 32
 fail_on_revert = false
+
+[lint]
+# Lint the contract and the deploy script. Tests compare block.timestamp on purpose to model the
+# registry's deadlines.
+ignore = ["test/**/*.sol"]
 
 [fmt]
 line_length = 100

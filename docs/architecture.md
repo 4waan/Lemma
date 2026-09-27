@@ -44,7 +44,7 @@ A Stylus contract runs the same crate on Arbitrum, and the warranty registry is 
 
 ### Warranty registry
 
-The planned Arbitrum Sepolia contract holds provider bond, activates signed warranty vouchers, records evaluator outcomes, and creates buyer withdrawal credit. It stores identifiers and accounting state rather than repository or patch content.
+The Arbitrum Sepolia contract holds provider bond, activates signed warranty vouchers, records evaluator outcomes, and creates buyer withdrawal credit. It is written and tested but not deployed. It stores identifiers and accounting state rather than repository or patch content, and never a buyer or payer address: a failed warranty's credit goes to whoever proves the claim secret committed in the voucher. Anyone may relay its signed messages, so agents need no ETH. A finalized pass or failure is also passed to an optional compatibility engine (`ICompatibilityEngine.record`). See the [contracts guide](../contracts/README.md).
 
 ## Trust boundaries
 
@@ -107,5 +107,5 @@ Later migrations will add signed warranty vouchers and chain indexer cursors. Ch
 - Lost paid responses are recovered with the preview secret and buyer.
 - Patch drift stops direct application and returns an adaptation path.
 - An interrupted apply is recovered from its local journal.
-- Missing evaluator confirmation leaves a warranty active until expiry.
+- Missing evaluator confirmation leaves a warranty active until expiry. A registry pause also stops the claim clock (see [Pause and the claim clock](../contracts/README.md#pause-and-the-claim-clock)).
 - Expiry releases reserved bond without asserting software success.

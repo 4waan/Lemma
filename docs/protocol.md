@@ -80,10 +80,19 @@ The payment path is built for Arbitrum Sepolia USDC (testnet). `@lemma/core` fix
 - **Warranty claim.** `warrantyClaimHash(resolutionId, claimSecret, refundTo)` equals Solidity `keccak256(abi.encode(bytes32, bytes32, address))`, which the warranty registry checks before paying a credit. Only the hash reaches the server and the chain. The bridge keeps the secret and the refund address as a `WarrantyClaim` (schema version 1), which is never sent.
 - **Receipt signatures.** `adoptionReceiptTypedData(receipt, chainId)` is the EIP-712 typed data a buyer signs: domain `{ name: "Lemma", version: "1", chainId }` and type `AdoptionReceipt(bytes32 resolutionId,string outcome,bytes32 receiptDigest)`, where `receiptDigest` is `adoptionReceiptDigest(receipt)`, the receipt with its signature cleared. The server checks it against the resolution's buyer with viem `verifyTypedData` on a public client, so EOA, ERC-1271, and ERC-6492 signatures all verify.
 
-The digest vectors pin a payment nonce, a claim hash, and a receipt's typed-data hash. The warranty work must still add:
+The digest vectors pin a payment nonce, a claim hash, and a receipt's typed-data hash.
 
-- Provider-signed warranty vouchers: their typed data, signing after settlement, and activation.
-- Evaluator outcomes, expiry, and buyer withdrawal credit.
+On chain, the warranty registry is written and tested but not deployed. Its state machine, typed data, roles, and limits are in the [contracts guide](../contracts/README.md). Each component's part in a warranty:
+
+- Before paying, the buyer's bridge picks a random claim secret and a refund address, keeps both, and sends only their `claimHash`. After a FAILED outcome, only that secret unlocks the credit, and only to that address.
+- After settlement, the server chooses an opaque salted `paymentRef` for the payment, and the release's provider signs a voucher that binds the resolution to it and to the buyer's `claimHash`. The registry never stores a buyer or payer address.
+- The release's evaluator signs one outcome per resolution. Without one, the warranty expires after its claim deadline.
+- The server relays vouchers, outcomes, expiries, and credit withdrawals, and pays the gas. Agents never hold ETH.
+
+The warranty work must still add:
+
+- Voucher typed data in `@lemma/core`, and voucher signing and relaying on the server after settlement.
+- Evaluator outcomes, expiries, and credit withdrawals submitted to the registry.
 
 Those additions must preserve the existing identifiers, payment terms, recovery behavior, and adoption receipt digest. Any required schema change belongs in `@lemma/core` before paid records are persisted.
 

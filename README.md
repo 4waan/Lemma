@@ -50,7 +50,7 @@ Lemma needs a cheap, programmable settlement layer because a resolution can cost
 2. Activation of a provider-funded warranty after settlement.
 3. An evaluator-confirmed pass or refundable failure outcome.
 
-The x402 payment path is implemented for Arbitrum Sepolia (testnet); the warranty path is not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that the warranty must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+The x402 payment path is implemented for Arbitrum Sepolia (testnet). The warranty registry contract is written and tested but not deployed, and the off-chain warranty steps are pending. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that the warranty must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
 
 ## Build status
 
@@ -68,7 +68,8 @@ Lemma is an active MVP build. The compatibility path and the testnet purchase pa
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
 | x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented for Arbitrum Sepolia; not deployed, and no release is sellable yet |
 | ERC-8004 reputation: registration file, public feedback files, attester, cached pass rates, and opt-in buyer agents | Implemented and tested against the official registries on a local node; no agent registered, and no finalized outcomes to post until the warranty work |
-| Warranty registry, deployment scripts, and evaluator outcomes | Pending |
+| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; not deployed |
+| Registry deployment, voucher signing, and evaluator outcomes | Pending |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 
 This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, deployed contract, or public revenue claim is made today.
@@ -86,6 +87,7 @@ Requirements:
 Install and run the repository checks:
 
 ```bash
+git submodule update --init
 npm ci
 npm run verify
 npm run catalog:check
@@ -119,7 +121,7 @@ packages/core/      Versioned schemas, identifiers, pricing, policy, and read mo
 packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
 packages/benchmark/ Controlled agent experiments and evidence derivation
 packages/confidence/ Compatibility-confidence engine as reproducible wasm for the server
-contracts/          Foundry project for the pending warranty registry
+contracts/          Foundry project for the warranty registry, its tests, and its deploy script
 contracts/stylus/   Rust confidence engine, its Node wasm build, and its Stylus contract
 docs/               Architecture, protocol, economics, security, and delivery decisions
 ops/                Container and Railway configuration
@@ -133,7 +135,7 @@ The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs
 
 1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
 2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase, and a lost response recovered without a second payment.
-3. Implement and test the warranty registry, including one pass and one refunded failure on Arbitrum Sepolia.
+3. Deploy the tested warranty registry and demonstrate one pass and one refunded failure on Arbitrum Sepolia.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
 5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
 6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.

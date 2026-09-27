@@ -71,7 +71,7 @@ The testnet paid path implements these requirements. Keep them when changing it:
 
 - Accept only x402 v2 on `eip155:421614` with the configured Arbitrum Sepolia USDC contract and provider address.
 - Keep the buyer key in a separate signer process that enforces the spending policy itself (see the signer threat model in [Security Model](docs/security-model.md)).
-- Compare every payment challenge field with the stored quote.
+- Sign only the terms of the checked preview. Never pay an x402 challenge, and refuse one whose terms differ from the quote.
 - Enforce the per-resolution cap, daily cap, authorization lifetime, and committed-spend reservation before signing.
 - Derive an EIP-3009 nonce from secret and public resolution inputs rather than using the public resolution id alone.
 - Treat settlement timeouts as indeterminate and reconcile before retrying.

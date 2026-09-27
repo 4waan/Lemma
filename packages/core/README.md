@@ -47,13 +47,14 @@ The full cross-component behavior is documented in [Protocol](../../docs/protoco
 
 ## Payment pieces
 
-Core holds no keys and signs nothing, but it fixes every value both sides of a payment must agree on:
+Core holds no keys and signs nothing, but it fixes every value both sides of a payment must agree on. [Protocol](../../docs/protocol.md#payment-and-warranty-boundary) describes each one:
 
-- `derivePaymentNonce(resolutionId, previewId)`: the EIP-3009 nonce the buyer signs (digest kind `payment-nonce`).
-- `paymentRequirementsFor(terms)`: the x402 v2 requirements for stored `PaymentTerms`, with EIP-55 checksummed addresses and USDC's EIP-712 domain in `extra`. The server's `accepts` and the bridge's `accepted` both come from it. Only Arbitrum Sepolia USDC is supported.
-- `BuyInput`: the paid tool's input, `{ previewId, claimHash }`.
-- `warrantyClaimHash(resolutionId, claimSecret, refundTo)`: equals Solidity `keccak256(abi.encode(bytes32, bytes32, address))`. `WarrantyClaim` (schema version 1) is the bridge's private record of a claim, refused unless its `claimHash` is the hash of the other fields.
-- `adoptionReceiptTypedData(receipt, chainId)`: the EIP-712 typed data a buyer signs for an Adoption Receipt (`signing`, with `ADOPTION_RECEIPT_TYPES` and the `Lemma` domain constants).
+- `derivePaymentNonce`: the EIP-3009 nonce of a resolution.
+- `paymentRequirementsFor`: the x402 v2 requirements for stored `PaymentTerms`.
+- `BuyInput`: the paid tool's input.
+- `warrantyClaimHash`: the warranty claim commitment.
+- `WarrantyClaim`: the bridge's private record of a claim, refused unless its `claimHash` is the hash of its other fields.
+- `adoptionReceiptTypedData`: the EIP-712 typed data a buyer signs for an Adoption Receipt, in `signing` with `ADOPTION_RECEIPT_TYPES` and the `Lemma` domain constants.
 
 `PaymentTerms` mirrors x402 v2 without importing x402, because x402 pins zod 3 and core uses zod 4.
 
@@ -66,6 +67,6 @@ npm run test -w @lemma/core
 
 Add a frozen vector when changing canonical data or derived identifiers. A schema change that affects persisted, paid, or signed data requires an explicit versioning decision before dependent components adopt it.
 
-The vectors pin a payment nonce, a warranty claim hash and a receipt's typed-data hash under `derived`. A fixed-input test pins the claim hash `0xefe737cca6b5574d334f88508fb3149002c12c771f7bdeec10267e5cf8fa21eb` for `resolutionId = 0x11…11`, `secret = 0x22…22` and `refundTo = 0x3333…33`, computed with viem and Foundry's `cast`; the warranty registry's Foundry test asserts the same value.
+The vectors pin a payment nonce, a warranty claim hash and a receipt's typed-data hash under `derived`. A fixed-input test pins the claim hash `0xefe737cca6b5574d334f88508fb3149002c12c771f7bdeec10267e5cf8fa21eb` for `resolutionId = 0x11…11`, `secret = 0x22…22` and `refundTo = 0x3333…33`, computed with viem and Foundry's `cast`. The warranty registry's Foundry tests must assert the same value.
 
 Core does not define warranty vouchers or evaluator outcomes: their EIP-712 layouts belong to the warranty registry (`contracts/`). A structure the server persists or signs for them must still be added here first.

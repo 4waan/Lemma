@@ -6,7 +6,7 @@ Lemma stops coding agents from paying to rediscover solved integration work.
 
 ## Submission gate
 
-The full demo requires the pending x402 path, warranty registry, public deployment, measured benchmark, and real catalog payload. Until those are complete, demonstrate only the implemented preview, drift, apply, verification, recovery, dashboard, and benchmark-harness behavior. Label synthetic records and provisional evidence visibly.
+The full demo requires a public deployment with paid tools on, the warranty registry, a measured benchmark, and a real catalog payload. Until those are complete, demonstrate only the implemented preview, drift, apply, verification, recovery, dashboard, and benchmark-harness behavior. Label synthetic records and provisional evidence visibly.
 
 ## Three-minute sequence
 

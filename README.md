@@ -38,9 +38,9 @@ flowchart LR
     E -. warranty activation .-> H[Warranty registry]
 ```
 
-The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. Repository source and buyer credentials do not belong on the hosted server.
+The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. The buyer key stays in a separate local signer process (`lemma-signer`), never in the bridge. Repository source and buyer credentials do not belong on the hosted server.
 
-The server owns deterministic matching, recoverable resolution state, catalog and dashboard APIs, privacy-thresholded demand data, and the persistence seam that the paid path will wrap.
+The server owns deterministic matching, recoverable resolution state, the x402 paid tool with its in-process facilitator and settlement reconciler, catalog and dashboard APIs, and privacy-thresholded demand data.
 
 ## Why Arbitrum
 
@@ -50,11 +50,11 @@ Lemma needs a cheap, programmable settlement layer because a resolution can cost
 2. Activation of a provider-funded warranty after settlement.
 3. An evaluator-confirmed pass or refundable failure outcome.
 
-The payment and warranty paths are not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that those paths must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+The x402 payment path is implemented for Arbitrum Sepolia (testnet); the warranty path is not implemented yet. The repository already fixes the chain, asset, pricing rules, idempotency model, and role boundaries that the warranty must follow. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
 
 ## Build status
 
-Lemma is an active MVP build. The compatibility path is substantially implemented; real payments and bonded warranties remain gated work.
+Lemma is an active MVP build. The compatibility path and the testnet purchase path are implemented; public sales and bonded warranties remain gated work.
 
 | Area | Status |
 | --- | --- |
@@ -65,7 +65,7 @@ Lemma is an active MVP build. The compatibility path is substantially implemente
 | Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
 | Dashboard views and production bundle checks | Implemented |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
-| x402 facilitator, paid MCP tool, signer integration, and settlement reconciliation | Pending |
+| x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented for Arbitrum Sepolia; not deployed, and no release is sellable yet |
 | Warranty registry, deployment scripts, and evaluator outcomes | Pending |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 
@@ -125,7 +125,7 @@ Each workspace README explains how to develop that component. Start with the [do
 The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
 
 1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
-2. Complete the x402 purchase path, idempotent settlement recovery, signer integration, and facilitator.
+2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase, and a lost response recovered without a second payment.
 3. Implement and test the warranty registry, including one pass and one refunded failure on Arbitrum Sepolia.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
 5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.

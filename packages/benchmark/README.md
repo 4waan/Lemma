@@ -2,7 +2,7 @@
 
 `@lemma/benchmark` tests Lemma's central claim: a paid Compatibility Resolution should reduce all-in cost-to-green without reducing correctness.
 
-The harness, run records, evidence derivation, economic probe, and report generator are implemented. The final x402 task fixtures and measured experiment remain pending with the payment path.
+The harness, run records, evidence derivation, economic probe, and report generator are implemented. The final x402 task fixtures and the measured experiment remain pending.
 
 ## Experiment design
 

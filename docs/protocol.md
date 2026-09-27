@@ -56,11 +56,11 @@ The catalog enforces two bounds:
 - The price cannot exceed 30 percent of the conservative expected raw model-cost saving.
 - The price cannot exceed `maxPriceFor`, which also preserves the 25 percent all-in reduction target after chain cost.
 
-The bridge independently checks the quoted scheme, network, asset, recipient, authorization lifetime, per-resolution limit, daily cap, and every field of the x402 challenge before signing. Model text cannot authorize payment.
+The bridge independently checks the quoted scheme, network, asset, recipient, authorization lifetime, per-resolution limit, and daily cap before it asks for a signature. It signs the terms of the preview it checked and never pays an x402 challenge; a challenge whose terms differ is refused. The signer that holds the buyer key enforces the recipient, caps, and window again, with its own ledger. Model text cannot authorize payment.
 
 ## Delivery and application
 
-The paid response pairs a resolution with the bundle named by its payload digest. The bridge verifies the manifest and bundle, checks the repository still fits the purchased profile, and computes a drift plan before writing.
+The paid response pairs a resolution with the bundle named by its payload digest. The bridge stores it only when the resolution matches the offer it bought: preview id, release, profile digest, buyer, and terms. It verifies the manifest and bundle, checks the repository still fits the purchased profile, and computes a drift plan before writing.
 
 Exact matches can be applied atomically. Drift produces an `adapt` result and an exported bundle for manual integration. Acceptance runs use the release's reviewed package script and safe arguments without a shell.
 
@@ -68,12 +68,17 @@ See [Bridge Runtime](bridge-runtime.md) for the filesystem and process guarantee
 
 ## Payment and warranty boundary
 
-The current implementation stops at the paid-tool registration and signer seams. The pending payment lane must add:
+The payment path is built for Arbitrum Sepolia USDC (testnet). `@lemma/core` fixes every value its two sides must agree on:
 
-- x402 facilitator endpoints and the paid MCP tool.
-- Spend reservation and EIP-3009 authorization handling.
-- Settlement reconciliation and signed resolution delivery.
-- Warranty voucher typed data and activation.
+- **Payment nonce.** The EIP-3009 nonce for a resolution is `derivePaymentNonce(resolutionId, previewId)`, the `payment-nonce` digest of both ids. USDC refuses a second authorization with the same nonce, so a resolution is paid at most once on chain. The resolution id is public and USDC publishes the nonce next to the payer, but only the buyer's bridge and the server know the preview id, so nobody else can join the nonce to the resolution. The server refuses any other nonce before settling.
+- **Requirements.** `paymentRequirementsFor(terms)` turns stored `PaymentTerms` into x402 v2 `PaymentRequirements`. The server's `accepts` and the bridge's `accepted` both come from it, so the bridge signs from the preview's terms without a challenge round trip. x402 2.27.0 compares the two by exact string equality and normalizes addresses with `getAddress` wherever it signs or verifies, so the requirements carry EIP-55 checksummed addresses, the form x402's own builder uses for this asset; core's own schemas stay lowercase. Only Arbitrum Sepolia USDC has a known EIP-712 domain, so any other asset is refused.
+- **Paid tool input.** `BuyInput` is `{ previewId, claimHash }`. The payer, nonce, and authorization window come from the verified payment, never from tool arguments.
+- **Warranty claim.** `warrantyClaimHash(resolutionId, claimSecret, refundTo)` equals Solidity `keccak256(abi.encode(bytes32, bytes32, address))`, which the warranty registry checks before paying a credit. Only the hash reaches the server and the chain. The bridge keeps the secret and the refund address as a `WarrantyClaim` (schema version 1), which is never sent.
+- **Receipt signatures.** `adoptionReceiptTypedData(receipt, chainId)` is the EIP-712 typed data a buyer signs: domain `{ name: "Lemma", version: "1", chainId }` and type `AdoptionReceipt(bytes32 resolutionId,string outcome,bytes32 receiptDigest)`, where `receiptDigest` is `adoptionReceiptDigest(receipt)`, the receipt with its signature cleared. The server checks it against the resolution's buyer with viem `verifyTypedData` on a public client, so EOA, ERC-1271, and ERC-6492 signatures all verify.
+
+The digest vectors pin a payment nonce, a claim hash, and a receipt's typed-data hash. The warranty work must still add:
+
+- Provider-signed warranty vouchers: their typed data, signing after settlement, and activation.
 - Evaluator outcomes, expiry, and buyer withdrawal credit.
 
 Those additions must preserve the existing identifiers, payment terms, recovery behavior, and adoption receipt digest. Any required schema change belongs in `@lemma/core` before paid records are persisted.

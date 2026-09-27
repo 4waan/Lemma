@@ -17,9 +17,9 @@ Use this page to find the document that owns a decision. Component READMEs cover
 
 ## Work on a runtime
 
-- [Bridge Runtime](bridge-runtime.md): repository profiling, resolution selection, atomic apply, crash recovery, dependency installs, and acceptance runs.
-- [Server Runtime](server-runtime.md): request handling, persistence, payment seams, demand privacy, startup gates, and operational failures.
-- [Deployment](deployment.md): target environment, role separation, migrations, release checks, rollout, and rollback.
+- [Bridge Runtime](bridge-runtime.md): repository profiling, purchasing with the buyer signer and spend ledger, resolution selection, atomic apply, crash recovery, dependency installs, acceptance runs, and receipt delivery.
+- [Server Runtime](server-runtime.md): request handling, persistence, the x402 payment seam and its background jobs, demand privacy, startup gates, and operational failures.
+- [Deployment](deployment.md): target environment, role separation, migrations, release checks, enabling paid tools, rollout, rollback, and buyer setup.
 
 ## Produce evidence
 

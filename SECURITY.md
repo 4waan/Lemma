@@ -4,7 +4,7 @@ Lemma handles repository metadata, generated patches, acceptance commands, payme
 
 ## Supported environment
 
-Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, and benchmark surfaces are implemented. Real payment signing, the x402 facilitator, and the warranty contract are not complete.
+Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, benchmark, and testnet x402 payment surfaces are implemented. The warranty contract is not complete.
 
 Do not use Lemma with mainnet assets or production signing keys. Use disposable Arbitrum Sepolia identities and public or synthetic repositories while developing the paid path.
 
@@ -65,11 +65,12 @@ See [Bridge Runtime](docs/bridge-runtime.md) for the process and crash-recovery 
 - A file readable by the same user is not isolation from an acceptance test. Prefer a hardware signer, remote signer, or process running as another user.
 - Rotate a leaked secret before removing it from Git history.
 
-## Pending payment controls
+## Payment controls
 
-The paid path must preserve these requirements before it is enabled:
+The testnet paid path implements these requirements. Keep them when changing it:
 
 - Accept only x402 v2 on `eip155:421614` with the configured Arbitrum Sepolia USDC contract and provider address.
+- Keep the buyer key in a separate signer process that enforces the spending policy itself (see the signer threat model in [Security Model](docs/security-model.md)).
 - Compare every payment challenge field with the stored quote.
 - Enforce the per-resolution cap, daily cap, authorization lifetime, and committed-spend reservation before signing.
 - Derive an EIP-3009 nonce from secret and public resolution inputs rather than using the public resolution id alone.

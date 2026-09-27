@@ -13,6 +13,8 @@ import {
   type RunRecord,
   type SpendingPolicy,
   type TaskRequest,
+  type WarrantyOutcome,
+  type WarrantyVoucher,
   acceptanceRecipeDigest,
   deriveResolutionId,
 } from "../src/index.js";
@@ -216,4 +218,33 @@ export const adoptionFeedbackFile: AdoptionFeedbackFile = {
   tag2: "mcp-server.add-payment-gating",
   endpoint: "",
   lemma: adoptionEvidence,
+};
+
+/**
+ * The warranty registry's own cross-language vector inputs (contracts/test/Vectors.t.sol): a registry at a
+ * fixed address on Arbitrum Sepolia, the claim hash of (0x11..11, 0x22..22, 0x33..33), and a voucher and an
+ * outcome for resolution 0x11..11. The registry checks the same typed-data hashes against its own.
+ */
+export const WARRANTY_VECTOR_REGISTRY = { chainId: 421614, registry: "0x4c454d4d41000000000000000000000000000001" } as const;
+
+export const WARRANTY_VECTOR_CLAIM_HASH = "0xefe737cca6b5574d334f88508fb3149002c12c771f7bdeec10267e5cf8fa21eb";
+
+export const warrantyVectorVoucher: WarrantyVoucher = {
+  schemaVersion: "1",
+  resolutionId: hex32("11"),
+  releaseDigest: hex32("44"),
+  profileIndex: 2,
+  amount: "250000",
+  paymentRef: hex32("55"),
+  claimHash: WARRANTY_VECTOR_CLAIM_HASH,
+  activateBy: 1_790_000_000,
+};
+
+export const warrantyVectorOutcome: WarrantyOutcome = {
+  schemaVersion: "1",
+  resolutionId: hex32("11"),
+  verdict: "failed",
+  weightBps: 10_000,
+  evidenceHash: hex32("66"),
+  validUntil: 1_790_003_600,
 };

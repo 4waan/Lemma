@@ -337,6 +337,8 @@
     "adoptionReceiptTypedDataHash": "0x276bfda9064f1aa742d506914c84c5e63b0b0b4774f5ff5c017b9eb9a765beaa",
     "acceptanceRecipeDigest": "0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63",
     "adoptionFeedbackFileBytes": "{\"agentId\":7,\"agentRegistry\":\"eip155:421614:0x8004a818bfb912233c491871b3d84c89a494bd9e\",\"clientAddress\":\"eip155:421614:0x00000000000000000000000000000000000000f1\",\"createdAt\":\"2026-09-24T13:00:00.000Z\",\"endpoint\":\"\",\"lemma\":{\"acceptance\":{\"durationMs\":41250,\"exitCode\":0,\"outputDigest\":\"0x8888888888888888888888888888888888888888888888888888888888888888\"},\"acceptanceRecipeDigest\":\"0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63\",\"capability\":\"mcp-server.add-payment-gating\",\"finalizedAt\":\"2026-09-24T13:00:00.000Z\",\"kind\":\"lemma.adoption-evidence\",\"registry\":{\"address\":\"0x00000000000000000000000000000000000000e1\",\"chainId\":421614},\"release\":{\"profileIndex\":0,\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"releaseId\":\"mcp-server-payment-gating\",\"version\":\"0.1.0\"},\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\",\"schemaVersion\":\"1\",\"verdict\":\"passed\"},\"tag1\":\"lemma.adoption\",\"tag2\":\"mcp-server.add-payment-gating\",\"value\":100,\"valueDecimals\":0}",
-    "adoptionFeedbackHash": "0xd3290b75f9e0e0b4f24ec2824b63f61e8f1de8ffd79c429d6116205c0b87b6e9"
+    "adoptionFeedbackHash": "0xd3290b75f9e0e0b4f24ec2824b63f61e8f1de8ffd79c429d6116205c0b87b6e9",
+    "warrantyVoucherTypedDataHash": "0x2770a4591ffeb5922cf0d77e5f159ea23e24297c9164f970a1cf74d85a1a2473",
+    "warrantyOutcomeTypedDataHash": "0xc4f2af8ca4c3b7a3a512cf4621f3ebf6de602412ed19545450663cf604c8b590"
   }
 }

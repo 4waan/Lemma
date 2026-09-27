@@ -19,6 +19,8 @@ import {
   digest,
   feedbackHashOf,
   warrantyClaimHash,
+  warrantyOutcomeTypedData,
+  warrantyVoucherTypedData,
 } from "../src/index.js";
 import * as ex from "./examples.js";
 
@@ -67,6 +69,10 @@ const derived = {
   // ERC-8004 feedbackHash: keccak256 of a feedback file's bytes as served (JCS of the file itself, no kind envelope).
   adoptionFeedbackFileBytes: adoptionFeedbackFileBytes(ex.adoptionFeedbackFile),
   adoptionFeedbackHash: feedbackHashOf(adoptionFeedbackFileBytes(ex.adoptionFeedbackFile)),
+  /** The EIP-712 hash a provider signs for the warranty registry's vector voucher; the registry's `hashVoucher` gives the same. */
+  warrantyVoucherTypedDataHash: hashTypedData(warrantyVoucherTypedData(ex.warrantyVectorVoucher, ex.WARRANTY_VECTOR_REGISTRY)),
+  /** The EIP-712 hash an evaluator signs for the registry's vector outcome; the registry's `hashOutcome` gives the same. */
+  warrantyOutcomeTypedDataHash: hashTypedData(warrantyOutcomeTypedData(ex.warrantyVectorOutcome, ex.WARRANTY_VECTOR_REGISTRY)),
 };
 
 if (process.env.LEMMA_WRITE_VECTORS === "1") {
@@ -94,5 +100,8 @@ describe("digest vectors", () => {
     expect(derived.resolutionId).toBe(computed.find((v) => v.name === "resolution-id")?.digest);
     expect(derived.paymentNonce).toBe(computed.find((v) => v.name === "payment-nonce")?.digest);
     expect(derived.acceptanceRecipeDigest).toBe(computed.find((v) => v.name === "acceptance-recipe")?.digest);
+    // The warranty registry's own vectors (contracts/test/Vectors.t.sol).
+    expect(derived.warrantyVoucherTypedDataHash).toBe("0x2770a4591ffeb5922cf0d77e5f159ea23e24297c9164f970a1cf74d85a1a2473");
+    expect(derived.warrantyOutcomeTypedDataHash).toBe("0xc4f2af8ca4c3b7a3a512cf4621f3ebf6de602412ed19545450663cf604c8b590");
   });
 });

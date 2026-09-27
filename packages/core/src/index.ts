@@ -20,6 +20,7 @@ export * from "./run.js";
 export * from "./signing.js";
 export * from "./task.js";
 export * from "./tools.js";
+export * from "./warranty.js";
 
 export const CORE_COMPONENT = {
   name: "@lemma/core",

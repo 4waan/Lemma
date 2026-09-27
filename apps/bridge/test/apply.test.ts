@@ -370,7 +370,16 @@ describe("applyPlan", () => {
     await j.stall({ during: (onGroup) => onGroup(orphan.pid as number) });
     j.crash();
     expect(j.recover()).toMatchObject({ recovered: 1 });
-    await new Promise((r) => setTimeout(r, 100));
+    // The pid is gone once the kill has landed and Node has reaped the orphan; on a busy machine both take a while.
+    const alive = () => {
+      try {
+        process.kill(orphan.pid as number, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 40 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
     expect(() => process.kill(orphan.pid as number, 0)).toThrow();
   });
 

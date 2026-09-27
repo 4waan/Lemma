@@ -84,7 +84,7 @@ See [Protocol](protocol.md) for identifiers, evidence binding, pricing, and rece
 
 Postgres stores immutable releases and bundles, catalog snapshots, offer-bearing previews, prepared and settled resolutions with the buyer's warranty claim hash, adoption receipts with their signature verdict, and privacy-thresholded demand data.
 
-`ResolutionService` is the payment integration seam. Conditional transitions prevent duplicate preparation, payment reuse, and duplicate settlement. Settlement is keyed by the payment authorization, not the transaction, since one transaction can carry several authorizations. The reconciler commits or expires a row only by the authorization it checked.
+`ResolutionService` is the payment integration seam. Conditional transitions prevent duplicate preparation, payment reuse, and duplicate settlement. Settlement is keyed by the payment authorization, not the transaction, since one transaction can carry several authorizations. The reconciler commits or expires a row only by the authorization it checked, and commits it only when that authorization's transaction paid the quoted amount to the quoted payee.
 
 Later migrations will add signed warranty vouchers and chain indexer cursors. Chain projections must be idempotent by chain id, transaction hash, and log index.
 

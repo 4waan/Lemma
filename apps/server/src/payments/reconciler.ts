@@ -23,9 +23,9 @@ const SEARCH_MARGIN_MS = 10 * 60_000;
 const PAGE_SIZE = 100;
 
 export interface ReconcileReport {
-  /** Rows settled from an AuthorizationUsed log. */
+  /** Rows settled from an AuthorizationUsed log whose transaction paid the quoted terms. */
   readonly settled: number;
-  /** Rows expired: the authorization went unused, or the buyer canceled it. */
+  /** Rows expired: the authorization went unused, the buyer canceled it, or its transaction paid other terms. */
   readonly expired: number;
   /** Rows left for a later run: the chain has not passed their window yet, or used but no log found yet. */
   readonly waiting: number;
@@ -51,9 +51,15 @@ type Tally = { -readonly [K in keyof ReconcileReport]: number };
  * (`listUnsettled`, with a grace period), it reads USDC's
  * `authorizationState(payer, nonce)` at the chain's head block:
  *
- * - used, with an `AuthorizationUsed` log: the transfer happened, so it
- *   commits the row with that transaction (one transaction may have used
- *   several rows' authorizations, and settles each of them);
+ * - used, with an `AuthorizationUsed` log, by a transaction that paid the
+ *   row's quoted terms (USDC's Transfer right after that log moved exactly
+ *   the quoted amount from the payer to the quoted payee): it commits the row
+ *   with that transaction (one transaction may have used several rows'
+ *   authorizations, and settles each of them);
+ * - used by a transaction that moved anything else (the buyer can sign the
+ *   nonce into another authorization of their own): the quoted payment can
+ *   never land, so the row expires, logged as `reconcile.transfer_mismatch`,
+ *   and is never committed;
  * - used, with an `AuthorizationCanceled` log: the buyer canceled it, so no
  *   transfer can happen and the row expires;
  * - unused at a block at or past the window's end: USDC refuses it in every
@@ -154,8 +160,13 @@ export class SettlementReconciler {
       // Awaited here, so a store failure while expiring is caught below like any other.
       if (!(await chain.authorizationUsed(row.payer, nonce, head.number))) return await this.expire(row, report);
       const from = new Date(row.validBefore.getTime() - row.resolution.terms.maxTimeoutSeconds * 1000 - SEARCH_MARGIN_MS);
-      const outcome = await chain.authorizationOutcome(row.payer, nonce, { from });
+      const outcome = await chain.authorizationOutcome(row.payer, nonce, row.resolution.terms, { from });
       if (outcome.kind === "canceled") return await this.expire(row, report);
+      if (outcome.kind === "mismatched") {
+        // Spent on a transfer that did not pay the quoted terms, so the payment can never land.
+        logger.log("warn", "reconcile.transfer_mismatch", { resolutionId: row.resolutionId });
+        return await this.expire(row, report);
+      }
       if (outcome.kind === "unknown") {
         logger.log("warn", "reconcile.log_not_found", { resolutionId: row.resolutionId });
         report.waiting++;

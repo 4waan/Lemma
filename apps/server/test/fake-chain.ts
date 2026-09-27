@@ -33,6 +33,12 @@ export class FakeUsdc implements FacilitatorEvmSigner, PaymentChain {
   readonly calls: string[] = [];
   /** Makes settlement transactions fail to send. */
   failWrites = false;
+  /**
+   * Runs once, just before the next settlement is sent: a transfer the buyer
+   * submits first with the same nonce (`settleOutside`), which then makes the
+   * settlement fail, as USDC does.
+   */
+  beforeNextSettlement: (() => void) | undefined;
   /** The head block's timestamp the reconciler sees: the current time unless set. */
   chainTime: Date | undefined;
   /** Makes x402's check that the token is a contract (`getCode`) throw with this message. */
@@ -73,6 +79,9 @@ export class FakeUsdc implements FacilitatorEvmSigner, PaymentChain {
 
   async writeContract(args: { address: Hex; functionName: string; args: readonly unknown[] }): Promise<Hex> {
     this.calls.push(`write:${args.functionName}`);
+    const first = this.beforeNextSettlement;
+    this.beforeNextSettlement = undefined;
+    first?.();
     if (this.failWrites) throw new Error("the transaction could not be sent");
     if (args.functionName === "settle" && isAddressEqual(args.address, x402ExactPermit2ProxyAddress)) {
       // x402's Permit2 proxy pulling the permitted amount from the permit's owner (Permit2 allowance assumed).
@@ -119,16 +128,20 @@ export class FakeUsdc implements FacilitatorEvmSigner, PaymentChain {
     return this.isUsed(authorizer, nonce);
   }
 
-  async authorizationOutcome(authorizer: Address, nonce: Hex32): Promise<AuthorizationOutcome> {
+  async authorizationOutcome(authorizer: Address, nonce: Hex32, terms: Pick<PaymentTerms, "payTo" | "amount">): Promise<AuthorizationOutcome> {
     if (this.canceled.has(key(authorizer, nonce))) return { kind: "canceled" };
     const t = this.transfers.find((x) => key(x.from, x.nonce) === key(authorizer, nonce));
-    return t === undefined ? { kind: "unknown" } : { kind: "used", transaction: t.hash };
+    if (t === undefined) return { kind: "unknown" };
+    // The transfer that used the authorization paid the terms only to the quoted payee, for exactly the quoted amount.
+    return t.to === terms.payTo && t.value === BigInt(terms.amount) ? { kind: "used", transaction: t.hash } : { kind: "mismatched" };
   }
 
   /**
-   * A transfer the facilitator did not send (a settlement that outlived its
-   * call, say). Pass `transaction` to put it in a transaction another transfer
-   * is in: anyone may submit EIP-3009 authorizations, several in one call.
+   * A transfer the facilitator did not send: a settlement that outlived its
+   * call, say, or one the buyer signed with the same nonce to another payee
+   * or for another amount. Pass `transaction` to put it in a transaction
+   * another transfer is in: anyone may submit EIP-3009 authorizations,
+   * several in one call.
    */
   settleOutside(from: Address, to: Address, value: bigint, nonce: Hex32, transaction?: Hex32): Hex32 {
     const hash = transaction ?? keccak256(stringToHex(`outside ${this.transfers.length}`));

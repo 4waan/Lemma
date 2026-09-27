@@ -1,5 +1,5 @@
-import { type Address, type Hex32, toAddress } from "@lemma/core";
-import { type Hex, type PublicClient, encodeEventTopics, getAddress, numberToHex, parseAbi, parseAbiItem } from "viem";
+import { type Address, type Hex32, type PaymentTerms, toAddress } from "@lemma/core";
+import { type Hex, type PublicClient, decodeEventLog, encodeEventTopics, getAddress, numberToHex, parseAbi, parseAbiItem } from "viem";
 
 /**
  * The chain reads the payment path needs, behind one small interface so the
@@ -20,12 +20,22 @@ export interface PaymentChain {
   /**
    * What happened to a used authorization, from USDC's `AuthorizationUsed` or
    * `AuthorizationCanceled` log, searched from the last block before
-   * `window.from` to the latest block: "unknown" when neither log is found.
+   * `window.from` to the latest block. "used" only when the transaction that
+   * used it paid `terms`: USDC moved exactly `terms.amount` from the
+   * authorizer to `terms.payTo` in the same call. "mismatched" when that
+   * transaction moved anything else: EIP-3009 nonces are the signer's to
+   * choose, so a buyer can spend the nonce on a transfer of their own, after
+   * which the quoted payment can never land. "unknown" when neither log is
+   * found.
    */
-  authorizationOutcome(authorizer: Address, nonce: Hex32, window: { readonly from: Date }): Promise<AuthorizationOutcome>;
+  authorizationOutcome(authorizer: Address, nonce: Hex32, terms: Pick<PaymentTerms, "payTo" | "amount">, window: { readonly from: Date }): Promise<AuthorizationOutcome>;
 }
 
-export type AuthorizationOutcome = { readonly kind: "used"; readonly transaction: Hex32 } | { readonly kind: "canceled" } | { readonly kind: "unknown" };
+export type AuthorizationOutcome =
+  | { readonly kind: "used"; readonly transaction: Hex32 }
+  | { readonly kind: "mismatched" }
+  | { readonly kind: "canceled" }
+  | { readonly kind: "unknown" };
 
 export interface ChainHead {
   readonly number: bigint;
@@ -48,6 +58,7 @@ export interface SignatureVerifier {
 export const USDC_AUTHORIZATION_ABI = parseAbi(["function authorizationState(address authorizer, bytes32 nonce) view returns (bool)"]);
 const AUTHORIZATION_USED = parseAbiItem("event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)");
 const AUTHORIZATION_CANCELED = parseAbiItem("event AuthorizationCanceled(address indexed authorizer, bytes32 indexed nonce)");
+const TRANSFER = parseAbiItem("event Transfer(address indexed from, address indexed to, uint256 value)");
 
 /**
  * Arbitrum makes at most about four blocks a second, so this many blocks per
@@ -69,7 +80,9 @@ export const LOG_CHUNK_BLOCKS = 10_000n;
  * `PaymentChain` over a viem public client. A log search starts at the last
  * block before `window.from`, found by bisection over block timestamps, and
  * walks forward to the latest block with no cap on the distance, both events
- * in one `eth_getLogs` filter on their indexed authorizer and nonce.
+ * in one `eth_getLogs` filter on their indexed authorizer and nonce. The
+ * receipt of the transaction that used the authorization then shows what it
+ * paid (`outcomeOfUse`).
  */
 export function viemPaymentChain(client: PublicClient, asset: Address): PaymentChain {
   const token = getAddress(asset);
@@ -82,12 +95,15 @@ export function viemPaymentChain(client: PublicClient, asset: Address): PaymentC
     async authorizationUsed(authorizer, nonce, blockNumber) {
       return client.readContract({ address: token, abi: USDC_AUTHORIZATION_ABI, functionName: "authorizationState", args: [getAddress(authorizer), nonce as Hex], blockNumber });
     },
-    async authorizationOutcome(authorizer, nonce, window) {
+    async authorizationOutcome(authorizer, nonce, terms, window) {
+      const expected = { from: authorizer, to: terms.payTo, value: BigInt(terms.amount) };
       const latest = await client.getBlock({ blockTag: "latest" });
       const start = await lastBlockBefore(timestampOf, latest, BigInt(Math.floor(window.from.getTime() / 1000)));
       const [usedTopic, authorizerTopic, nonceTopic] = encodeEventTopics({ abi: [AUTHORIZATION_USED], eventName: "AuthorizationUsed", args: { authorizer: getAddress(authorizer), nonce: nonce as Hex } });
       const [canceledTopic] = encodeEventTopics({ abi: [AUTHORIZATION_CANCELED], eventName: "AuthorizationCanceled" });
       const topics = [[usedTopic, canceledTopic], authorizerTopic ?? null, nonceTopic ?? null] as [Hex[], Hex | null, Hex | null];
+      const usedBy = [usedTopic, topics[1], topics[2]];
+      const isThisUse = (log: ReceiptLog) => sameHex(log.address, token) && log.topics.length === usedBy.length && usedBy.every((topic, i) => sameHex(log.topics[i], topic));
       let span = LOG_CHUNK_BLOCKS;
       for (let from = start; from <= latest.number; ) {
         const to = from + span - 1n < latest.number ? from + span - 1n : latest.number;
@@ -101,13 +117,56 @@ export function viemPaymentChain(client: PublicClient, asset: Address): PaymentC
         }
         const live = logs.filter((log) => log.removed !== true && log.transactionHash !== null);
         const used = live.find((log) => log.topics[0]?.toLowerCase() === usedTopic.toLowerCase());
-        if (used?.transactionHash) return { kind: "used", transaction: used.transactionHash.toLowerCase() };
+        if (used?.transactionHash) return outcomeOfUse(client, token, used.transactionHash, isThisUse, expected);
         if (live.some((log) => log.topics[0]?.toLowerCase() === canceledTopic?.toLowerCase())) return { kind: "canceled" };
         from = to + 1n;
       }
       return { kind: "unknown" };
     },
   };
+}
+
+type ReceiptLog = { readonly address: string; readonly topics: readonly string[] };
+
+const sameHex = (a: string | undefined, b: string | null | undefined) => typeof a === "string" && typeof b === "string" && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * What the transaction that used an authorization paid, from its receipt: the
+ * log right after the authorization's AuthorizationUsed log (`isThisUse`)
+ * must be USDC's Transfer of exactly `expected.value` from `expected.from` to
+ * `expected.to`, or the outcome is "mismatched".
+ *
+ * FiatToken (Circle's USDC, FiatTokenV2_2) emits the two back to back: both
+ * `_transferWithAuthorization` and `_receiveWithAuthorization` call
+ * `_markAuthorizationAsUsed`, which emits AuthorizationUsed(authorizer,
+ * nonce), and then `_transfer`, which emits Transfer(from, to, value) and
+ * nothing else (circlefin/stablecoin-evm at fc85788:
+ * contracts/v2/EIP3009.sol, and `_transfer` in contracts/v1/FiatTokenV1.sol).
+ * So the log right after it is the transfer that authorization made, even in
+ * a transaction that used several authorizations.
+ */
+async function outcomeOfUse(
+  client: PublicClient,
+  token: Hex,
+  transaction: Hex,
+  isThisUse: (log: ReceiptLog) => boolean,
+  expected: { readonly from: Address; readonly to: Address; readonly value: bigint },
+): Promise<AuthorizationOutcome> {
+  const { logs } = await client.getTransactionReceipt({ hash: transaction });
+  const used = logs.find(isThisUse);
+  // The receipt the node serves now lacks the log the search found (a reorganization since, say): look again later.
+  if (used === undefined) return { kind: "unknown" };
+  const next = logs.find((log) => log.logIndex === used.logIndex + 1);
+  if (next === undefined || !sameHex(next.address, token)) return { kind: "mismatched" };
+  let paid: { readonly from: Hex; readonly to: Hex; readonly value: bigint };
+  try {
+    paid = decodeEventLog({ abi: [TRANSFER], topics: next.topics, data: next.data, strict: true }).args;
+  } catch {
+    // Another event, or not a well-formed Transfer.
+    return { kind: "mismatched" };
+  }
+  if (!sameHex(paid.from, expected.from) || !sameHex(paid.to, expected.to) || paid.value !== expected.value) return { kind: "mismatched" };
+  return { kind: "used", transaction: transaction.toLowerCase() };
 }
 
 /**

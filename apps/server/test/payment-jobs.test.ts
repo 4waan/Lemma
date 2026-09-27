@@ -1,7 +1,7 @@
 import { inspect } from "node:util";
 
 import { resolve } from "@lemma/catalog";
-import { type AdoptionReceipt, type Hex32, type Preview, adoptionReceiptTypedData, deriveResolutionId, toAddress } from "@lemma/core";
+import { type AdoptionReceipt, type Address, type Hex32, type Preview, adoptionReceiptTypedData, deriveResolutionId, toAddress } from "@lemma/core";
 import { type Hex, HttpRequestError, createPublicClient, custom, encodeAbiParameters, encodeEventTopics, getAddress, numberToHex, parseAbi, toHex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arbitrumSepolia } from "viem/chains";
@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   type AuthorizationOutcome,
+  type Logger,
   MemoryStore,
   type PaymentChain,
   ReceiptVerifier,
@@ -21,7 +22,7 @@ import {
   viemPaymentChain,
   viemSignatureVerifier,
 } from "../src/index.js";
-import { NOW, gatingTask, matchingProfile, nextPreviewId, sellableIndex } from "./helpers.js";
+import { NOW, PROVIDER, gatingTask, matchingProfile, nextPreviewId, sellableIndex } from "./helpers.js";
 
 const USDC = "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d";
 const buyer = privateKeyToAccount(generatePrivateKey());
@@ -118,6 +119,28 @@ describe("SettlementReconciler", () => {
       expect(await reconciler.runOnce()).toEqual(report);
       expect((await store.getResolution(id))?.state).toBe("prepared");
     }
+  });
+
+  it("expires a row whose authorization was spent on a transfer that did not pay its quoted terms, and never commits it", async () => {
+    const { store, id, nonce } = await preparedStore();
+    const terms = (await store.getResolution(id))?.resolution.terms;
+    const asked: unknown[] = [];
+    const c: PaymentChain = {
+      head: async () => ({ number: HEAD_BLOCK, timestamp: AFTER }),
+      authorizationUsed: async () => true,
+      async authorizationOutcome(authorizer, n, quoted) {
+        asked.push([authorizer, n, quoted]);
+        return { kind: "mismatched" };
+      },
+    };
+    const logged: unknown[] = [];
+    const logger: Logger = { log: (level, event, fields) => void logged.push([level, event, fields]) };
+    const reconciler = new SettlementReconciler({ service: new ResolutionService(store, () => AFTER, silentLogger), chain: c, clock: () => AFTER, logger });
+    expect(await reconciler.runOnce()).toEqual({ settled: 0, expired: 1, waiting: 0, failed: 0, deferred: 0, unchanged: 0 });
+    expect(await store.getResolution(id)).toMatchObject({ state: "expired", settlementRef: null });
+    // The chain is asked whether the row's own terms were paid, and the log names the resolution only.
+    expect(asked).toEqual([[BUYER, nonce, terms]]);
+    expect(logged).toContainEqual(["warn", "reconcile.transfer_mismatch", { resolutionId: id }]);
   });
 });
 
@@ -336,14 +359,36 @@ describe("ReceiptVerifier", () => {
 describe("viem chain reads", () => {
   const nonce = `0x${"3c".repeat(32)}` as Hex32;
   const TX = `0x${"9d".repeat(32)}`;
-  const events = parseAbi(["event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)", "event AuthorizationCanceled(address indexed authorizer, bytes32 indexed nonce)"]);
+  const AMOUNT = 250_000n;
+  /** The quoted terms the authorization was signed for. */
+  const TERMS = { payTo: PROVIDER, amount: AMOUNT.toString() };
+  const events = parseAbi([
+    "event AuthorizationUsed(address indexed authorizer, bytes32 indexed nonce)",
+    "event AuthorizationCanceled(address indexed authorizer, bytes32 indexed nonce)",
+    "event Transfer(address indexed from, address indexed to, uint256 value)",
+  ]);
+
+  type RawLog = { address: string; topics: Hex[]; data: Hex };
+  /** USDC's AuthorizationUsed log, by default for the buyer's authorization with `nonce`. */
+  const usedLog = (authorizer: Address = BUYER, usedNonce: Hex32 = nonce): RawLog => ({
+    address: USDC,
+    topics: encodeEventTopics({ abi: events, eventName: "AuthorizationUsed", args: { authorizer: getAddress(authorizer), nonce: usedNonce as Hex } }) as Hex[],
+    data: "0x",
+  });
+  /** A Transfer log, by default USDC's of the quoted amount from the buyer to the quoted payee. */
+  const transferLog = (t: { from?: Address; to?: Address; value?: bigint; address?: string } = {}): RawLog => ({
+    address: t.address ?? USDC,
+    topics: encodeEventTopics({ abi: events, eventName: "Transfer", args: { from: getAddress(t.from ?? BUYER), to: getAddress(t.to ?? PROVIDER) } }) as Hex[],
+    data: encodeAbiParameters([{ type: "uint256" }], [t.value ?? AMOUNT]),
+  });
 
   /**
    * A JSON-RPC node for viem: block n's timestamp is `latestTime` less (latest - n) / blocksPerSecond seconds
-   * (default four blocks a second), one AuthorizationUsed log at `logAt`, and `eth_getLogs` ranges wider than
+   * (default four blocks a second), one AuthorizationUsed log at `logAt` in transaction TX, whose receipt holds
+   * `receipt` (by default that log and USDC's Transfer of the quoted terms), and `eth_getLogs` ranges wider than
    * `maxRange` refused with a JSON-RPC error, as providers do.
    */
-  function fakeRpc(options: { used: boolean; latest: bigint; latestTime: number; logAt?: bigint; blocksPerSecond?: number; maxRange?: bigint }) {
+  function fakeRpc(options: { used: boolean; latest: bigint; latestTime: number; logAt?: bigint; blocksPerSecond?: number; maxRange?: bigint; receipt?: RawLog[] }) {
     const requests: Array<{ method: string; params: unknown }> = [];
     const rate = BigInt(options.blocksPerSecond ?? 4);
     const timestampAt = (n: bigint) => BigInt(options.latestTime) - (options.latest - n) / rate;
@@ -369,8 +414,15 @@ describe("viem chain reads", () => {
               const asked = Array.isArray(wanted) ? wanted.includes(usedTopic) : wanted === usedTopic;
               const inRange = options.logAt !== undefined && BigInt(filter.fromBlock) <= options.logAt && options.logAt <= BigInt(filter.toBlock);
               if (!asked || !inRange) return [];
-              const topics = encodeEventTopics({ abi: events, eventName: "AuthorizationUsed", args: { authorizer: getAddress(BUYER), nonce: nonce as Hex } });
-              return [{ address: USDC, topics, data: "0x", blockNumber: numberToHex(options.logAt as bigint), transactionHash: TX, transactionIndex: "0x0", blockHash: `0x${"12".repeat(32)}`, logIndex: "0x0", removed: false }];
+              return [{ ...usedLog(), blockNumber: numberToHex(options.logAt as bigint), transactionHash: TX, transactionIndex: "0x0", blockHash: `0x${"12".repeat(32)}`, logIndex: "0x0", removed: false }];
+            }
+            if (method === "eth_getTransactionReceipt") {
+              const [hash] = params as [string];
+              if (hash.toLowerCase() !== TX) return null;
+              const block = { blockNumber: numberToHex(options.logAt ?? 0n), blockHash: `0x${"12".repeat(32)}`, transactionHash: TX, transactionIndex: "0x3" };
+              // Log indexes count across the block, so this transaction's first log is not log 0.
+              const logs = (options.receipt ?? [usedLog(), transferLog()]).map((log, i) => ({ ...log, ...block, logIndex: numberToHex(7 + i), removed: false }));
+              return { ...block, from: BUYER, to: USDC, status: "0x1", type: "0x2", cumulativeGasUsed: "0x1", gasUsed: "0x1", effectiveGasPrice: "0x1", contractAddress: null, logs, logsBloom: `0x${"00".repeat(256)}` };
             }
             throw new Error(`unexpected ${method}`);
           },
@@ -397,7 +449,7 @@ describe("viem chain reads", () => {
     const latestTime = 2_000_000;
     const from = latestTime - 600;
     const { client, timestampAt, logRequests } = fakeRpc({ used: true, latest: 50_000n, latestTime, logAt: 49_500n });
-    const outcome = await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, { from: new Date(from * 1000) });
+    const outcome = await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date(from * 1000) });
     expect(outcome).toEqual({ kind: "used", transaction: TX });
     const [first] = logRequests();
     const start = BigInt(first?.fromBlock as Hex);
@@ -411,7 +463,7 @@ describe("viem chain reads", () => {
     const latestTime = 10_000_000;
     const from = latestTime - 700_000;
     const { client, requests, logRequests } = fakeRpc({ used: true, latest: 3_000_000n, latestTime, logAt: 2_300_300n, blocksPerSecond: 1 });
-    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, { from: new Date(from * 1000) })).toEqual({ kind: "used", transaction: TX });
+    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date(from * 1000) })).toEqual({ kind: "used", transaction: TX });
     expect(logRequests()).toHaveLength(1);
     // Bisection over block timestamps: a few dozen block reads at most.
     expect(requests.filter((r) => r.method === "eth_getBlockByNumber").length).toBeLessThan(30);
@@ -420,11 +472,34 @@ describe("viem chain reads", () => {
   it("halves the block range while the RPC refuses it, and still finds the log", async () => {
     const latestTime = 2_000_000;
     const { client, logRequests } = fakeRpc({ used: true, latest: 50_000n, latestTime, logAt: 49_000n, maxRange: 1_000n });
-    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, { from: new Date((latestTime - 900) * 1000) })).toEqual({ kind: "used", transaction: TX });
+    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((latestTime - 900) * 1000) })).toEqual({ kind: "used", transaction: TX });
     // The whole way to the head at first (3,605 blocks), refused and halved twice, then walked in accepted ranges.
     const ranges = logRequests().map((f) => BigInt(f.toBlock) - BigInt(f.fromBlock) + 1n);
     expect(ranges.slice(0, 3)).toEqual([3_605n, 1_802n, 901n]);
     expect(ranges.slice(2).every((r) => r <= 1_000n)).toBe(true);
+  });
+
+  it("answers used only when the log right after AuthorizationUsed is USDC's Transfer of the quoted amount to the quoted payee", async () => {
+    const otherPayee = "0x00000000000000000000000000000000000000ee";
+    const otherContract = "0x00000000000000000000000000000000000000cc";
+    const otherNonce = `0x${"4d".repeat(32)}` as Hex32;
+    const cases: Array<[string, RawLog[], AuthorizationOutcome]> = [
+      ["the quoted transfer", [usedLog(), transferLog()], { kind: "used", transaction: TX }],
+      ["another payee", [usedLog(), transferLog({ to: otherPayee })], { kind: "mismatched" }],
+      ["another amount", [usedLog(), transferLog({ value: AMOUNT - 1n })], { kind: "mismatched" }],
+      ["a Transfer from another contract", [usedLog(), transferLog({ address: otherContract })], { kind: "mismatched" }],
+      ["no Transfer", [usedLog()], { kind: "mismatched" }],
+      ["another USDC event", [usedLog(), usedLog(BUYER, otherNonce), transferLog()], { kind: "mismatched" }],
+      // One transaction, two of the buyer's authorizations: the quoted transfer is there, but another authorization made it.
+      ["the quoted transfer, made by another authorization", [usedLog(), transferLog({ to: BUYER, value: 0n }), usedLog(BUYER, otherNonce), transferLog()], { kind: "mismatched" }],
+      ["the quoted transfer, after another authorization's", [usedLog(BUYER, otherNonce), transferLog({ to: BUYER, value: 0n }), usedLog(), transferLog()], { kind: "used", transaction: TX }],
+      // The node no longer shows the log in this transaction (a reorganization since the search): undecided, never mismatched.
+      ["a receipt without the AuthorizationUsed log", [transferLog()], { kind: "unknown" }],
+    ];
+    for (const [name, receipt, outcome] of cases) {
+      const { client } = fakeRpc({ used: true, latest: 50_000n, latestTime: 2_000_000, logAt: 49_990n, receipt });
+      expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((2_000_000 - 60) * 1000) }), name).toEqual(outcome);
+    }
   });
 
   it("still fails when the RPC does not answer at all, rather than narrowing the range forever", async () => {
@@ -440,12 +515,12 @@ describe("viem chain reads", () => {
         { retryCount: 0 },
       ),
     });
-    await expect(viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, { from: new Date((2_000_000 - 60) * 1000) })).rejects.toThrow();
+    await expect(viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((2_000_000 - 60) * 1000) })).rejects.toThrow();
   });
 
   it("answers unknown when no log is in range", async () => {
     const { client } = fakeRpc({ used: true, latest: 50_000n, latestTime: 2_000_000 });
-    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, { from: new Date((2_000_000 - 60) * 1000) })).toEqual({ kind: "unknown" });
+    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((2_000_000 - 60) * 1000) })).toEqual({ kind: "unknown" });
   });
 });
 

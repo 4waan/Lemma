@@ -16,7 +16,7 @@ import type { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import type { PaymentPayload } from "@x402/core/types";
 import { resetAssetContractCache } from "@x402/evm";
 import { createPublicClient, createWalletClient, custom, getAddress, keccak256, parseAbi, parseTransaction, stringToHex } from "viem";
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { type LocalAccount, generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { arbitrumSepolia } from "viem/chains";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -416,6 +416,43 @@ describe("lemma_buy_resolution over x402 (real facilitator, fake USDC)", () => {
     for (const payer of [BUYER, OTHER]) {
       expect(await h.store.getResolution(deriveResolutionId(preview.previewId, payer))).toMatchObject({ state: "settled", settlementRef: tx });
       expect(ResolutionDelivery.parse(await h.service.recover(preview.previewId, payer)).resolution.buyer).toBe(payer);
+    }
+    expect(await reconciler.runOnce()).toEqual({ settled: 0, expired: 0, waiting: 0, failed: 0, deferred: 0, unchanged: 0 });
+    await h.client.close();
+  });
+
+  it("expires a row whose nonce the buyer spent on a transfer that did not pay the quoted terms, and never delivers it", async () => {
+    // EIP-3009 nonces are the signer's to choose: a buyer can sign the derived nonce into a second transfer of their own.
+    const h = await harness();
+    const preview = await h.preview();
+    const amount = BigInt(termsOf(preview).amount);
+    const buyAs = async (account: LocalAccount) => {
+      const payer = toAddress(account.address);
+      const nonce = nonceFor(preview.previewId, payer);
+      const answer = await h.buy({ previewId: preview.previewId, claimHash }, await paymentPayload(account, termsOf(preview), nonce, inWindow));
+      return { payer, nonce, answer };
+    };
+    // Submitted after the server verified and prepared the payment, ahead of its settlement: to themselves, for nothing.
+    const early = privateKeyToAccount(generatePrivateKey());
+    h.usdc.beforeNextSettlement = () => h.usdc.settleOutside(toAddress(early.address), toAddress(early.address), 0n, nonceFor(preview.previewId, toAddress(early.address)));
+    const frontRun = await buyAs(early);
+    expect(frontRun.answer).toMatchObject({ isError: true, text: expect.stringContaining("settlement failed") });
+    // After a settlement failed, while the window is open: to another payee, or to the payee for less.
+    h.usdc.failWrites = true;
+    const elsewhere = await buyAs(privateKeyToAccount(generatePrivateKey()));
+    h.usdc.settleOutside(elsewhere.payer, toAddress(privateKeyToAccount(generatePrivateKey()).address), amount, elsewhere.nonce);
+    const short = await buyAs(privateKeyToAccount(generatePrivateKey()));
+    h.usdc.settleOutside(short.payer, PROVIDER, amount - 1n, short.nonce);
+    const later = new Date(Number(inWindow) * 1000 + 10 * 60_000);
+    h.usdc.chainTime = later;
+    const reconciler = new SettlementReconciler({ service: new ResolutionService(h.store, () => later, silentLogger), chain: h.usdc, clock: () => later, logger: silentLogger });
+    // USDC shows each nonce used, but no transaction paid the quoted payee the quoted amount: every row expires.
+    expect(await reconciler.runOnce()).toEqual({ settled: 0, expired: 3, waiting: 0, failed: 0, deferred: 0, unchanged: 0 });
+    for (const { payer } of [frontRun, elsewhere, short]) {
+      expect(await h.store.getResolution(deriveResolutionId(preview.previewId, payer))).toMatchObject({ state: "expired", settlementRef: null });
+      const recovered = await h.client.callTool({ name: LEMMA_TOOLS.recoverResolution, arguments: { previewId: preview.previewId, buyer: payer } });
+      expect(recovered).toMatchObject({ isError: true, content: [{ text: expect.stringMatching(/^NOT_FOUND: /) }] });
+      expect(recovered.structuredContent).toBeUndefined();
     }
     expect(await reconciler.runOnce()).toEqual({ settled: 0, expired: 0, waiting: 0, failed: 0, deferred: 0, unchanged: 0 });
     await h.client.close();

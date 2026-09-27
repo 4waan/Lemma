@@ -62,7 +62,7 @@ There are no public facilitator routes. The x402 facilitator runs in process, be
 - `registrar.ts` wraps `lemma_buy_resolution` with x402's `createPaymentWrapper` for a call whose preview has an open quote, with `accepts` from core `paymentRequirementsFor`.
 - `handler.ts` takes the payer, nonce, and window from the verified payment, refuses a wrong nonce or payment, and calls `ResolutionService.prepare`; its settlement hook calls `commit`.
 - `facilitator.ts` is the in-process `x402Facilitator` with the exact EVM scheme, for exact EIP-3009 payloads only.
-- `reconciler.ts` settles or expires, every minute, the rows whose window closed without a recorded settlement; `receipts.ts` checks Adoption Receipt signatures against the buyer.
+- `reconciler.ts` settles or expires, every minute, the rows whose window closed without a recorded settlement, and settles a row only when the transaction that used its authorization paid the quoted amount to the quoted payee; `receipts.ts` checks Adoption Receipt signatures against the buyer.
 - `chain.ts` holds the injected chain reads, and `rpc.ts` scrubs URLs from every RPC error.
 
 [Server Runtime](../../docs/server-runtime.md#payment-seam) describes each check and job.

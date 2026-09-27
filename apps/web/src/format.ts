@@ -13,6 +13,14 @@ export function percent(bps: string | bigint): string {
   return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")} %`;
 }
 
+/** A count in thousandths as an exact decimal without trailing zeros: "3000" is "3", "21727" is "21.727". */
+export function thousandths(milli: string | bigint): string {
+  const value = BigInt(milli);
+  const fraction = (value % 1000n).toString().padStart(3, "0").replace(/0+$/, "");
+  const whole = (value / 1000n).toLocaleString("en-US");
+  return fraction === "" ? whole : `${whole}.${fraction}`;
+}
+
 export function shortHex(hex: string): string {
   return hex.length <= 14 ? hex : `${hex.slice(0, 8)}…${hex.slice(-6)}`;
 }

@@ -93,6 +93,8 @@ const withEvidence = CatalogView.parse({
       },
       { chainCostAtomic: 10_000n },
       NOW,
+      // What the server computes for a one-run probe that passed, with no outcomes yet.
+      new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]]),
     ),
   ],
 });
@@ -247,8 +249,11 @@ describe("pages", () => {
 
   it("shows an honest empty state until evidence exists, and the cost chart once it does", () => {
     expect(renderToStaticMarkup(<Evidence view={previewOnly} />)).toContain("No frozen benchmark has run yet");
+    expect(renderToStaticMarkup(<Evidence view={previewOnly} />)).toContain("Nothing to be confident about yet");
     const html = renderToStaticMarkup(<Evidence view={withEvidence} />);
     expect(html).toContain("Provisional evidence is loaded");
+    expect(html).toContain("provisional probe prior, no outcomes yet");
+    expect(html).not.toContain("Nothing to be confident about yet");
     expect(html).toContain("With Lemma");
     // C - S + P + g = 2.50 - 1.00 + 0.25 + 0.01.
     expect(html).toContain(">1.76<");

@@ -829,7 +829,8 @@ async function waitUntilGone(pid: number): Promise<void> {
 // own time assertions, not Vitest's 5-second default, decide what is too slow.
 describe("CursorAdapter process boundary", { timeout: 20_000 }, () => {
   const child = (body: string) => {
-    const dir = temp("lemma-child-");
+    // A real path, like every run directory prepareRunBase makes: macOS keeps its temporary directory behind the /var symlink, and the child's cwd is the resolved one.
+    const dir = realpathSync(temp("lemma-child-"));
     const script = join(dir, "child.mjs");
     writeFileSync(script, `import { writeSync } from "node:fs";\nconst emit = (e) => writeSync(3, JSON.stringify(e) + "\\n");\nlet input = "";\nfor await (const c of process.stdin) input += c;\nconst { apiKey, request } = JSON.parse(input);\n${body}\n`);
     mkdirSync(join(dir, "home", "tmp"), { recursive: true });

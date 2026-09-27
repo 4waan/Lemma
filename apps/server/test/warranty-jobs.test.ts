@@ -451,11 +451,14 @@ describe("the evaluator", () => {
     expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 5, done: 5 });
     const weight = async (b: Bought) => WarrantyOutcome.parse((await w.store.getWarrantyAction(b.id, "finalize"))?.payload).weightBps;
     // The 31-day-old outcome is not counted: three weighed in full, the fourth at zero; another buyer is not affected.
-    expect(await Promise.all(recent.map(weight))).toEqual([10_000, 10_000, 10_000, 0]);
+    // Which one is fourth follows the activation batch's order on chain (by resolution id), not purchase order.
+    const weights = await Promise.all(recent.map(weight));
+    expect([...weights].sort((a, b) => a - b)).toEqual([0, 10_000, 10_000, 10_000]);
+    const fourth = recent[weights.indexOf(0)]!;
     expect(await weight(theirs)).toBe(10_000);
-    expect(w.logger.lines.find((l) => l.event === "warranty.outcome_queued" && l.fields["resolutionId"] === recent[3]!.id)?.fields).toMatchObject({ weightBps: 0, code: "DAMPED" });
+    expect(w.logger.lines.find((l) => l.event === "warranty.outcome_queued" && l.fields["resolutionId"] === fourth.id)?.fields).toMatchObject({ weightBps: 0, code: "DAMPED" });
     // The damped outcome still finalizes: the registry records it with no weight (not into the engine).
-    expect(w.chain.status(recent[3]!.id)).toBe("passed");
+    expect(w.chain.status(fourth.id)).toBe("passed");
   });
 
   it("counts toward the damper an outcome exactly 30 days old, and not one a second older", async () => {
@@ -768,6 +771,9 @@ describe("registry refusals", () => {
     for (const b of [first, second]) expect((await w.store.getWarrantyAction(b.id, "activate"))?.nextAttemptAt.getTime()).toBe(nextHour);
     w.clock.now = new Date(nextHour);
     w.chain.advance(10 * 60);
+    // The batch goes out in resolution id order, not purchase order, so its transaction order cannot be paired with the settlements.
+    const due = await w.store.dueWarrantyActions("activate", w.clock.now, 10);
+    expect(due.map((a) => a.resolutionId)).toEqual([first.id, second.id].sort());
     expect(await activator.runOnce()).toMatchObject({ sent: 2, done: 2 });
     // A purchase on the hour itself is due at once; the jitter is not used while batches are on.
     const never = vi.fn(() => 0);

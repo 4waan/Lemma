@@ -63,9 +63,11 @@ async function serve(): Promise<void> {
   const clock = () => new Date();
   const payments = await paymentsFromEnv(process.env, { stateDir, root, clock });
   if (payments.note !== undefined) console.error(`lemma-mcp: ${payments.note}`);
-  // Acceptance tests run confined (hiding these and the state directory) where Linux user namespaces work.
-  const socket = process.env["LEMMA_SIGNER_SOCKET"];
-  const acceptanceHidden = process.env["LEMMA_ACCEPTANCE_CONFINE"] === "0" ? false : [dirname(socket !== undefined && isAbsolute(socket) ? socket : defaultSignerSocket(stateDir))];
+  // Acceptance tests run confined (hiding the state directory and the signer) where Linux user namespaces work.
+  // The socket's directory, and the socket itself for when that directory holds the workspace and so cannot be covered.
+  const named = process.env["LEMMA_SIGNER_SOCKET"];
+  const socket = named !== undefined && isAbsolute(named) ? named : defaultSignerSocket(stateDir);
+  const acceptanceHidden = process.env["LEMMA_ACCEPTANCE_CONFINE"] === "0" ? false : [dirname(socket), socket];
   if (acceptanceHidden === false) console.error("lemma-mcp: LEMMA_ACCEPTANCE_CONFINE=0: acceptance tests run unconfined, able to read the Lemma state directory and reach the signer");
   else {
     // Checked in the background, so the trial run never delays the MCP handshake.

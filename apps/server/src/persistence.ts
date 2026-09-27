@@ -745,7 +745,8 @@ export class MemoryStore implements LemmaStore {
   async dueWarrantyActions(kind: WarrantyActionKind, now: Date, limit: number): Promise<WarrantyAction[]> {
     return [...this.actions.values()]
       .filter((a) => a.kind === kind && (a.state === "queued" || a.state === "sent") && a.nextAttemptAt <= now)
-      .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
+      // An activation batch goes out by resolution id, as the Postgres store does; other kinds keep their queue order.
+      .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime() || (kind === "activate" ? a.resolutionId.localeCompare(b.resolutionId) : 0))
       .slice(0, limit)
       .map(toAction);
   }

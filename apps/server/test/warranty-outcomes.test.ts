@@ -210,6 +210,11 @@ describe("distinct buyers", () => {
     // The next day, the counts catch up.
     w.clock.now = new Date((Math.floor(w.clock.now.getTime() / day) + 1) * day);
     expect(counts()).toEqual([4, 3, 3]);
+    // A new engine starts empty: the held count never exceeds the outcomes it is published with.
+    w.chain.setEngine(ENGINE_B);
+    await w.jobs.indexer.runOnce();
+    await snapshot.refresh();
+    expect(counts()).toEqual([0, 0, 3]);
   });
 
   it("counts the payers behind the recorded outcomes per release and profile, and behind the fed ones per capability", async () => {

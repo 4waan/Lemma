@@ -30,14 +30,18 @@ export function confineTools(searchPath: string = process.env["PATH"] ?? ""): Co
  * The shell step a confined run runs as PID 1 of its new user, mount and PID
  * namespaces (with a fresh /proc, so no process outside is visible):
  *
- * 1. an empty tmpfs over each hidden directory;
- * 2. a trial of the nested user and mount namespace the command will run in;
+ * 1. an empty tmpfs over each hidden directory, and /dev/null bound over
+ *    each hidden file (a socket among them: connecting to it is refused);
+ * 2. a trial of the nested user and mount namespace the command will run in,
+ *    as the bridge's own user and group (util-linux 2.38 and later), else as
+ *    root there;
  * 3. "m" on fd 3; offline, loopback up and "n";
- * 4. the command looked up, "x", fd 3 closed, and the command run inside a
- *    nested user and mount namespace. Mounts inherited into a namespace owned
- *    by a less privileged user namespace are locked, so the tests (root there,
- *    with no power over the outer namespace) cannot unmount a tmpfs to see
- *    what it hides.
+ * 4. the command looked up, "x", fd 3 closed, and the command run inside that
+ *    nested namespace. Mounts inherited into a namespace owned by a less
+ *    privileged user namespace are locked, so the tests (with no power over
+ *    the outer namespace) cannot unmount a cover to see what it hides. As
+ *    the bridge's own user, they see the same ids and file permissions as
+ *    an unconfined run, so a test result does not change with the sandbox.
  *
  * A run that never reported "x" never started: its exit code is the
  * wrapper's (125 for the namespace or a mount, 127 for the command), never a
@@ -45,14 +49,18 @@ export function confineTools(searchPath: string = process.env["PATH"] ?? ""): Co
  * shell text.
  */
 const CONFINED_SCRIPT = [
-  'm="$0"; u="$1"; ip="$2"; n="$3"; shift 3',
-  'while [ "$n" -gt 0 ]; do "$m" -t tmpfs -o size=4k,mode=0 lemma-hidden "$1" || exit 125; shift; n=$((n-1)); done',
-  '"$u" --map-root-user --mount true || exit 125',
+  'm="$0"; u="$1"; ip="$2"; uid="$3"; gid="$4"; n="$5"; shift 5',
+  'while [ "$n" -gt 0 ]; do',
+  '  if [ -d "$1" ]; then "$m" -t tmpfs -o size=4k,mode=0 lemma-hidden "$1" || exit 125; else "$m" --bind /dev/null "$1" || exit 125; fi',
+  '  shift; n=$((n-1))',
+  "done",
+  'as="--map-user=$uid"; ag="--map-group=$gid"',
+  'if ! "$u" "$as" "$ag" --mount true 2>/dev/null; then as=--map-root-user; ag=""; "$u" "$as" --mount true || exit 125; fi',
   "printf m >&3",
   'if [ -n "$ip" ]; then "$ip" link set lo up || exit 125; printf n >&3; fi',
   'command -v "$1" >/dev/null || exit 127',
   "printf x >&3; exec 3>&-",
-  'exec "$u" --map-root-user --mount -- "$@"',
+  'exec "$u" "$as" ${ag:+"$ag"} --mount -- "$@"',
 ].join("\n");
 
 /**
@@ -78,6 +86,8 @@ export function confinedArgv(argv: readonly string[], tools: ConfineTools, optio
     tools.mount,
     tools.unshare,
     options.offline ? (tools.ip as string) : "",
+    String(process.getuid?.() ?? 0),
+    String(process.getgid?.() ?? 0),
     String(options.hide.length),
     ...options.hide,
     ...argv,
@@ -92,44 +102,56 @@ export function confinedNotStarted(marks: string, offline: boolean): "confinemen
 }
 
 /**
- * The directories an acceptance run in `cwd` should not see, as absolute
- * paths to mount over: each of `dirs` that is an existing directory, except
- * any that holds `cwd` (covering it would take the package away from its own
- * tests) and any inside another one (already covered, and gone once it is).
+ * The paths an acceptance run in `cwd` should not see, as absolute paths to
+ * cover: each of `paths` that exists, except a directory that holds `cwd`
+ * (covering it would take the package away from its own tests; a file in it,
+ * such as the signer's socket, can be named on its own) and anything inside
+ * a directory already covered.
  */
-export function hiddenDirs(dirs: readonly string[], cwd: string): string[] {
-  const inside = (dir: string, parent: string) => {
-    const rel = relative(parent, dir);
+export function hiddenPaths(paths: readonly string[], cwd: string): string[] {
+  const inside = (path: string, parent: string) => {
+    const rel = relative(parent, path);
     return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   };
-  const candidates = [...new Set(dirs.map((d) => resolve(d)))].filter((dir) => isDirectory(dir) && !inside(resolve(cwd), dir));
-  return candidates.filter((dir) => !candidates.some((other) => other !== dir && inside(dir, other)));
+  const candidates = [...new Set(paths.map((p) => resolve(p)))].filter((path) => {
+    const kind = kindOf(path);
+    return kind === "file" || (kind === "dir" && !inside(resolve(cwd), path));
+  });
+  const dirs = candidates.filter((path) => kindOf(path) === "dir");
+  return candidates.filter((path) => !dirs.some((dir) => dir !== path && inside(path, dir)));
 }
 
-function isDirectory(path: string): boolean {
+function kindOf(path: string): "dir" | "file" | undefined {
   try {
-    return statSync(path).isDirectory();
+    return statSync(path).isDirectory() ? "dir" : "file";
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-const probes = new Map<string, Promise<boolean>>();
+/** A failed trial is tried again after this long: a loaded machine or a full temp directory may have failed it once. */
+const PROBE_RETRY_MS = 10 * 60_000;
+
+const probes = new Map<string, { probe: Promise<boolean>; ok: boolean | undefined; at: number }>();
 
 /**
  * Whether confined runs work here: Linux, the tools, and a trial run that
  * hides a directory and finds it empty. Asynchronous, so the trial never
- * holds up the bridge, and checked once per set of tools.
+ * holds up the bridge; a success is remembered per set of tools, a failure
+ * for ten minutes.
  */
 export function confinementAvailable(tools: ConfineTools | undefined = confineTools()): Promise<boolean> {
   if (process.platform !== "linux" || tools === undefined) return Promise.resolve(false);
   const key = `${tools.unshare}\0${tools.sh}\0${tools.mount}`;
-  let probe = probes.get(key);
-  if (probe === undefined) {
-    probe = confinementProbe(tools);
-    probes.set(key, probe);
-  }
-  return probe;
+  const known = probes.get(key);
+  if (known !== undefined && (known.ok !== false || Date.now() - known.at < PROBE_RETRY_MS)) return known.probe;
+  const entry: { probe: Promise<boolean>; ok: boolean | undefined; at: number } = { probe: confinementProbe(tools), ok: undefined, at: Date.now() };
+  void entry.probe.then((ok) => {
+    entry.ok = ok;
+    entry.at = Date.now();
+  });
+  probes.set(key, entry);
+  return entry.probe;
 }
 
 async function confinementProbe(tools: ConfineTools): Promise<boolean> {

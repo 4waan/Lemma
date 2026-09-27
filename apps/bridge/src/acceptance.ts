@@ -7,7 +7,7 @@ import type { Readable } from "node:stream";
 
 import { type AcceptanceRecipe, type AdoptionReceipt, type Hex32, fileDigest } from "@lemma/core";
 
-import { type ConfineTools, confineTools, confinedArgv, confinedNotStarted, confinementAvailable, hiddenDirs } from "./confine.js";
+import { type ConfineTools, confineTools, confinedArgv, confinedNotStarted, confinementAvailable, hiddenPaths } from "./confine.js";
 
 /** Acceptance output kept for its digest; beyond this, output is drained and dropped. */
 export const MAX_ACCEPTANCE_OUTPUT = 1024 * 1024;
@@ -160,7 +160,7 @@ interface Wrapper {
  */
 async function wrapperFor(options: { offline?: boolean; host?: NodeJS.ProcessEnv; tools?: OfflineTools; hide?: readonly string[]; confine?: ConfineTools | false; cwd: string }): Promise<{ wrap: Wrapper | undefined; unavailable?: NotStarted }> {
   const offline = options.offline === true;
-  const hide = hiddenDirs(options.hide ?? [], options.cwd);
+  const hide = hiddenPaths(options.hide ?? [], options.cwd);
   const confine = options.confine === false || hide.length === 0 ? undefined : (options.confine ?? confineTools(options.host?.["PATH"]));
   if (confine !== undefined && (await confinementAvailable(confine)) && (!offline || confine.ip !== undefined)) {
     return { wrap: { argv: (command) => confinedArgv(command, confine, { hide, offline }), notStarted: (marks) => confinedNotStarted(marks, offline), confined: true } };

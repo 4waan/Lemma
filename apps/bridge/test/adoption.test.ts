@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { type AdoptionReceipt, type Hex32, deriveResolutionId } from "@lemma/core";
+import { type AdoptionReceipt, type Hex32, adoptionReceiptDigest, deriveResolutionId } from "@lemma/core";
 import { MemoryStore, ResolutionService, createApp, loadConfig, silentLogger } from "@lemma/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -373,6 +373,27 @@ describe("apply and verify through the bridge", () => {
     fail = false;
     expect(await s.call("lemma_verify_adoption")).toContain("The first run's receipt (outcome passed) was sent now and recorded");
     expect(await s.store.getReceipt(resolutionId)).toMatchObject({ receipt: { signature: `0x${"11".repeat(65)}` } });
+  });
+
+  it("stores the receipt before signing it, and signs only one receipt when two verifies run at once", async () => {
+    const root = workspace();
+    const signed: string[] = [];
+    let inbox: ResolutionInbox | undefined;
+    const s = await setup(root, {
+      signReceipt: async (r) => {
+        // Already stored, unsigned, as the signer records it: a crash from here on leaves the same receipt to sign again.
+        expect(inbox?.receipt(r.resolutionId)).toMatchObject({ needsSignature: true, receipt: { signature: null } });
+        signed.push(adoptionReceiptDigest(r));
+        return `0x${"11".repeat(65)}` as AdoptionReceipt["signature"];
+      },
+    });
+    inbox = s.inbox;
+    const resolutionId = await s.buy();
+    await s.call("lemma_apply_resolution", { mode: "apply" });
+    await Promise.all([s.call("lemma_verify_adoption"), s.call("lemma_verify_adoption")]);
+    expect(new Set(signed).size).toBe(1);
+    expect(adoptionReceiptDigest((await s.store.getReceipt(resolutionId))!.receipt)).toBe(signed[0]);
+    expect(s.inbox.receipt(resolutionId)).toMatchObject({ needsSignature: false, answer: expect.any(String) });
   });
 
   it("sends a receipt again after a retryable answer, and stops after a final one", async () => {

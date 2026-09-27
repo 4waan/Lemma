@@ -4,11 +4,10 @@ import { join } from "node:path";
 import { getAddress } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-import { DAY_MS, SpendLedger } from "../ledger.js";
+import { SpendLedger } from "../ledger.js";
 import { KeyFileError, initKeyFile, readKeyFile } from "./keyfile.js";
 import { signerPaths, signerSocketMode } from "./paths.js";
 import { spendingPolicyFromEnv } from "./policy.js";
-import { RECEIPT_MEMORY_MS } from "./receipts.js";
 import { LocalSigner } from "./signer.js";
 import { serveSigner } from "./socket.js";
 
@@ -69,7 +68,7 @@ async function main(): Promise<number> {
     console.error(`lemma-signer: ${error instanceof KeyFileError ? error.message : "the key file does not hold a valid key"}`);
     return 1;
   }
-  const signer = new LocalSigner(account, policy.policy, new SpendLedger(join(paths.dir, "ledger"), DAY_MS, RECEIPT_MEMORY_MS));
+  const signer = new LocalSigner(account, policy.policy, new SpendLedger(join(paths.dir, "ledger")));
   const log = (event: Record<string, unknown>) => console.error(JSON.stringify({ at: new Date().toISOString(), ...event }));
   let server;
   try {

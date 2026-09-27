@@ -35,6 +35,7 @@ import {
   signerSocketMode,
   spendingPolicyFromEnv,
 } from "../src/index.js";
+import { PAYMENT_MEMORY_MS, ReceiptBook } from "../src/signer/receipts.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const NOW_S = Math.floor(NOW.getTime() / 1000);
@@ -82,7 +83,7 @@ const receiptFor = (resolutionId: Hex32, outcome: "passed" | "failed"): Adoption
 
 function localSigner(p: SpendingPolicy = policy, clock = () => NOW) {
   const account = privateKeyToAccount(generatePrivateKey());
-  const ledger = new SpendLedger(temp("lemma-signer-ledger-"), 24 * 3600_000, 30 * 24 * 3600_000);
+  const ledger = new SpendLedger(temp("lemma-signer-ledger-"));
   return { account, ledger, signer: new LocalSigner(account, p, ledger, clock) };
 }
 
@@ -160,9 +161,24 @@ describe("LocalSigner", () => {
     // ... get the same signature on a retry, and the bridge's real result is refused, so two signed receipts never exist.
     expect(await signer.signAdoptionReceipt(forged, previewId)).toBe(first);
     expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "failed"), previewId))).toBe("RECEIPT_ALREADY_SIGNED");
-    // Still remembered well past the spend window.
-    now = new Date(NOW.getTime() + 20 * 24 * 3600_000);
+    // Still remembered well past the spend window, after the spend ledger dropped the payment.
+    now = new Date(NOW.getTime() + 60 * 24 * 3600_000);
     expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "failed"), previewId))).toBe("RECEIPT_ALREADY_SIGNED");
+    expect(await signer.signAdoptionReceipt(forged, previewId)).toBe(first);
+    // Past the book's memory the payment is forgotten: NOT_PAID, never a second receipt.
+    now = new Date(NOW.getTime() + PAYMENT_MEMORY_MS + 1);
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "failed"), previewId))).toBe("NOT_PAID");
+  });
+
+  it("signs a receipt for a purchase paid before the spend ledger's window, and forgets its oldest payments when full, never refusing", () => {
+    const book = new ReceiptBook(temp("lemma-signer-book-"), PAYMENT_MEMORY_MS, 3);
+    for (let i = 1; i <= 4; i++) book.paid(nonce(i), new Date(NOW.getTime() + i));
+    // A retry of the same payment keeps its entry.
+    book.paid(nonce(4), NOW);
+    expect(book.claim(nonce(1), nonce(100), NOW)).toBe("not-paid");
+    expect(book.claim(nonce(2), nonce(100), NOW)).toBe("signed");
+    expect(book.claim(nonce(2), nonce(101), NOW)).toBe("taken");
+    expect(book.claim(nonce(4), nonce(102), NOW)).toBe("signed");
   });
 });
 

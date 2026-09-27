@@ -206,7 +206,9 @@ export class RegistrySnapshot {
   }
 
   recordedBuyers(releaseDigest: Hex32, profileIndex: number): number {
-    return this.publishedBuyers().recorded.get(keyOf(releaseDigest, profileIndex)) ?? 0;
+    const key = keyOf(releaseDigest, profileIndex);
+    // Never more than the live count: a new engine starts empty, and a held count above its outcomes would be published against them.
+    return Math.min(this.publishedBuyers().recorded.get(key) ?? 0, this.recordedPayers.get(key) ?? 0);
   }
 
   /** PASSED and FAILED finalizations with a weight, in chain order, after `after`. */
@@ -215,7 +217,7 @@ export class RegistrySnapshot {
   }
 
   fedBuyers(capability: CapabilityId): number {
-    return this.publishedBuyers().fed.get(capability) ?? 0;
+    return Math.min(this.publishedBuyers().fed.get(capability) ?? 0, this.fedPayers.get(capability) ?? 0);
   }
 
   /** The distinct-buyer counts to publish: live without a refresh period, else as taken at the period's first read. */

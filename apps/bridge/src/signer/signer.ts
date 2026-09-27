@@ -85,7 +85,7 @@ export interface Signer {
 export class LocalSigner implements Signer {
   private readonly receipts: ReceiptBook;
 
-  /** The receipt book lives next to the ledger, in `ledger.dir`. */
+  /** The receipt book (the payments signed, and the receipt for each) lives next to the ledger, in `ledger.dir`. */
   constructor(
     private readonly account: LocalAccount,
     private readonly policy: SpendingPolicy,
@@ -116,6 +116,11 @@ export class LocalSigner implements Signer {
     }
     if (!decision.ok) throw new SignerRefusal(decision.reason);
     try {
+      this.receipts.paid(a.nonce, now);
+    } catch {
+      throw new SignerRefusal("LEDGER_UNAVAILABLE");
+    }
+    try {
       return await this.account.signTypedData({
         domain: { name: USDC_EIP712_DOMAIN.name, version: USDC_EIP712_DOMAIN.version, chainId: ARBITRUM_SEPOLIA_CHAIN_ID, verifyingContract: getAddress(ARBITRUM_SEPOLIA_USDC) },
         types: authorizationTypes,
@@ -142,15 +147,14 @@ export class LocalSigner implements Signer {
     const previewId = Hex32.safeParse(previewIdInput);
     if (!receipt.success || !previewId.success) throw new SignerRefusal("BAD_REQUEST");
     const nonce = derivePaymentNonce(receipt.data.resolutionId, previewId.data);
-    let claimed: boolean;
+    let claimed: ReturnType<ReceiptBook["claim"]>;
     try {
-      if (!this.ledger.signed(nonce)) throw new SignerRefusal("NOT_PAID");
-      claimed = this.receipts.claim(receipt.data.resolutionId, adoptionReceiptDigest(receipt.data), this.clock());
-    } catch (error) {
-      if (error instanceof SignerRefusal) throw error;
+      claimed = this.receipts.claim(nonce, adoptionReceiptDigest(receipt.data), this.clock());
+    } catch {
       throw new SignerRefusal("LEDGER_UNAVAILABLE");
     }
-    if (!claimed) throw new SignerRefusal("RECEIPT_ALREADY_SIGNED");
+    if (claimed === "not-paid") throw new SignerRefusal("NOT_PAID");
+    if (claimed === "taken") throw new SignerRefusal("RECEIPT_ALREADY_SIGNED");
     const signature = (await this.account.signTypedData(adoptionReceiptTypedData(receipt.data, ARBITRUM_SEPOLIA_CHAIN_ID))).toLowerCase();
     return SignatureBytes.parse(signature);
   }

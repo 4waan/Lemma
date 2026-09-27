@@ -2,12 +2,14 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { type Outcome, fold, unixSeconds } from "@lemma/confidence";
 import { CatalogView, DemandView, StatusView } from "@lemma/core";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ASSET, DASHBOARD_CSP, MemoryStore, ResolutionService, silentLogger } from "../src/index.js";
-import { NOW, PROVIDER, app, config, sellableIndex } from "./helpers.js";
+import { ASSET, CompatibilityReader, DASHBOARD_CSP, type Logger, MemoryStore, NO_OUTCOMES, type OutcomeSource, ResolutionService, silentLogger } from "../src/index.js";
+import { NOW, PROVIDER, app, committedIndex, config, sellableIndex } from "./helpers.js";
 
+const DAY = 86_400n;
 const temps: string[] = [];
 afterEach(() => {
   for (const d of temps.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -42,6 +44,107 @@ describe("read models", () => {
     const view = CatalogView.parse(await (await app().request("/api/v1/catalog")).json());
     expect(view.economics.status).toBe("placeholder");
     expect(view.releases.every((r) => r.profiles.every((p) => p.label === "none"))).toBe(true);
+    // No evidence and no outcomes: nothing to be confident about.
+    expect(view.releases.every((r) => r.profiles.every((p) => p.compatibility === null))).toBe(true);
+  });
+
+  it("scores compatibility from the benchmark prior, and adds finalized outcomes from the outcome source", async () => {
+    const index = sellableIndex();
+    const digest = index.releases[0]!.releaseDigest;
+    const catalog = async (outcomes?: OutcomeSource, clock = () => NOW) =>
+      CatalogView.parse(await (await app({ index, economics, clock, outcomes, config: config({ PROVIDER_ADDRESS: PROVIDER }) }).request("/api/v1/catalog")).json()).releases[0]?.profiles[0]?.compatibility;
+
+    // The evidence's treatment arm passed 3 of 3: the prior alone.
+    expect(await catalog()).toEqual({ confidenceBps: 5258, effectiveNMilli: "3000", outcomes: 0, source: "benchmark" });
+
+    const now = unixSeconds(NOW);
+    const outcomes: Outcome[] = [
+      { passed: true, weightBps: 10_000, at: now - 3n * DAY },
+      { passed: false, weightBps: 10_000, at: now - 40n * DAY },
+      { passed: true, weightBps: 5_000, at: now - DAY },
+    ];
+    const source: OutcomeSource = { outcomesFor: (d, i) => (d === digest && i === 0 ? outcomes : NO_OUTCOMES.outcomesFor(d, i)) };
+    const expected = fold({ passes: 3, failures: 0 }, outcomes, now);
+    expect(await catalog(source)).toEqual({ confidenceBps: expected.confidenceBps, effectiveNMilli: expected.effectiveNMilli.toString(), outcomes: 3, source: "benchmark+outcomes" });
+    // Read later, the same outcomes weigh less: the score moves with the request's clock.
+    const later = new Date(NOW.getTime() + 90 * 86_400_000);
+    const aged = fold({ passes: 3, failures: 0 }, outcomes, unixSeconds(later));
+    expect((await catalog(source, () => later))?.effectiveNMilli).toBe(aged.effectiveNMilli.toString());
+    expect(aged.effectiveNMilli).toBeLessThan(expected.effectiveNMilli);
+  });
+
+  it("scores a profile without evidence from its outcomes alone", async () => {
+    const outcomes: Outcome[] = [{ passed: true, weightBps: 10_000, at: unixSeconds(NOW) }];
+    const view = CatalogView.parse(await (await app({ outcomes: { outcomesFor: (_, i) => (i === 0 ? outcomes : []) } }).request("/api/v1/catalog")).json());
+    for (const release of view.releases) {
+      expect(release.profiles[0]?.compatibility).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes" });
+    }
+  });
+
+  it("keeps serving the catalog when one profile's outcomes cannot be read, and logs that profile", async () => {
+    const index = committedIndex();
+    const [broken, healthy] = index.releases.map((r) => r.releaseDigest);
+    const at = unixSeconds(NOW);
+    const good: Outcome[] = [{ passed: true, weightBps: 10_000, at }];
+    const cases: Array<[OutcomeSource, string]> = [
+      // An outcome the engine cannot represent (above a full outcome)...
+      [{ outcomesFor: (d) => (d === broken ? [{ passed: true, weightBps: 20_000, at }] : good) }, "RangeError"],
+      // ...and a source that fails outright.
+      [
+        {
+          outcomesFor: (d) => {
+            if (d === broken) throw new Error("snapshot unavailable");
+            return good;
+          },
+        },
+        "Error",
+      ],
+    ];
+    for (const [outcomes, error] of cases) {
+      const logged: unknown[] = [];
+      const logger: Logger = { log: (level, event, fields) => logged.push([level, event, fields]) };
+      const res = await app({ index, outcomes, logger }).request("/api/v1/catalog");
+      expect(res.status).toBe(200);
+      const view = CatalogView.parse(await res.json());
+      const confidenceOf = (digest: string | undefined) => view.releases.find((r) => r.releaseDigest === digest)?.profiles[0]?.compatibility;
+      // Only the broken profile loses its confidence; the other release keeps its own.
+      expect(confidenceOf(broken)).toBeNull();
+      expect(confidenceOf(healthy)).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes" });
+      expect(logged).toEqual([["error", "catalog.compatibility_failed", { releaseDigest: broken, profileIndex: 0, error }]]);
+    }
+  });
+
+  it("folds a frozen array of frozen outcomes once and scores it at every read", () => {
+    const reader = new CompatibilityReader(NO_OUTCOMES);
+    const outcomes = Object.freeze([Object.freeze({ passed: true, weightBps: 10_000, at: unixSeconds(NOW) })]);
+    // Folding reads the outcome; scoring remembered sums does not.
+    let reads = 0;
+    const counted = new Proxy(outcomes, {
+      get: (target, key, receiver) => {
+        if (key === "0") reads += 1;
+        return Reflect.get(target, key, receiver);
+      },
+    });
+    expect(reader.forProfile(null, counted, NOW)?.effectiveNMilli).toBe("1000");
+    const folded = reads;
+    expect(folded).toBeGreaterThan(0);
+    // One half-life later the same sums weigh half an outcome, and nothing was folded again.
+    expect(reader.forProfile(null, counted, new Date(NOW.getTime() + 30 * 86_400_000))?.effectiveNMilli).toBe("500");
+    expect(reads).toBe(folded);
+  });
+
+  it("folds any other array again at every read, so a source that appends in place is never stale", () => {
+    const reader = new CompatibilityReader(NO_OUTCOMES);
+    const at = unixSeconds(NOW);
+    const growing: Outcome[] = [{ passed: true, weightBps: 10_000, at }];
+    expect(reader.forProfile(null, growing, NOW)).toMatchObject({ effectiveNMilli: "1000", outcomes: 1 });
+    growing.push({ passed: false, weightBps: 10_000, at });
+    expect(reader.forProfile(null, growing, NOW)).toMatchObject({ effectiveNMilli: "2000", outcomes: 2 });
+    // A frozen array of outcomes that can still change is not remembered either.
+    const shallow = Object.freeze([{ passed: true, weightBps: 10_000, at }]);
+    expect(reader.forProfile(null, shallow, NOW)?.effectiveNMilli).toBe("1000");
+    shallow[0]!.weightBps = 5_000;
+    expect(reader.forProfile(null, shallow, NOW)?.effectiveNMilli).toBe("500");
   });
 
   it("serves the status view", async () => {

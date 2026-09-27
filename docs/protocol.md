@@ -71,7 +71,7 @@ See [Bridge Runtime](bridge-runtime.md) for the filesystem and process guarantee
 The current implementation stops at the paid-tool registration and signer seams. On chain, the warranty registry is written and tested but not deployed. Its state machine, typed data, roles, and limits are in the [contracts guide](../contracts/README.md). Each component's part in a warranty:
 
 - Before paying, the buyer's bridge picks a random claim secret and a refund address, keeps both, and sends only their `claimHash`. After a FAILED outcome, only that secret unlocks the credit, and only to that address.
-- After settlement, the server chooses an opaque salted `paymentRef` for the payment, and the release's provider signs a voucher that binds the resolution to it and to the buyer's `claimHash`. No buyer or payer address reaches the chain.
+- After settlement, the server chooses an opaque salted `paymentRef` for the payment, and the release's provider signs a voucher that binds the resolution to it and to the buyer's `claimHash`. The registry never stores a buyer or payer address.
 - The release's evaluator signs one outcome per resolution. Without one, the warranty expires after its claim deadline.
 - The server relays vouchers, outcomes, expiries, and credit withdrawals, and pays the gas. Agents never hold ETH.
 

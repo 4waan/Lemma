@@ -61,7 +61,7 @@ Outcome(bytes32 resolutionId,uint8 verdict,uint16 weightBps,bytes32 evidenceHash
 - `verdict` is 1 PASSED, 2 FAILED, or 3 VOID. `weightBps` is 0 to 10000.
 - `activateBy` and `validUntil` are the last timestamps at which the voucher or the outcome may be submitted.
 
-[Protocol](../docs/protocol.md#payment-and-warranty-boundary) says which component makes each value. `test/Vectors.t.sol` pins a claim hash, a voucher digest, and an outcome digest computed with viem, and the TypeScript side must reproduce them. The test also checks every digest against Foundry's own EIP-712 encoder.
+[Protocol](../docs/protocol.md#payment-and-warranty-boundary) says which component makes the claim hash and the payment reference, and who signs and relays each message. `test/Vectors.t.sol` pins a claim hash, a voucher digest, and an outcome digest computed with viem, and the TypeScript side must reproduce them. The test also checks every digest against Foundry's own EIP-712 encoder.
 
 ## Roles
 
@@ -99,7 +99,7 @@ So a pause never costs a buyer its window. After the unpause, a warranty has exa
 
 - Nothing on chain checks the x402 payment. The provider's voucher must carry the amount actually paid. It activates only if the release has that much available bond when it is submitted, by `activateBy`.
 - Resolution ids and payment references are global, not per release, so both must stay private until the warranty is active (see [Security Model](../docs/security-model.md#required-controls)). Keying warranties by release would close this, but it needs the release digest in `Outcome`.
-- A smart-account role's `isValidSignature` gets all remaining gas, so relayers must simulate each submission and cap its gas. An EOA role that delegates its code with EIP-7702 must implement `isValidSignature`, or its plain signatures stop working.
+- A smart-account role's `isValidSignature` gets all remaining gas, so relayers must simulate each submission and cap its gas. An EOA role that delegates its code with EIP-7702 is checked the same way, so its plain signatures stop working unless the delegate implements `isValidSignature`.
 - With an engine set, `finalizeOutcome` needs about 325,000 gas left for the engine step. A failed engine call is only an event, with no on-chain retry.
 - Roles are fixed per release, a release digest registers once, and a deactivated release stays deactivated. Handle a compromised provider or evaluator key by pausing and deactivating. A new version is a new digest.
 - Withdrawal makes the refund address public next to the resolution id. A buyer that wants its purchase to stay unlinkable commits to a fresh refund address.

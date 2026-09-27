@@ -131,10 +131,10 @@ Every 30 seconds, each job writes an action for what it newly finds and attempts
 
 With `EVALUATOR_FAILURES=review`, the default, a failed receipt's outcome waits in `review` until an operator decides it:
 
-- `npm run evaluator -w @lemma/server -- list` prints each outcome waiting: the resolution id, release, profile, the receipt's outcome and exit code, and how long it has waited. Nothing about the buyer.
+- `npm run evaluator -w @lemma/server -- list` prints each outcome waiting: the resolution id, release, profile, the receipt's outcome and exit code, how long it has waited, and the claim deadline in force to decide by (from the indexed activation and pauses). Nothing about the buyer.
 - `npm run evaluator -w @lemma/server -- decide <resolutionId> failed|void` queues it as FAILED (the buyer's credit, with the weight the evaluator gave it, so the damper still applies) or VOID (no credit, weight 0). The running server's evaluator job signs and sends it.
 
-The command reads `DATABASE_URL` and needs no key. It runs the built `dist/scripts/evaluator.js`, so build first; in the server's image, run `node apps/server/dist/scripts/evaluator.js list`. Deciding twice, or after the warranty ended, changes nothing, and an outcome still in review when its warranty ends is closed as `WARRANTY_ENDED`.
+The command reads `DATABASE_URL` and needs no key. It runs the built `dist/scripts/evaluator.js`, so build first; in the server's image, run `node apps/server/dist/scripts/evaluator.js list`. Deciding twice, or after the warranty ended, changes nothing, and an outcome still in review when its warranty ends is closed as `WARRANTY_ENDED`. Undecided by its deadline, the warranty expires: its bond goes back to the provider, and the buyer gets no credit. So the evaluator job logs `warranty.review_deadline` at error level, once per outcome, when one still in review is six hours or less from its deadline.
 
 ### Credit relay route
 
@@ -205,4 +205,5 @@ The process handles `SIGTERM` by stopping new requests, closing background work 
 - A crash between a warranty send and its record never sends twice: the next attempt finds the transaction's receipt, the sender's pending nonce, or the registry's state first.
 - A registry pause moves every claim deadline later. Activation and finalization back off while paused, the expiry waits for the new deadline, and withdrawals keep working.
 - A release without enough available bond is retried for 24 hours, then abandoned with an alert.
+- A failed outcome still waiting for an operator six hours before its claim deadline raises an alert.
 - Paid tools can be disabled while free preview, recovery, and read APIs remain available.

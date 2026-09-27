@@ -31,10 +31,11 @@ describe("the evaluator command", () => {
     expect(parseEvaluatorArgs(["decide", id, "void", "--key"])).toEqual({ error: EVALUATOR_USAGE });
   });
 
-  it("prints one line per outcome in review, with nothing about the buyer", () => {
-    const line = formatReviewItem({ resolutionId: id, release: "gating@1.0.0+bench-1", releaseDigest: idOf("release"), profileIndex: 0, receiptOutcome: "failed", exitCode: 1, ageSeconds: 3 * 3600 + 1200 });
-    expect(line).toBe(`${id}  gating@1.0.0+bench-1  profile 0  receipt failed (exit 1)  waiting 3h 20m`);
-    expect(formatReviewItem({ resolutionId: id, release: "unknown", releaseDigest: id, profileIndex: 2, receiptOutcome: null, exitCode: null, ageSeconds: 5 })).toContain("no receipt  waiting 5s");
+  it("prints one line per outcome in review, with the deadline to decide by and nothing about the buyer", () => {
+    const item = { resolutionId: id, release: "gating@1.0.0+bench-1", releaseDigest: idOf("release"), profileIndex: 0, receiptOutcome: "failed" as const, exitCode: 1, ageSeconds: 3 * 3600 + 1200, claimDeadline: new Date(NOW.getTime() + (5 * 3600 + 1200) * 1000) };
+    expect(formatReviewItem(item, NOW)).toBe(`${id}  gating@1.0.0+bench-1  profile 0  receipt failed (exit 1)  waiting 3h 20m  decide by 2026-10-01T05:20:00Z (in 5h 20m)`);
+    expect(formatReviewItem({ ...item, claimDeadline: new Date(NOW.getTime() - 1000) }, NOW)).toContain("decide by 2026-09-30T23:59:59Z (window closed)");
+    expect(formatReviewItem({ ...item, release: "unknown", profileIndex: 2, receiptOutcome: null, exitCode: null, ageSeconds: 5, claimDeadline: null }, NOW)).toContain("no receipt  waiting 5s  decide by: unknown (activation not indexed)");
     expect([formatAge(59), formatAge(60), formatAge(3600), formatAge(90_000)]).toEqual(["59s", "1m", "1h 0m", "1d 1h"]);
   });
 });
@@ -67,10 +68,13 @@ describe("the evaluator command over a database", () => {
       expect(await service.acceptReceipt({ receipt, previewId: offer.previewId })).toBe("ACCEPTED");
       const outcome = { schemaVersion: "1" as const, resolutionId: id, verdict: "failed" as const, weightBps: 10_000, evidenceHash: adoptionReceiptDigest(receipt), validUntil: 1_790_003_600 };
       await store.insertWarrantyAction({ resolutionId: id, kind: "finalize", payload: outcome, signature: null, state: "review", nextAttemptAt: NOW }, NOW);
+      // Its activation, as the indexer stored it: a 72-hour claim window from now.
+      const activation = { blockNumber: 100n, logIndex: 0, txHash: idOf("activation"), blockTime: NOW, name: "ResolutionActivated" as const, resolutionId: id, releaseDigest: index.releases[0]!.releaseDigest, profileIndex: 0, verdict: null, weightBps: null, evidenceHash: null, amount: "250000", claimDeadline: BigInt(NOW.getTime() / 1000) + 72n * 3600n, engine: null };
+      expect(await store.advanceChainCursor("warranty-registry", undefined, 101n, [activation], NOW)).toBe(true);
 
       const later = new Date(NOW.getTime() + 3600_000);
       const listed = await runEvaluatorCommand(db, { command: "list" }, later);
-      expect(listed).toEqual({ lines: [`${id}  gating@1.0.0+bench-1  profile 0  receipt failed (exit 1)  waiting 1h 0m`], error: null });
+      expect(listed).toEqual({ lines: [`${id}  gating@1.0.0+bench-1  profile 0  receipt failed (exit 1)  waiting 1h 0m  decide by 2026-10-04T00:00:00Z (in 2d 23h)`], error: null });
       expect(listed.lines.join("\n")).not.toContain(BUYER.slice(2));
 
       expect(await runEvaluatorCommand(db, { command: "decide", resolutionId: id, verdict: "void" }, later)).toEqual({ lines: [`queued ${id} as void; the evaluator job signs and sends it`], error: null });

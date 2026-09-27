@@ -43,7 +43,7 @@ export class RegistrySnapshot {
   /** `EngineRecordFailed`, by transaction and resolution. */
   private readonly recordFailures = new Set<string>();
   private readonly engineSets: Array<{ readonly position: EventPosition; readonly engine: Address }> = [];
-  private readonly pauses: Array<{ readonly position: EventPosition; readonly paused: boolean; readonly time: bigint }> = [];
+  private readonly pauses: PauseEvent[] = [];
   private readonly payers = new Map<Hex32, Address | null>();
   /** Finalizations logged once as unusable (no indexed activation). */
   private readonly unkeyed = new Set<Hex32>();
@@ -216,20 +216,58 @@ export class RegistrySnapshot {
    * activated, finalized or expired while unpaused), until it ended.
    */
   pausedSecondsAfter(position: EventPosition, nowSeconds: bigint, until?: EventPosition): bigint {
-    let total = 0n;
-    let started: bigint | undefined;
-    for (const p of this.pauses) {
-      if (compareEventPositions(p.position, position) <= 0) continue;
-      if (until !== undefined && compareEventPositions(p.position, until) >= 0) break;
-      if (p.paused) started ??= p.time;
-      else if (started !== undefined) {
-        total += p.time - started;
-        started = undefined;
-      }
-    }
-    if (started !== undefined && nowSeconds > started) total += nowSeconds - started;
-    return total;
+    return pausedSecondsAfter(this.pauses, position, nowSeconds, until);
   }
+}
+
+/** An indexed `Paused` or `Unpaused`: where it sits and its block's time in Unix seconds. */
+export interface PauseEvent {
+  readonly position: EventPosition;
+  readonly paused: boolean;
+  readonly time: bigint;
+}
+
+/** `RegistrySnapshot.pausedSecondsAfter` over pauses in chain order, for readers without a snapshot. */
+export function pausedSecondsAfter(pauses: readonly PauseEvent[], position: EventPosition, nowSeconds: bigint, until?: EventPosition): bigint {
+  let total = 0n;
+  let started: bigint | undefined;
+  for (const p of pauses) {
+    if (compareEventPositions(p.position, position) <= 0) continue;
+    if (until !== undefined && compareEventPositions(p.position, until) >= 0) break;
+    if (p.paused) started ??= p.time;
+    else if (started !== undefined) {
+      total += p.time - started;
+      started = undefined;
+    }
+  }
+  if (started !== undefined && nowSeconds > started) total += nowSeconds - started;
+  return total;
+}
+
+/** Pauses read at most per call of `claimDeadlinesInForce`: the registry is paused only in an emergency. */
+const PAUSES_READ = 1_000;
+
+/**
+ * The claim deadline in force of each active warranty, in Unix seconds, from
+ * the stored registry events alone (the evaluator command has no snapshot):
+ * the one set at activation plus every second the registry was paused since,
+ * an ongoing pause counted up to `nowSeconds`. A warranty whose activation is
+ * not indexed has none.
+ */
+export async function claimDeadlinesInForce(store: Pick<LemmaStore, "listRegistryEvents">, resolutionIds: readonly Hex32[], nowSeconds: bigint): Promise<Map<Hex32, bigint>> {
+  const deadlines = new Map<Hex32, bigint>();
+  if (resolutionIds.length === 0) return deadlines;
+  const pauses = (await store.listRegistryEvents({ names: ["Paused", "Unpaused"] }, PAUSES_READ)).map((e) => ({
+    position: { blockNumber: e.blockNumber, logIndex: e.logIndex },
+    paused: e.name === "Paused",
+    time: BigInt(Math.floor(e.blockTime.getTime() / 1000)),
+  }));
+  for (const id of resolutionIds) {
+    const [activation] = await store.listRegistryEvents({ resolutionId: id, names: ["ResolutionActivated"] }, 1);
+    if (activation === undefined || activation.claimDeadline === null) continue;
+    deadlines.set(id, activation.claimDeadline + pausedSecondsAfter(pauses, activation, nowSeconds));
+  }
+  return deadlines;
 }
 
 /**

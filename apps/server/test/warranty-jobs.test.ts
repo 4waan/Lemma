@@ -338,6 +338,32 @@ describe("the evaluator", () => {
     expect(WarrantyOutcome.parse((await w.store.getWarrantyAction(second!.id, "finalize"))?.payload)).toMatchObject({ verdict: "void", weightBps: 0 });
   });
 
+  it("lists each failure in review with its claim deadline in force, and alerts once, at error level, six hours before it", async () => {
+    const w = await warrantyWorld();
+    const b = await w.activeWarranty();
+    await w.receipt(b, "failed");
+    expect(await w.jobs.evaluator.runOnce()).toMatchObject({ review: 1 });
+    // An hour's pause moves the deadline an hour later, on the chain and in the list.
+    const set = (await w.chain.resolution(b.id)).claimDeadline;
+    w.chain.pause();
+    w.advance(HOUR);
+    w.chain.unpause();
+    await w.jobs.indexer.runOnce();
+    const deadline = (await w.chain.resolution(b.id)).claimDeadline;
+    expect(deadline).toBe(set + BigInt(HOUR));
+    expect((await listReview(w.store, w.clock.now)).map((i) => i.claimDeadline)).toEqual([new Date(Number(deadline) * 1000)]);
+    const alerts = () => w.logger.lines.filter((l) => l.event === "warranty.review_deadline");
+    // Seven hours before it, nothing; five hours before it, one alert, and only one.
+    w.advance(WINDOW - 7 * HOUR);
+    await w.jobs.evaluator.runOnce();
+    expect(alerts()).toEqual([]);
+    w.advance(2 * HOUR);
+    await w.jobs.evaluator.runOnce();
+    await w.jobs.evaluator.runOnce();
+    expect(alerts()).toEqual([{ level: "error", event: "warranty.review_deadline", fields: { resolutionId: b.id, claimDeadline: new Date(Number(deadline) * 1000).toISOString(), secondsLeft: 5 * HOUR } }]);
+    expectNothingSecretLogged(w, [b]);
+  });
+
   it("never finalizes on an unverified or missing receipt: the warranty runs to its expiry", async () => {
     const w = await warrantyWorld();
     const [unverified, silent] = [await w.activeWarranty(), await w.activeWarranty(OTHER_BUYER)];

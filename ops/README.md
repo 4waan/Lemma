@@ -44,11 +44,14 @@ Do not place buyer keys or benchmark credentials in the hosted service. Provider
 Before deployment:
 
 ```bash
+git submodule update --init
 npm ci
 npm run verify
 npm run catalog:check
 npm run contracts:build
 npm run contracts:test
+npm run contracts:abi -- --check
+npm run contracts:rehearse
 npm run secrets:scan
 ```
 

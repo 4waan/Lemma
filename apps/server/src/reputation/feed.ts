@@ -45,6 +45,17 @@ export interface OutcomeFeed {
   read(cursor: string | null, limit: number): Promise<OutcomePage>;
 }
 
+/**
+ * How many distinct buyers are behind the outcomes fed to the attester for a
+ * capability, as a raw count (the catalog publishes it from three up, next to
+ * the capability's reputation). Answers from memory: the catalog reads it on
+ * every request. The outcome pipeline implements it; only the server, which
+ * holds each resolution's payer, can count.
+ */
+export interface FedBuyers {
+  buyersFor(capability: CapabilityId): number;
+}
+
 /** No outcomes: the feed until the outcome pipeline supplies one. */
 export const noOutcomes: OutcomeFeed = {
   async read(cursor) {

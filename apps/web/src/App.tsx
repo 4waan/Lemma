@@ -102,11 +102,7 @@ function RouteView({ route }: { route: Route }) {
     case "status":
       return <View name="status" path="/api/v1/status" schema={StatusView} render={(v) => <Status view={v} />} />;
     case "resolution":
-      return route.id === null ? (
-        <ResolutionLookup />
-      ) : (
-        <View name="resolution" path={`/api/v1/resolutions/${route.id}`} schema={ResolutionView} render={(v) => <Resolution view={v} />} />
-      );
+      return route.id === null ? <ResolutionLookup /> : <ResolutionPage key={route.id} id={route.id} />;
     case "not-found":
       return (
         <EmptyState title="Nothing at this address">
@@ -116,6 +112,17 @@ function RouteView({ route }: { route: Route }) {
         </EmptyState>
       );
   }
+}
+
+/**
+ * A resolution, with explorer links once the status names the explorer. The
+ * resolution renders as soon as it loads; its links appear when the status
+ * does, and stay off if the status fails or the server turned them off.
+ */
+function ResolutionPage({ id }: { id: string }) {
+  const status = useView<StatusView>("/api/v1/status", StatusView);
+  const explorer = status.state === "ready" ? status.data.chain.explorer : null;
+  return <Remote path={`/api/v1/resolutions/${id}`} schema={ResolutionView} render={(v) => <Resolution view={v} explorer={explorer} />} />;
 }
 
 function Remote<T>({ path, schema, render }: { path: string; schema: Parameters<typeof useView<T>>[1]; render: (view: T) => ReactNode }) {

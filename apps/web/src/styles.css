@@ -635,6 +635,10 @@ main.container {
   min-width: 0;
 }
 
+.grid + .card {
+  margin-top: 1.25rem;
+}
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -658,8 +662,13 @@ main.container {
   margin-bottom: 0.5rem;
 }
 
-.card-head h3 {
+.card-head h3,
+.card-head .card-title {
   margin: 0;
+}
+
+.card-note {
+  margin: 1rem 0 0;
 }
 
 .meta-line {
@@ -1291,6 +1300,10 @@ th.num {
   margin-top: 0.75rem;
 }
 
+.card + .table-wrap {
+  margin-top: 1.25rem;
+}
+
 /* ---------- Hashes, code, copy ---------- */
 
 .hash {
@@ -1623,6 +1636,12 @@ pre code {
   font-size: 0.8125rem;
   color: var(--muted);
   margin-top: 0.25rem;
+}
+
+/* A number's explanation wraps under it, so a long one never pushes its column out of view. */
+td.num .platform-deps {
+  white-space: normal;
+  min-width: 11rem;
 }
 
 .capability-empty {

@@ -1,5 +1,5 @@
 import { type CatalogIndex } from "@lemma/catalog";
-import { type CatalogView, DemandKey, type DemandView, Hex32, ResolutionView, type StatusView, summarizeRelease } from "@lemma/core";
+import { type CatalogView, type ChainView, DemandKey, type DemandView, Hex32, ResolutionView, type StatusView, summarizeRelease } from "@lemma/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { type Context, Hono } from "hono";
@@ -19,10 +19,13 @@ import { DEMAND_MIN_PROFILES, DemandRecorder } from "./demand.js";
 import { DASHBOARD_CSP, dashboardIconPath, serveDashboard } from "./dashboard.js";
 import type { LemmaStore } from "./persistence.js";
 import { describeError } from "./errors.js";
+import type { FedBuyers } from "./reputation/feed.js";
 import { WELL_KNOWN_REGISTRATION_PATH } from "./reputation/registration.js";
 import { registerReputationRoutes } from "./reputation/routes.js";
 import type { ReputationReader } from "./reputation/summary.js";
 import { ReceiptSubmission, type ResolutionService } from "./service.js";
+import { registerWarrantyRoutes } from "./warranty/routes.js";
+import type { WarrantyReads } from "./warranty/view.js";
 
 export const MAX_BODY_BYTES = 256 * 1024;
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -51,6 +54,15 @@ export interface AppDeps {
   readonly outcomes?: OutcomeSource | undefined;
   /** Cached ERC-8004 adoption records for previews and the catalog (src/reputation); absent while reputation is off. */
   readonly reputation?: ReputationReader | undefined;
+  /** Distinct buyers behind the outcomes fed to the attester, per capability, read from memory. Absent: every count is null. */
+  readonly reputationBuyers?: FedBuyers | undefined;
+  /**
+   * The warranty pipeline's reads (src/warranty): each resolution's warranty
+   * view and the engine in force. Absent while the pipeline is off: every
+   * `ResolutionView.warranty` is null and the withdrawal route answers
+   * `WARRANTY_OFF`.
+   */
+  readonly warranty?: WarrantyReads | undefined;
 }
 
 /**
@@ -61,7 +73,8 @@ export interface AppDeps {
  *   server and transport per request; `GET` and `DELETE` are 405, so no idle
  *   SSE stream is ever held. Requests that carry an `Origin` header come from a
  *   browser, which never has a reason to call it, and are refused.
- * - `/api/v1/*`: read-only catalog data for the bridge and the dashboard.
+ * - `/api/v1/*`: read-only catalog data for the bridge and the dashboard,
+ *   and the bridge's two writes: adoption receipts and warranty withdrawals.
  * - `/healthz`.
  * - `/` and `/assets/*`: the built dashboard, under a CSP that allows only
  *   this origin's scripts, styles and API.
@@ -228,8 +241,9 @@ export function createApp(deps: AppDeps): Hono {
     if (!id.success) return c.json({ error: "expected a resolution id" }, 400);
     const view = await deps.service.publicResolution(id.data);
     if (view === undefined) return c.json({ error: "unknown resolution" }, 404);
+    const warranty = deps.warranty === undefined ? null : await deps.warranty.forResolution(id.data);
     c.header("Cache-Control", "no-store");
-    return c.json(ResolutionView.parse(view));
+    return c.json(ResolutionView.parse({ ...view, warranty }));
   });
 
   // Read models for the dashboard (core read.ts): computed at request time, because sellability and
@@ -250,6 +264,7 @@ export function createApp(deps: AppDeps): Hono {
             provisional: r.source === "provisional",
             // Cached only: the catalog never waits on the chain.
             reputation: deps.reputation?.current(r.release.capability) ?? null,
+            reputationBuyers: deps.reputationBuyers?.buyersFor(r.release.capability) ?? 0,
           },
           { chainCostAtomic: BigInt(economics.chainCostAtomic) },
           now,
@@ -274,6 +289,7 @@ export function createApp(deps: AppDeps): Hono {
       provisionalEvidence: deps.index.releases.some((r) => r.source === "provisional"),
       store: deps.storeKind ?? "memory",
       economics: economics.status,
+      chain: chainView(deps),
     };
     c.header("Cache-Control", storeOk ? "public, max-age=60" : "no-store");
     return c.json(view);
@@ -310,6 +326,9 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(view);
   });
 
+  // The warranty pipeline's credit relay: the buyer's bridge posts its claim; the evaluator pays the gas.
+  registerWarrantyRoutes(app, { enabled: deps.warranty !== undefined, store: deps.store, clock: deps.clock, logger: deps.logger });
+
   // ERC-8004: the agent registration file and the evidence file behind each feedback.
   registerReputationRoutes(app, {
     config: deps.config.reputation,
@@ -320,6 +339,26 @@ export function createApp(deps: AppDeps): Hono {
 
   if (deps.webRoot !== undefined) serveDashboard(app, deps.webRoot);
   return app;
+}
+
+/**
+ * The status view's chain section, from configuration: the explorer, USDC,
+ * the warranty registry and the engine it records into (as last indexed), and
+ * the ERC-8004 registries and provider agent the server uses (null where it
+ * uses none).
+ */
+function chainView(deps: AppDeps): ChainView {
+  const { config } = deps;
+  const agentId = config.reputation.agentId ?? null;
+  return {
+    explorer: config.explorerBaseUrl,
+    usdc: config.payment.asset,
+    registry: config.warranty?.registry ?? null,
+    engine: deps.warranty?.engine() ?? null,
+    identityRegistry: agentId === null ? null : config.reputation.identityRegistry,
+    reputationRegistry: config.reputation.attester === undefined ? null : config.reputation.reputationRegistry,
+    providerAgentId: agentId,
+  };
 }
 
 function safeJson(text: string): unknown {

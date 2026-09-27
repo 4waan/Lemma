@@ -1,4 +1,4 @@
-import { ARBITRUM_SEPOLIA_USDC, CatalogView, type DemandView, type ResolutionView, StatusView, summarizeRelease } from "@lemma/core";
+import { ARBITRUM_SEPOLIA_USDC, CatalogView, type DemandView, type ResolutionView, StatusView, WarrantyView, summarizeRelease } from "@lemma/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -7,7 +7,7 @@ import { CostComparison } from "../src/components/CostChart.js";
 import { Hash } from "../src/components/copy.js";
 import { Logo, LogoMark, MarkMono } from "../src/components/Logo.js";
 import { usdcAmount } from "../src/format.js";
-import { explorerAddressUrl } from "../src/links.js";
+import { explorerAddressUrl, explorerName, explorerTxUrl } from "../src/links.js";
 import { parseRoute, titleFor } from "../src/routes.js";
 import { Catalog } from "../src/views/Catalog.js";
 import { Demand } from "../src/views/Demand.js";
@@ -20,6 +20,7 @@ import { Status } from "../src/views/Status.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const hex = (b: string) => `0x${b.repeat(32)}`;
+const ARBISCAN = "https://sepolia.arbiscan.io";
 
 /** A release shaped like the committed skeletons: previewable, never sold (no evidence, price 0). */
 const skeleton = {
@@ -94,7 +95,7 @@ const withEvidence = CatalogView.parse({
       { chainCostAtomic: 10_000n },
       NOW,
       // What the server computes for a one-run probe that passed, with no outcomes yet.
-      new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]]),
+      new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const, buyers: null }]]),
     ),
   ],
 });
@@ -169,9 +170,22 @@ describe("formatting, links and routes", () => {
     expect(usdcAmount(-10_000n)).toBe("-0.01");
   });
 
-  it("links to the explorer only for a well-formed address", () => {
-    expect(explorerAddressUrl(ARBITRUM_SEPOLIA_USDC)).toBe(`https://sepolia.arbiscan.io/address/${ARBITRUM_SEPOLIA_USDC}`);
-    for (const bad of ["0x123", "javascript:alert(1)", `${ARBITRUM_SEPOLIA_USDC}/../x`, `${ARBITRUM_SEPOLIA_USDC} `]) expect(explorerAddressUrl(bad)).toBeNull();
+  it("links to the explorer the server names, only for a well-formed address or transaction", () => {
+    expect(explorerAddressUrl(ARBISCAN, ARBITRUM_SEPOLIA_USDC)).toBe(`https://sepolia.arbiscan.io/address/${ARBITRUM_SEPOLIA_USDC}`);
+    expect(explorerTxUrl(ARBISCAN, hex("ab"))).toBe(`https://sepolia.arbiscan.io/tx/${hex("ab")}`);
+    for (const bad of ["0x123", "javascript:alert(1)", `${ARBITRUM_SEPOLIA_USDC}/../x`, `${ARBITRUM_SEPOLIA_USDC} `, hex("ab")]) expect(explorerAddressUrl(ARBISCAN, bad)).toBeNull();
+    for (const bad of [ARBITRUM_SEPOLIA_USDC, `${hex("ab")}/../x`, `0x${"g".repeat(64)}`, `${hex("ab")} `]) expect(explorerTxUrl(ARBISCAN, bad)).toBeNull();
+    // Links off, or an explorer that is not a plain http(s) base: no link at all.
+    const withCredentials = ["https://", "someone", ":", "not-a-password", "@explorer.example"].join("");
+    for (const explorer of [null, "javascript:alert(1)", withCredentials, "https://someone@explorer.example", "https://explorer.example/?q=1", "https://explorer.example/#x", "ftp://explorer.example", "explorer.example"]) {
+      expect(explorerAddressUrl(explorer, ARBITRUM_SEPOLIA_USDC), String(explorer)).toBeNull();
+      expect(explorerTxUrl(explorer, hex("ab")), String(explorer)).toBeNull();
+      expect(explorerName(explorer), String(explorer)).toBeNull();
+    }
+    // A base with a path keeps it, without its trailing slash; link text names Arbiscan, or else the explorer's host.
+    expect(explorerTxUrl("http://localhost:5100/explorer/", hex("ab"))).toBe(`http://localhost:5100/explorer/tx/${hex("ab")}`);
+    expect(explorerName(ARBISCAN)).toBe("Arbiscan");
+    expect(explorerName("http://localhost:5100/explorer/")).toBe("localhost:5100");
   });
 
   it("routes the setup page, the in-page anchors, and titles every view", () => {
@@ -208,7 +222,10 @@ describe("pages", () => {
     // What to trust moved to the proof page, with its anchor.
     const proof = renderToStaticMarkup(<Evidence view={previewOnly} />);
     expect(proof).toContain('id="what-to-trust"');
-    expect(proof).toContain("The warranty registry is not deployed yet");
+    expect(proof).toContain("A provider bond backs a purchase only when the server runs the warranty pipeline against a deployed registry");
+    // The known receipt gap is stated as a limit.
+    expect(proof).toContain("could reach the buyer&#x27;s signer and the bridge&#x27;s state and post a signed passing receipt before the bridge does");
+    expect(proof).not.toContain("not deployed yet. Until it is");
   });
 
   it("draws the mark with ids that stay distinct when it appears twice, and a one-color version", () => {
@@ -259,12 +276,40 @@ describe("pages", () => {
     expect(renderToStaticMarkup(<Catalog view={withEvidence} />)).not.toContain("Nothing is for sale yet");
   });
 
-  it("shows each release's public adoption record, or says there is none yet", () => {
+  it("shows each release's public adoption record with its distinct buyers, or says there is none yet", () => {
     expect(renderToStaticMarkup(<Catalog view={previewOnly} />)).toContain("no public record yet");
-    const withRecord = CatalogView.parse({ ...withEvidence, releases: withEvidence.releases.map((r) => ({ ...r, reputation: { passBps: 9750, count: 34 } })) });
-    const html = renderToStaticMarkup(<Catalog view={withRecord} />);
-    expect(html).toContain("pass 97.50 %, n 34");
+    const withRecord = (buyers: number | null) => CatalogView.parse({ ...withEvidence, releases: withEvidence.releases.map((r) => ({ ...r, reputation: { passBps: 9750, count: 34, buyers } })) });
+    const html = renderToStaticMarkup(<Catalog view={withRecord(12)} />);
+    expect(html).toContain("pass 97.50 %, n 34, 12 buyers");
     expect(html).not.toContain("no public record yet");
+    // Below three the read model publishes no count, and the page says so.
+    expect(renderToStaticMarkup(<Catalog view={withRecord(null)} />)).toContain("pass 97.50 %, n 34, fewer than 3 buyers");
+  });
+
+  it("shows the distinct buyers behind a confidence's outcomes, never beside a prior alone", () => {
+    const withConfidence = (outcomes: number, buyers: number | null, source: "benchmark+outcomes" | "outcomes" = "benchmark+outcomes") =>
+      CatalogView.parse({
+        ...withEvidence,
+        releases: withEvidence.releases.map((r) => ({
+          ...r,
+          profiles: r.profiles.map((p) => ({
+            ...p,
+            ...(source === "outcomes" ? { evidence: null, label: "none", allInReductionBps: null, maxPriceUsdc: null, blocker: "PROFILE_NOT_BENCHMARKED" } : {}),
+            compatibility: { confidenceBps: 7337, effectiveNMilli: "21727", outcomes, source, buyers },
+          })),
+        })),
+      });
+    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(4, 3)} />), renderToStaticMarkup(<Evidence view={withConfidence(4, 3)} />)]) {
+      expect(html).toContain("provisional probe prior and 4 outcomes from 3 buyers");
+    }
+    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(5, null)} />), renderToStaticMarkup(<Evidence view={withConfidence(5, null)} />)]) {
+      expect(html).toContain("provisional probe prior and 5 outcomes from fewer than 3 buyers");
+    }
+    expect(renderToStaticMarkup(<Catalog view={withConfidence(1, null, "outcomes")} />)).toContain("1 outcome from fewer than 3 buyers, no benchmark");
+    // A prior alone has no outcomes, so no buyers either.
+    const prior = renderToStaticMarkup(<Catalog view={withEvidence} />);
+    expect(prior).toContain("provisional probe prior, no outcomes yet;");
+    expect(prior).toContain("shown only from 3 up");
   });
 
   it("shows an honest empty state until evidence exists, and the cost chart once it does", () => {
@@ -279,7 +324,7 @@ describe("pages", () => {
     expect(html).toContain(">1.76<");
   });
 
-  it("states the warranty handoff and links addresses to the explorer on a resolution", () => {
+  it("says when no warranty pipeline runs, and links addresses to the explorer the server names", () => {
     const resolution: ResolutionView = {
       resolutionId: hex("aa"),
       state: "prepared",
@@ -293,21 +338,31 @@ describe("pages", () => {
         payTo: "0x00000000000000000000000000000000000000a1",
         maxTimeoutSeconds: 300,
       },
-      createdAt: NOW.toISOString(),
+      createdOn: "2026-10-01",
       receipt: null,
+      warranty: null,
     };
-    const html = renderToStaticMarkup(<Resolution view={resolution} />);
+    const html = renderToStaticMarkup(<Resolution view={resolution} explorer={ARBISCAN} />);
+    // Only the day it was created: no time of day that could point at its payment.
+    expect(html).toContain("created on 2026-10-01 (UTC)");
+    expect(html).not.toMatch(/\d{2}:\d{2} UTC|T\d{2}:\d{2}/);
     expect(html).toContain("payment in flight");
     expect(html).toContain("No adoption receipt yet");
-    expect(html).toContain("warranty registry");
+    expect(html).toContain("This server does not run the warranty pipeline, so no provider bond on the warranty registry backs this resolution here.");
+    expect(html).toContain("Nothing to show: this server does not run the warranty pipeline.");
     expect(html).toContain('href="https://sepolia.arbiscan.io/address/0x00000000000000000000000000000000000000a1"');
-    const failed = renderToStaticMarkup(<Resolution view={{ ...resolution, state: "settled", receipt: { outcome: "failed", verified: true } }} />);
+    // Links off (or the status not loaded yet): the addresses stay, the links go.
+    const off = renderToStaticMarkup(<Resolution view={resolution} explorer={null} />);
+    expect(off).toContain('title="0x00000000000000000000000000000000000000a1"');
+    expect(off).not.toContain("arbiscan");
+    expect(off).not.toContain("<a href=");
+    const failed = renderToStaticMarkup(<Resolution view={{ ...resolution, state: "settled", receipt: { outcome: "failed", verified: true } }} explorer={ARBISCAN} />);
     expect(failed).toContain("Acceptance tests failed");
     expect(failed).toContain("signature verified");
     expect(renderToStaticMarkup(<ResolutionLookup />)).toContain('aria-disabled="true"');
   });
 
-  it("lists the settlement contracts and says the registry is not deployed", () => {
+  it("lists the chain's contracts with explorer links and the provider agent, or why each is missing", () => {
     const status = StatusView.parse({
       schemaVersion: "1",
       status: "ok",
@@ -318,12 +373,88 @@ describe("pages", () => {
       provisionalEvidence: false,
       store: "memory",
       economics: "placeholder",
+      chain: { explorer: "https://sepolia.arbiscan.io", usdc: ARBITRUM_SEPOLIA_USDC, registry: null, engine: null, identityRegistry: null, reputationRegistry: null, providerAgentId: null },
     });
     const html = renderToStaticMarkup(<Status view={status} />);
     expect(html).toContain(`https://sepolia.arbiscan.io/address/${ARBITRUM_SEPOLIA_USDC}`);
-    expect(html).toContain("not deployed yet");
+    for (const why of ["not used: this server runs no warranty pipeline", "not used: no provider agent is configured", "not used: the attester is off", "none configured"]) expect(html).toContain(why);
     expect(html).toContain("Previews only");
     expect(html).toContain("placeholder: nothing can be sold");
+
+    const contracts = {
+      registry: "0x4c454d4d41000000000000000000000000000001",
+      engine: "0x00000000000000000000000000000000000000e1",
+      identityRegistry: "0x8004a818bfb912233c491871b3d84c89a494bd9e",
+      reputationRegistry: "0x8004b663056a597dffe9eccc1965a193b7388713",
+    };
+    const full = StatusView.parse({ ...status, paidTools: true, chain: { ...status.chain, ...contracts, providerAgentId: "42" } });
+    const on = renderToStaticMarkup(<Status view={full} />);
+    for (const address of [ARBITRUM_SEPOLIA_USDC, ...Object.values(contracts)]) expect(on).toContain(`href="https://sepolia.arbiscan.io/address/${address}"`);
+    expect(on).toContain("ERC-8004 agent <code>42</code>");
+    expect(on).toContain("provider bonds back purchases on the warranty registry");
+    expect(on).toContain('aria-label="View the warranty registry address on Arbiscan (opens in a new tab)"');
+    expect(on).not.toContain("not used:");
+    // A registry without an engine records no outcome on chain, and says so.
+    expect(renderToStaticMarkup(<Status view={{ ...full, chain: { ...full.chain, engine: null } }} />)).toContain("none set: the registry records outcomes into no engine");
+    // Explorer links off: every address is still shown, with no link.
+    const off = renderToStaticMarkup(<Status view={{ ...full, chain: { ...full.chain, explorer: null } }} />);
+    expect(off).toContain("links off");
+    expect(off).not.toContain("<a href=");
+    expect(off).toContain(`title="${contracts.registry}"`);
+  });
+
+  it("shows every warranty state with its amount in testnet USDC, its claim deadline and a link per transaction", () => {
+    const resolution: ResolutionView = {
+      resolutionId: hex("aa"),
+      state: "settled",
+      release: { releaseId: "gating", version: "1.0.0", releaseDigest: hex("55"), profileIndex: 0 },
+      payloadDigest: hex("11"),
+      terms: { scheme: "exact", network: "eip155:421614", asset: ARBITRUM_SEPOLIA_USDC, amount: "250000", payTo: "0x00000000000000000000000000000000000000a1", maxTimeoutSeconds: 300 },
+      createdOn: "2026-10-01",
+      receipt: { outcome: "passed", verified: true },
+      warranty: null,
+    };
+    const none = { amount: null, claimDeadline: null, activation: null, outcome: null, expiry: null, withdrawal: null, feedback: null };
+    const activated = { ...none, amount: "250000", claimDeadline: "2026-10-04T00:00:00.000Z", activation: hex("a1") };
+    // Every view is parsed with core's schema first, so each one is a warranty the server could serve.
+    const page = (warranty: Record<string, unknown>, over: Partial<ResolutionView> = {}, explorer: string | null = ARBISCAN) =>
+      renderToStaticMarkup(<Resolution view={{ ...resolution, ...over, warranty: WarrantyView.parse(warranty) }} explorer={explorer} />);
+    const tx = (b: string) => `href="https://sepolia.arbiscan.io/tx/${hex(b)}"`;
+
+    const active = page({ ...activated, state: "active" });
+    for (const text of ["warranty active", "Warranty active", '0.25 USDC <span class="muted">(testnet)</span>', "2026-10-04 00:00 UTC", "A pause of the registry moves the claim deadline later", tx("a1")]) {
+      expect(active).toContain(text);
+    }
+    expect(active).toContain('aria-label="View the activation transaction on Arbiscan (opens in a new tab)"');
+
+    const passed = page({ ...activated, state: "passed", outcome: hex("a2"), feedback: hex("a5") });
+    for (const text of ["warranty passed", "the reserved bond went back to the provider", "ERC-8004 feedback", tx("a1"), tx("a2"), tx("a5")]) expect(passed).toContain(text);
+    expect(passed).not.toContain("A pause of the registry");
+
+    const failed = page({ ...activated, state: "failed", outcome: hex("a2") });
+    for (const text of ["refund due", "Refund due", "lemma_claim_refund", tx("a2")]) expect(failed).toContain(text);
+
+    const refunded = page({ ...activated, state: "refunded", outcome: hex("a2"), withdrawal: hex("a4") });
+    for (const text of [">refunded<", "paid to the buyer&#x27;s refund address", ">Refund<", tx("a4")]) expect(refunded).toContain(text);
+
+    expect(page({ ...activated, state: "void", outcome: hex("a2") })).toContain("The outcome was ineligible or abandoned");
+    const expired = page({ ...activated, state: "expired", expiry: hex("a3") });
+    for (const text of ["warranty expired", "The claim window closed without a finalized outcome", ">Expiry<", tx("a3")]) expect(expired).toContain(text);
+
+    const pending = page({ ...none, state: "pending" });
+    expect(pending).toContain("Warranty activation pending");
+    expect(pending).toContain("appear here once the warranty is active on the registry");
+    expect(pending).not.toContain("(testnet)</span>");
+
+    expect(page({ ...none, state: "none" })).toContain("It was bought without a warranty claim");
+    expect(page({ ...none, state: "none" }, { state: "prepared", receipt: null })).toContain("Once the payment settles, the provider activates the warranty on the registry.");
+    expect(page({ ...none, state: "none" }, { state: "expired", receipt: null })).toContain("nothing to warrant");
+
+    // Explorer links off: every hash is still shown in full on hover and copyable, with no link.
+    const off = page({ ...activated, state: "refunded", outcome: hex("a2"), withdrawal: hex("a4") }, {}, null);
+    for (const b of ["a1", "a2", "a4"]) expect(off).toContain(`title="${hex(b)}"`);
+    expect(off).not.toContain("/tx/");
+    expect(off).not.toContain("<a href=");
   });
 
   it("explains an empty demand list", () => {

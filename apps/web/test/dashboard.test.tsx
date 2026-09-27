@@ -66,7 +66,7 @@ const catalog = CatalogView.parse({
   economics: { status: "measured", chainCostUsdc: "10000", priceFloorUsdc: "100000" },
   releases: [
     // The server's confidence for a one-run probe that passed (vectors.json, "prior only: a one-run probe").
-    summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]])),
+    summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const, buyers: null }]])),
   ],
 });
 
@@ -92,7 +92,7 @@ describe("views render only from read models", () => {
     const withOutcomes = CatalogView.parse({
       ...catalog,
       releases: [
-        summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 7337, effectiveNMilli: "21727", outcomes: 4, source: "benchmark+outcomes" as const }]])),
+        summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 7337, effectiveNMilli: "21727", outcomes: 4, source: "benchmark+outcomes" as const, buyers: null }]])),
       ],
     });
     for (const html of [renderToStaticMarkup(<Catalog view={withOutcomes} />), renderToStaticMarkup(<Evidence view={withOutcomes} />)]) {
@@ -105,7 +105,7 @@ describe("views render only from read models", () => {
     const frozen = { ...release, version: "1.0.0+bench-1", supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: { ...p.evidence, benchmarkVersion: "bench-1" } })) };
     const benchmarked = CatalogView.parse({
       ...catalog,
-      releases: [summarizeRelease({ release: frozen, releaseDigest: hex("58"), baseReleaseDigest: hex("56"), provisional: false }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const }]]))],
+      releases: [summarizeRelease({ release: frozen, releaseDigest: hex("58"), baseReleaseDigest: hex("56"), provisional: false }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const, buyers: null }]]))],
     });
     for (const html of [renderToStaticMarkup(<Catalog view={benchmarked} />), renderToStaticMarkup(<Evidence view={benchmarked} />)]) {
       expect(html).toContain("benchmark prior, no outcomes yet");
@@ -127,7 +127,7 @@ describe("views render only from read models", () => {
     expect(evidence).toContain("compatibility confidence 26.98 % (provisional probe prior, no outcomes yet)");
     const demand: DemandView = { minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 7, sources: 6, key: { capability: "node-service.add-payment-facilitator", decision: "build", release: null, profileIndex: null, reasons: ["NO_RELEASE_FOR_CAPABILITY"], offer: false, class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] } } }] };
     expect(renderToStaticMarkup(<Demand view={demand} />)).toContain("no release exists for this capability yet");
-    const status = StatusView.parse({ schemaVersion: "1", status: "ok", network: "eip155:421614", catalogDigest: hex("88"), releases: 2, paidTools: false, provisionalEvidence: true, store: "memory", economics: "placeholder" });
+    const status = StatusView.parse({ schemaVersion: "1", status: "ok", network: "eip155:421614", catalogDigest: hex("88"), releases: 2, paidTools: false, provisionalEvidence: true, store: "memory", economics: "placeholder", chain: { explorer: "https://sepolia.arbiscan.io", usdc: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", registry: null, engine: null, identityRegistry: null, reputationRegistry: null, providerAgentId: null } });
     const statusHtml = renderToStaticMarkup(<Status view={status} />);
     expect(statusHtml).toContain("Arbitrum Sepolia (testnet)");
     expect(statusHtml).toContain("placeholder: nothing can be sold");
@@ -138,13 +138,14 @@ describe("views render only from read models", () => {
       release: { releaseId: "gating", version: "1.0.0", releaseDigest: hex("55"), profileIndex: 0 },
       payloadDigest: hex("11"),
       terms: { scheme: "exact", network: "eip155:421614", asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", amount: "250000", payTo: "0x00000000000000000000000000000000000000a1", maxTimeoutSeconds: 300 },
-      createdAt: NOW.toISOString(),
+      createdOn: "2026-10-01",
       receipt: { outcome: "passed", verified: false },
+      warranty: null,
     };
-    const resolutionHtml = renderToStaticMarkup(<Resolution view={resolution} />);
+    const resolutionHtml = renderToStaticMarkup(<Resolution view={resolution} explorer={status.chain.explorer} />);
     expect(resolutionHtml).toContain("paid and delivered");
     expect(resolutionHtml).toContain("unverified");
-    expect(renderToStaticMarkup(<Resolution view={{ ...resolution, release: { ...resolution.release, version: "1.0.0+provisional-1" } }} />)).toContain("provisional (testnet only)");
+    expect(renderToStaticMarkup(<Resolution view={{ ...resolution, release: { ...resolution.release, version: "1.0.0+provisional-1" } }} explorer={null} />)).toContain("provisional (testnet only)");
   });
 
   it("renders the shell with its testnet pill, a collapsed phone menu, and loading and error states", () => {
@@ -160,6 +161,8 @@ describe("views render only from read models", () => {
     expect(setup).not.toContain("lemma-mcp");
     expect(setup).toContain("apps/bridge/dist/main.js");
     expect(setup).toContain('href="#/setup" aria-current="page"');
+    // A resolution waits for its read model; its explorer links wait for the status.
+    expect(renderToStaticMarkup(<App initialHash={`#/resolutions/${hex("ab")}`} />)).toContain("Loading");
     expect(renderToStaticMarkup(<Shown loaded={{ state: "error", message: "<b>bad</b>" }} render={() => null} />)).toContain("&lt;b&gt;bad&lt;/b&gt;");
   });
 });

@@ -260,7 +260,8 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
       release: "release" in offer ? offer.release : undefined,
       payloadDigest: expect.any(String),
       terms: "offer" in offer ? offer.offer?.terms : undefined,
-      createdAt: LATER.toISOString(),
+      // The UTC day only, never the time (core ResolutionView.createdOn).
+      createdOn: LATER.toISOString().slice(0, 10),
       receipt: { outcome: "passed", verified: false },
     });
     const view = JSON.stringify(await service.publicResolution(id));

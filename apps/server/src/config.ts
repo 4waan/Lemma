@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { z } from "zod";
 
 import { type ReputationConfig, loadReputationConfig } from "./reputation/config.js";
+import { INDEXER_CONFIRMATIONS } from "./warranty/indexer.js";
 
 // `.env.example` leaves unset values empty (`PROVIDER_ADDRESS=`); treat them as absent.
 const optional = <T extends z.ZodType>(schema: T) => z.preprocess((v) => (v === "" ? undefined : v), schema.optional());
@@ -75,6 +76,28 @@ export function isHttpUrl(value: string): boolean {
 
 const RpcUrl = z.string().refine(isHttpUrl, "must be an http(s) URL; its value is not shown");
 
+/** The block explorer the dashboard links to when `EXPLORER_BASE_URL` is unset: Arbiscan's for Arbitrum Sepolia, the only chain. */
+export const DEFAULT_EXPLORER_BASE_URL = "https://sepolia.arbiscan.io";
+
+/**
+ * `EXPLORER_BASE_URL`: unset means the default explorer, empty turns explorer
+ * links off, and anything else must be an http(s) base URL without
+ * credentials, query or fragment (paths such as `/tx/<hash>` are appended).
+ * Unlike every other variable, empty is not the same as unset here.
+ */
+const ExplorerBaseUrl = z
+  .string()
+  .refine((value) => {
+    if (value === "") return true;
+    try {
+      const url = new URL(value);
+      return /^https?:$/.test(url.protocol) && url.username === "" && url.password === "" && url.search === "" && url.hash === "";
+    } catch {
+      return false;
+    }
+  }, "must be an http(s) base URL without credentials, query or fragment, or empty to turn explorer links off")
+  .optional();
+
 /** 0x and 64 hex digits, a valid secp256k1 key (checked in loadConfig). The message never repeats the value. */
 const PrivateKey = z.string().regex(/^0x[0-9a-fA-F]{64}$/, "must be 0x followed by 64 hex digits; its value is not shown");
 
@@ -95,7 +118,53 @@ const Env = z.object({
   DASHBOARD_ORIGIN: optional(z.url({ protocol: /^https?$/ })),
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(4).default(0),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).max(10_000).default(60),
+  EXPLORER_BASE_URL: ExplorerBaseUrl,
+  // The warranty pipeline (WarrantyConfig).
+  RESOLUTION_WARRANTY_REGISTRY_ADDRESS: optional(AddressInput),
+  PROVIDER_PRIVATE_KEY: optional(PrivateKey),
+  EVALUATOR_PRIVATE_KEY: optional(PrivateKey),
+  WARRANTY_REGISTRY_START_BLOCK: optional(z.string().regex(/^(0|[1-9][0-9]{0,18})$/, "expected a block number")),
+  EVALUATOR_FAILURES: optional(z.enum(["review", "auto"])),
+  WARRANTY_ACTIVATION_JITTER_SECONDS: optional(z.coerce.number().int().min(0).max(86_400)),
+  WARRANTY_INDEXER_CONFIRMATIONS: optional(z.string().regex(/^(0|[1-9][0-9]{0,5})$/, "expected a number of blocks, 0 to 999999")),
 });
+
+/**
+ * The warranty pipeline's settings (apps/server/src/warranty): on only with
+ * all of the registry address, the provider's and the evaluator's keys,
+ * `PAID_TOOLS=on`, `ARBITRUM_SEPOLIA_RPC_URL` and `DATABASE_URL`.
+ */
+export interface WarrantyConfig {
+  /** `RESOLUTION_WARRANTY_REGISTRY_ADDRESS`. */
+  readonly registry: Address;
+  /** `WARRANTY_REGISTRY_START_BLOCK`: the registry's deployment block, where the indexer starts (default 0). */
+  readonly startBlock: bigint;
+  /** `PROVIDER_PRIVATE_KEY`: signs vouchers, sends activations and expiries. */
+  readonly providerKey: Secret;
+  readonly providerAddress: Address;
+  /** `EVALUATOR_PRIVATE_KEY`: signs outcomes, sends finalizations and credit withdrawals. */
+  readonly evaluatorKey: Secret;
+  readonly evaluatorAddress: Address;
+  /** `EVALUATOR_FAILURES`: `review` (default: an operator decides each failed outcome) or `auto`. */
+  readonly failures: "review" | "auto";
+  /** `WARRANTY_ACTIVATION_JITTER_SECONDS` (default 300; 0 for tests and local runs). */
+  readonly activationJitterSeconds: number;
+  /** `WARRANTY_INDEXER_CONFIRMATIONS`: how many blocks behind the latest one the indexer stops (default 64). */
+  readonly indexerConfirmations: bigint;
+}
+
+/** The variables that turn the warranty pipeline on: setting any of them asks for all it needs. */
+const WARRANTY_SWITCHES = ["RESOLUTION_WARRANTY_REGISTRY_ADDRESS", "PROVIDER_PRIVATE_KEY", "EVALUATOR_PRIVATE_KEY", "WARRANTY_REGISTRY_START_BLOCK"] as const;
+
+/** The address of a private key from variable `name`; the error names the variable, never the value. */
+function addressOfKey(key: string, name: string): Address {
+  try {
+    return toAddress(privateKeyToAccount(key as Hex).address);
+  } catch {
+    // Never the library's message: it could quote the key.
+    throw new ConfigError(`${name} is not a valid secp256k1 private key; its value is not shown`);
+  }
+}
 
 export interface ServerConfig {
   readonly env: "development" | "test" | "production";
@@ -128,6 +197,14 @@ export interface ServerConfig {
   readonly rateLimitPerMinute: number;
   /** ERC-8004 reputation (src/reputation/config.ts); all optional, off when unset. */
   readonly reputation: ReputationConfig;
+  /**
+   * The block explorer's base URL, without a trailing slash, for the
+   * dashboard's links (`StatusView.chain.explorer`); null turns them off
+   * (`EXPLORER_BASE_URL` set empty). Default `DEFAULT_EXPLORER_BASE_URL`.
+   */
+  readonly explorerBaseUrl: string | null;
+  /** The warranty pipeline's settings, or undefined while it is off (none of its variables set). */
+  readonly warranty: WarrantyConfig | undefined;
 }
 
 export class ConfigError extends Error {
@@ -170,6 +247,7 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     // Its messages name variables and problems only, never a key or an RPC URL.
     throw new ConfigError(error instanceof Error ? error.message : "invalid reputation settings");
   }
+  const warranty = warrantyConfig(e, facilitatorAddress, reputation);
   return {
     env: e.NODE_ENV,
     port: e.PORT,
@@ -189,5 +267,52 @@ export function loadConfig(env: Record<string, string | undefined>): ServerConfi
     trustedProxyHops: e.TRUSTED_PROXY_HOPS,
     rateLimitPerMinute: e.RATE_LIMIT_PER_MINUTE,
     reputation,
+    explorerBaseUrl: e.EXPLORER_BASE_URL === undefined ? DEFAULT_EXPLORER_BASE_URL : e.EXPLORER_BASE_URL === "" ? null : e.EXPLORER_BASE_URL.replace(/\/+$/, ""),
+    warranty,
+  };
+}
+
+/**
+ * The warranty pipeline's settings. None of its variables set: off, and
+ * nothing else changes. Any of them set: every one it needs must be too
+ * (fail closed; the error names what is missing, never a value), and the
+ * provider, evaluator, facilitator and attester (when set) must be four
+ * different accounts: the registry refuses a provider that is its own
+ * evaluator, and one sender's transaction order must never join a buyer's
+ * settlement to the warranty it paid for.
+ */
+function warrantyConfig(e: z.infer<typeof Env>, facilitator: Address | undefined, reputation: ReputationConfig): WarrantyConfig | undefined {
+  const switched = WARRANTY_SWITCHES.filter((name) => e[name] !== undefined);
+  if (switched.length === 0) return undefined;
+  const missing = [
+    ...(e.PAID_TOOLS === "on" ? [] : ["PAID_TOOLS=on"]),
+    ...(["RESOLUTION_WARRANTY_REGISTRY_ADDRESS", "PROVIDER_PRIVATE_KEY", "EVALUATOR_PRIVATE_KEY", "ARBITRUM_SEPOLIA_RPC_URL", "DATABASE_URL"] as const).filter((name) => e[name] === undefined),
+  ];
+  if (missing.length > 0) {
+    throw new ConfigError(`the warranty pipeline is partly configured (${switched.join(", ")} set): it also needs ${missing.join(", ")}; set all of them, or none`);
+  }
+  const provider = addressOfKey(e.PROVIDER_PRIVATE_KEY as string, "PROVIDER_PRIVATE_KEY");
+  const evaluator = addressOfKey(e.EVALUATOR_PRIVATE_KEY as string, "EVALUATOR_PRIVATE_KEY");
+  const roles: Array<readonly [string, Address | undefined]> = [
+    ["PROVIDER_PRIVATE_KEY", provider],
+    ["EVALUATOR_PRIVATE_KEY", evaluator],
+    ["FACILITATOR_PRIVATE_KEY", facilitator],
+    ["ATTESTER_PRIVATE_KEY", reputation.attester?.address],
+  ];
+  for (const [i, [a, x]] of roles.entries()) {
+    for (const [b, y] of roles.slice(i + 1)) {
+      if (x !== undefined && x === y) throw new ConfigError(`${a} and ${b} are the same account: the provider, evaluator, facilitator and attester keys must all differ`);
+    }
+  }
+  return {
+    registry: e.RESOLUTION_WARRANTY_REGISTRY_ADDRESS as Address,
+    startBlock: BigInt(e.WARRANTY_REGISTRY_START_BLOCK ?? "0"),
+    providerKey: new Secret((e.PROVIDER_PRIVATE_KEY as string).toLowerCase()),
+    providerAddress: provider,
+    evaluatorKey: new Secret((e.EVALUATOR_PRIVATE_KEY as string).toLowerCase()),
+    evaluatorAddress: evaluator,
+    failures: e.EVALUATOR_FAILURES ?? "review",
+    activationJitterSeconds: e.WARRANTY_ACTIVATION_JITTER_SECONDS ?? 300,
+    indexerConfirmations: e.WARRANTY_INDEXER_CONFIRMATIONS === undefined ? INDEXER_CONFIRMATIONS : BigInt(e.WARRANTY_INDEXER_CONFIRMATIONS),
   };
 }

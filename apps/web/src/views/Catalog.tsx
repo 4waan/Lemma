@@ -1,7 +1,7 @@
 import { CAPABILITY_IDS, type CapabilityId, type CatalogView, type ProfileSummary, type ReleaseSummary } from "@lemma/core";
 import { useState } from "react";
 
-import { COMPATIBILITY_EXPLAINED, ConfidenceCell } from "../components/Compatibility.js";
+import { BUYERS_EXPLAINED, COMPATIBILITY_EXPLAINED, ConfidenceCell, buyersText } from "../components/Compatibility.js";
 import { Hash } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
 import { Badge, Callout, KeyValue, PageHead } from "../components/ui.js";
@@ -133,7 +133,8 @@ function Release({ release }: { release: ReleaseSummary }) {
               <span className="muted">no public record yet</span>
             ) : (
               <>
-                pass {percent(BigInt(release.reputation.passBps))}, n {release.reputation.count} <span className="muted">(ERC-8004, testnet)</span>
+                pass {percent(BigInt(release.reputation.passBps))}, n {release.reputation.count}, {buyersText(release.reputation.buyers)}{" "}
+                <span className="muted">(ERC-8004, testnet)</span>
               </>
             )}
           </dd>
@@ -157,7 +158,7 @@ function Release({ release }: { release: ReleaseSummary }) {
             ["Published", when(release.publishedAt)],
             [
               "Adoption record",
-              "Finalized adoptions of this capability that passed their pinned acceptance tests, and how many were counted: ERC-8004 feedback on the provider's agent from Lemma's attester only, on Arbitrum Sepolia.",
+              "Finalized adoptions of this capability that passed their pinned acceptance tests, and how many were counted: ERC-8004 feedback on the provider's agent from Lemma's attester only, on Arbitrum Sepolia. Buyers counts the distinct buyers behind them.",
             ],
           ]}
         />
@@ -187,7 +188,9 @@ function Release({ release }: { release: ReleaseSummary }) {
             </tbody>
           </table>
         </div>
-        <p className="small muted">{COMPATIBILITY_EXPLAINED}</p>
+        <p className="small muted">
+          {COMPATIBILITY_EXPLAINED} {BUYERS_EXPLAINED}
+        </p>
       </details>
     </article>
   );

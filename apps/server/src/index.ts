@@ -14,6 +14,7 @@ export * from "./service.js";
 export * from "./demand.js";
 export * from "./payments/index.js";
 export * from "./reputation/index.js";
+export * from "./warranty/index.js";
 export { PgStore } from "./db/store.js";
 export { MIGRATIONS_FOLDER, latestMigration, schemaIsCurrent } from "./db/migrations.js";
 

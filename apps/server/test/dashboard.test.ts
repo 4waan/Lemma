@@ -55,7 +55,7 @@ describe("read models", () => {
       CatalogView.parse(await (await app({ index, economics, clock, outcomes, config: config({ PROVIDER_ADDRESS: PROVIDER }) }).request("/api/v1/catalog")).json()).releases[0]?.profiles[0]?.compatibility;
 
     // The evidence's treatment arm passed 3 of 3: the prior alone.
-    expect(await catalog()).toEqual({ confidenceBps: 5258, effectiveNMilli: "3000", outcomes: 0, source: "benchmark" });
+    expect(await catalog()).toEqual({ confidenceBps: 5258, effectiveNMilli: "3000", outcomes: 0, source: "benchmark", buyers: null });
 
     const now = unixSeconds(NOW);
     const outcomes: Outcome[] = [
@@ -65,7 +65,10 @@ describe("read models", () => {
     ];
     const source: OutcomeSource = { outcomesFor: (d, i) => (d === digest && i === 0 ? outcomes : NO_OUTCOMES.outcomesFor(d, i)) };
     const expected = fold({ passes: 3, failures: 0 }, outcomes, now);
-    expect(await catalog(source)).toEqual({ confidenceBps: expected.confidenceBps, effectiveNMilli: expected.effectiveNMilli.toString(), outcomes: 3, source: "benchmark+outcomes" });
+    expect(await catalog(source)).toEqual({ confidenceBps: expected.confidenceBps, effectiveNMilli: expected.effectiveNMilli.toString(), outcomes: 3, source: "benchmark+outcomes", buyers: null });
+    // Distinct buyers come from the source, published from three up.
+    expect((await catalog({ ...source, buyersFor: () => 2 }))?.buyers).toBeNull();
+    expect((await catalog({ ...source, buyersFor: (d, i) => (d === digest && i === 0 ? 3 : 0) }))?.buyers).toBe(3);
     // Read later, the same outcomes weigh less: the score moves with the request's clock.
     const later = new Date(NOW.getTime() + 90 * 86_400_000);
     const aged = fold({ passes: 3, failures: 0 }, outcomes, unixSeconds(later));
@@ -77,7 +80,7 @@ describe("read models", () => {
     const outcomes: Outcome[] = [{ passed: true, weightBps: 10_000, at: unixSeconds(NOW) }];
     const view = CatalogView.parse(await (await app({ outcomes: { outcomesFor: (_, i) => (i === 0 ? outcomes : []) } }).request("/api/v1/catalog")).json());
     for (const release of view.releases) {
-      expect(release.profiles[0]?.compatibility).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes" });
+      expect(release.profiles[0]?.compatibility).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes", buyers: null });
     }
   });
 
@@ -109,9 +112,20 @@ describe("read models", () => {
       const confidenceOf = (digest: string | undefined) => view.releases.find((r) => r.releaseDigest === digest)?.profiles[0]?.compatibility;
       // Only the broken profile loses its confidence; the other release keeps its own.
       expect(confidenceOf(broken)).toBeNull();
-      expect(confidenceOf(healthy)).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes" });
+      expect(confidenceOf(healthy)).toEqual({ confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 1, source: "outcomes", buyers: null });
       expect(logged).toEqual([["error", "catalog.compatibility_failed", { releaseDigest: broken, profileIndex: 0, error }]]);
     }
+  });
+
+  it("costs only that profile its confidence when a source counts more buyers than outcomes", async () => {
+    const index = sellableIndex();
+    const logged: unknown[] = [];
+    const logger: Logger = { log: (level, event, fields) => logged.push([level, event, fields]) };
+    const outcomes: Outcome[] = [{ passed: true, weightBps: 10_000, at: unixSeconds(NOW) }];
+    const res = await app({ index, economics, logger, config: config({ PROVIDER_ADDRESS: PROVIDER }), outcomes: { outcomesFor: () => outcomes, buyersFor: () => 4 } }).request("/api/v1/catalog");
+    expect(res.status).toBe(200);
+    expect(CatalogView.parse(await res.json()).releases[0]?.profiles[0]?.compatibility).toBeNull();
+    expect(logged).toEqual([["error", "catalog.compatibility_failed", { releaseDigest: index.releases[0]!.releaseDigest, profileIndex: 0, error: "ZodError" }]]);
   });
 
   it("folds a frozen array of frozen outcomes once and scores it at every read", () => {
@@ -150,6 +164,30 @@ describe("read models", () => {
   it("serves the status view", async () => {
     const view = StatusView.parse(await (await app({ economics, storeKind: "postgres" }).request("/api/v1/status")).json());
     expect(view).toMatchObject({ status: "ok", network: "eip155:421614", paidTools: false, provisionalEvidence: false, store: "postgres", economics: "measured" });
+    // Nothing on chain is configured: USDC and the default explorer only.
+    expect(view.chain).toEqual({
+      explorer: "https://sepolia.arbiscan.io",
+      usdc: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+      registry: null,
+      engine: null,
+      identityRegistry: null,
+      reputationRegistry: null,
+      providerAgentId: null,
+    });
+  });
+
+  it("names the explorer and the ERC-8004 contracts it uses in the status view's chain section", async () => {
+    const chainOf = async (env: Record<string, string>) => StatusView.parse(await (await app({ config: config(env) }).request("/api/v1/status")).json()).chain;
+    expect((await chainOf({ EXPLORER_BASE_URL: "https://explorer.example/sepolia/" })).explorer).toBe("https://explorer.example/sepolia");
+    // Empty turns explorer links off, unlike other variables, where empty means unset.
+    expect((await chainOf({ EXPLORER_BASE_URL: "" })).explorer).toBeNull();
+    expect(await chainOf({ LEMMA_AGENT_ID: "7" })).toMatchObject({ identityRegistry: "0x8004a818bfb912233c491871b3d84c89a494bd9e", reputationRegistry: null, providerAgentId: "7" });
+  });
+
+  it("refuses an explorer URL that is not a plain http(s) base", () => {
+    for (const bad of ["ftp://explorer.example", "https://explorer.example/?q=1", "https://user:pw@explorer.example", "not a url"]) {
+      expect(() => config({ EXPLORER_BASE_URL: bad }), bad).toThrow(/EXPLORER_BASE_URL/);
+    }
   });
 
   it("reports purchases as enabled only when paid tools are actually registered", async () => {

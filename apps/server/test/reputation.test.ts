@@ -385,7 +385,12 @@ describe("reputation in previews and the catalog", () => {
 
   it("shows each release's record in the catalog view, or null", async () => {
     const withRecord = CatalogView.parse(await (await app({ index: sellableIndex(), reputation: reader({ passBps: 9700, count: 34 }) }).request("/api/v1/catalog")).json());
-    expect(withRecord.releases[0]?.reputation).toEqual({ passBps: 9700, count: 34 });
+    expect(withRecord.releases[0]?.reputation).toEqual({ passBps: 9700, count: 34, buyers: null });
+    // The distinct buyers behind the outcomes fed to the attester, from three up.
+    const counted = async (buyers: number) =>
+      CatalogView.parse(await (await app({ index: sellableIndex(), reputation: reader({ passBps: 9700, count: 34 }), reputationBuyers: { buyersFor: () => buyers } }).request("/api/v1/catalog")).json()).releases[0]?.reputation;
+    expect((await counted(2))?.buyers).toBeNull();
+    expect((await counted(5))?.buyers).toBe(5);
     const without = CatalogView.parse(await (await app({ index: sellableIndex() }).request("/api/v1/catalog")).json());
     expect(without.releases[0]?.reputation).toBeNull();
   });

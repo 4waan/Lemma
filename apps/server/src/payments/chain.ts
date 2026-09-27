@@ -208,9 +208,10 @@ export async function lastBlockBefore(timestampOf: (blockNumber: bigint) => Prom
  * Whether the RPC node answered with a JSON-RPC error (a numeric `code` on the
  * error or a cause), as providers do for a block range wider than they serve,
  * rather than failing to answer at all (a timeout or a lost connection, which
- * a narrower range would not fix).
+ * a narrower range would not fix). The warranty indexer halves its log
+ * ranges on the same test.
  */
-function isRpcRefusal(error: unknown): boolean {
+export function isRpcRefusal(error: unknown): boolean {
   for (let e: unknown = error, depth = 0; e !== null && typeof e === "object" && depth < 8; e = (e as { cause?: unknown }).cause, depth++) {
     if (typeof (e as { code?: unknown }).code === "number") return true;
   }

@@ -123,3 +123,16 @@ export async function mcpClient(app: Hono, headers: Record<string, string> = {})
 }
 
 export const app = (over: Partial<AppDeps> = {}) => createApp(deps(over));
+
+/**
+ * Every value in a JSON document that tells a time finer than a day, with its
+ * path: an ISO date-time string, or a number large enough to be Unix seconds
+ * or milliseconds.
+ */
+export function timesOfDay(value: unknown, path: readonly string[] = []): Array<readonly [string, unknown]> {
+  if (typeof value === "string") return /\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value) ? [[path.join("."), value]] : [];
+  if (typeof value === "number") return Math.abs(value) >= 1_000_000_000 ? [[path.join("."), value]] : [];
+  if (Array.isArray(value)) return value.flatMap((v, i) => timesOfDay(v, [...path, String(i)]));
+  if (value !== null && typeof value === "object") return Object.entries(value).flatMap(([k, v]) => timesOfDay(v, [...path, k]));
+  return [];
+}

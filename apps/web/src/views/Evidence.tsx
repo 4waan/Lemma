@@ -1,6 +1,6 @@
 import type { CatalogView, ProfileSummary, ReleaseSummary } from "@lemma/core";
 
-import { COMPATIBILITY_EXPLAINED, compatibilityBasis } from "../components/Compatibility.js";
+import { BUYERS_EXPLAINED, COMPATIBILITY_EXPLAINED, compatibilityBasis } from "../components/Compatibility.js";
 import { CostComparison } from "../components/CostChart.js";
 import { Hash } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
@@ -89,8 +89,8 @@ export function Evidence({ view }: { view: CatalogView }) {
           <CompatibilityTable rows={confident} />
         )}
         <p className="small muted">
-          The same integer engine is built as a Stylus contract for Arbitrum, where the warranty registry records each finalized outcome, so once it is deployed anyone can recompute
-          these numbers on chain.
+          {BUYERS_EXPLAINED} The same integer engine is built as a Stylus contract for Arbitrum, where the warranty registry records each finalized outcome, so once it is deployed
+          anyone can recompute these numbers on chain.
         </p>
       </Section>
 
@@ -129,9 +129,10 @@ export function Evidence({ view }: { view: CatalogView }) {
 const TRUST: readonly string[] = [
   "Everything runs on Arbitrum Sepolia. Amounts are test USDC, not revenue.",
   "Evidence marked provisional comes from an exploratory probe, not the frozen benchmark, and exists only on testnet.",
-  "The server, the provider and the outcome evaluator are operated by the Lemma team. This demonstrates an economic mechanism, not trustless software correctness.",
-  "The warranty registry is not deployed yet. Until it is, no provider bond backs a purchase.",
-  "Compatibility confidence counts finalized adoption outcomes only. Until the outcome pipeline supplies them, it is the benchmark prior alone.",
+  "The server, the provider and the outcome evaluator are operated by the Lemma team, and every pass, failure and refund needs the evaluator's signature. This demonstrates an economic mechanism, not trustless software correctness.",
+  "A provider bond backs a purchase only when the server runs the warranty pipeline against a deployed registry. The Status page names the registry this server uses, if any.",
+  "Compatibility confidence counts only the outcomes the warranty registry recorded into its engine. Without any, it is the benchmark prior alone.",
+  "A release's acceptance tests run as the buyer's own user, so they could reach the buyer's signer and the bridge's state and post a signed passing receipt before the bridge does. Until the bridge runs them out of that reach, failures and disputes rely on the evaluator.",
 ];
 
 function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary; profile: ProfileSummary; chainCost: bigint }) {

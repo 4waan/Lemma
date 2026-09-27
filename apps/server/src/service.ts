@@ -81,14 +81,22 @@ export const RECEIPT_CLOCK_SKEW_MS = 5 * 60_000;
 /** Normalized so the same authorization cannot pass as two by changing case. */
 const normalizeNonce = (nonce: string) => nonce.toLowerCase();
 
-/** What anyone may see about a resolution: no preview id (the recovery secret), no buyer, no bundle. */
+/** The UTC day of an ISO timestamp (`2026-10-01T12:00:03.123Z` is `2026-10-01`). */
+const utcDay = (iso: string) => new Date(iso).toISOString().slice(0, 10);
+
+/**
+ * What anyone may see about a resolution: no preview id (the recovery secret), no buyer, no bundle, and no time
+ * finer than the day it was created (core `ResolutionView.createdOn`), because a warranted resolution's id is
+ * public on chain and a precise time would point at the settlement that paid for it.
+ */
 export interface PublicResolution {
   readonly resolutionId: Hex32;
   readonly state: ResolutionRow["state"];
   readonly release: Resolution["release"];
   readonly payloadDigest: Hex32;
   readonly terms: PaymentTerms;
-  readonly createdAt: string;
+  /** The UTC day, `YYYY-MM-DD`. */
+  readonly createdOn: string;
   readonly receipt: { readonly outcome: AdoptionReceipt["outcome"]; readonly verified: boolean } | null;
 }
 
@@ -262,7 +270,7 @@ export class ResolutionService implements ResolutionReader {
       release: r.release,
       payloadDigest: r.payloadDigest,
       terms: r.terms,
-      createdAt: r.createdAt,
+      createdOn: utcDay(r.createdAt),
       receipt: receipt === undefined ? null : { outcome: receipt.receipt.outcome, verified: receipt.verified },
     };
   }

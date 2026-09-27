@@ -77,10 +77,11 @@ jobs:
           submodules: true
       - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
         with:
-          # The Foundry release the gas report and ABIs in contracts/ were produced with.
+          # The Foundry release the ABIs in contracts/abi and the gas figures in
+          # docs/warranty-registry-review.md were produced with.
           version: v1.7.1
-          # The job runs offline and needs no RPC cache; nothing is restored from or saved to
-          # the Actions cache.
+          # The job calls no RPC endpoint and needs no RPC cache; nothing is restored from or
+          # saved to the Actions cache.
           cache: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

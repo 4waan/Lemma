@@ -68,13 +68,12 @@ See [Bridge Runtime](bridge-runtime.md) for the filesystem and process guarantee
 
 ## Payment and warranty boundary
 
-The current implementation stops at the paid-tool registration and signer seams. On chain, the warranty registry is written and tested but not deployed. Its interface, EIP-712 types, roles, and limits are in the [contracts guide](../contracts/README.md). It fixes how a paid resolution meets its warranty:
+The current implementation stops at the paid-tool registration and signer seams. On chain, the warranty registry is written and tested but not deployed. Its state machine, typed data, roles, and limits are in the [contracts guide](../contracts/README.md). Each component's part in a warranty:
 
-- After settlement, the release's provider signs a voucher for the resolution. It binds the resolution id, the release and profile, the warranty amount in atomic USDC, a `paymentRef`, the buyer's `claimHash`, and an activation deadline. Activation reserves that amount from the provider's bond for the release's claim window.
-- `paymentRef` is an opaque salted commitment to the settled payment, chosen by the server. It is never a public function of payer and nonce.
-- Before paying, the buyer's bridge picks a random claim secret and a refund address, keeps both, and sends only their `claimHash`. After a FAILED outcome, only that secret unlocks the credit, and only to that address. No buyer or payer address is stored on chain.
-- The release's evaluator signs one outcome per resolution. PASSED and VOID release the reserved bond, and FAILED turns it into the buyer's credit. Without an outcome, the warranty expires after its claim deadline, and the bond is released without asserting success.
-- Anyone may submit a voucher, an outcome, an expiry, or a credit withdrawal, so the server relays them and pays the gas. Agents never hold ETH.
+- Before paying, the buyer's bridge picks a random claim secret and a refund address, keeps both, and sends only their `claimHash`. After a FAILED outcome, only that secret unlocks the credit, and only to that address.
+- After settlement, the server chooses an opaque salted `paymentRef` for the payment, and the release's provider signs a voucher that binds the resolution to it and to the buyer's `claimHash`. No buyer or payer address reaches the chain.
+- The release's evaluator signs one outcome per resolution. Without one, the warranty expires after its claim deadline.
+- The server relays vouchers, outcomes, expiries, and credit withdrawals, and pays the gas. Agents never hold ETH.
 
 The pending payment lane must add:
 

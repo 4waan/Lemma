@@ -90,5 +90,5 @@ Later migrations will add signed warranty vouchers, settlement details, and chai
 - Lost paid responses are recovered with the preview secret and buyer.
 - Patch drift stops direct application and returns an adaptation path.
 - An interrupted apply is recovered from its local journal.
-- Missing evaluator confirmation leaves a warranty active until expiry. A registry pause stops that clock: nothing finalizes or expires while paused, and the paused time is added to every running claim deadline.
+- Missing evaluator confirmation leaves a warranty active until expiry. A registry pause also stops the claim clock (see [Pause and the claim clock](../contracts/README.md#pause-and-the-claim-clock)).
 - Expiry releases reserved bond without asserting software success.

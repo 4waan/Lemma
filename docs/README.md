@@ -25,6 +25,7 @@ Use this page to find the document that owns a decision. Component READMEs cover
 
 - [Benchmark Protocol](benchmark-protocol.md): frozen control and treatment experiment and its success criteria.
 - [Economic Gates and Iterations](economic-gates.md): build order, go-or-iterate decisions, unit economics, and scale requirements.
+- [Warranty Registry Review](warranty-registry-review.md): how the unaudited registry contract was checked: test campaign, static analysis, checklists, and gas, with the measurement date.
 
 ## Component guides
 

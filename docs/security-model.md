@@ -45,7 +45,7 @@
 - Acceptance recipes run only when the run is evidence about the resolution (it is in place, the package still fits the profile it was bought for, and the recipe's script exists), without a shell, with only a minimal `PATH`, a fresh `HOME`, the user's corepack cache (`COREPACK_HOME`, with corepack's downloads off; the tests can write to it) and the variables the recipe lists, under the recipe's timeout, and with output capped and only digested; no acceptance output or recipe argument reaches the model. They are still the release's and the buyer's code running as the user: the network is on unless offline mode is used, writes are not confined to the package, and the user's real home and the bridge's start environment (`/proc`) are readable. The bridge therefore refuses to run them while a wallet secret is in its environment or the one it started with (the same names installs never get). A key file the user can read is readable by the tests as well, so the buyer key belongs with a signer running as another user, or on a hardware or remote signer.
 - Settlement and recovery are idempotent.
 - Typed signatures bind chain, contract, buyer, release, payload, amount, expiry, and nonce.
-- The warranty registry reserves bond before a warranty becomes active, never lets a provider withdraw reserved bond, and keeps `USDC balance >= available bond + reserved bond + withdrawal credits`. It stores no buyer or payer address and pays a failure credit only to the refund address committed in the claim hash. Paused time extends every running claim deadline, so a pause never runs out a buyer's window. Unit, fuzz, and invariant tests cover it; see the [contracts guide](../contracts/README.md).
+- The warranty registry reserves bond before a warranty becomes active, never lets a provider withdraw reserved bond, stores no buyer or payer address, and pays a failure credit only to the refund address committed in the claim hash. A pause also stops the claim clock. Unit, fuzz, and invariant tests cover it; see the [contracts guide](../contracts/README.md#invariants).
 - Browser rendering escapes untrusted values and restricts external destinations.
 - Database operations are parameterized and resource access uses non-guessable identifiers.
 - Logs and run records are scrubbed before persistence.
@@ -61,7 +61,7 @@
 
 The evaluator is a separate team-operated key, not decentralized arbitration. External pilots use public repositories so the evaluator can inspect evidence without receiving private source. The server and provider remain first-party infrastructure.
 
-The registry also trusts each provider to sign a voucher after payment and keep enough bond available, and its owner to unpause. USDC is centrally controlled: Circle can block a refund address or pause the token. The [contracts guide](../contracts/README.md#limits) lists every limit.
+The registry also trusts each provider to sign a voucher after payment and keep enough bond available, and its owner to unpause. USDC is centrally controlled: Circle can block a refund address or pause the token. The [contracts guide](../contracts/README.md#limits) lists the registry's other limits.
 
 These assumptions must be visible in the dashboard and submission. The MVP demonstrates an economic mechanism, not trustless software correctness.
 

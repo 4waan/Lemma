@@ -174,8 +174,9 @@ export function Setup() {
               </table>
             </div>
             <p className="small muted">
-              Keep the buyer key out of the bridge's environment: acceptance tests run as your user and could read it, so the verify tool refuses to run while a wallet secret is
-              present. Use a signer that runs as another user, or a hardware or remote signer.
+              The buyer key never goes in the bridge's environment: lemma-signer init creates it in a key file, and lemma-signer serve signs within the same limits, which it
+              enforces itself. Acceptance tests run as your user, so the verify tool refuses to run while a wallet secret is in the bridge's environment. For full isolation, run
+              the signer as another user.
             </p>
           </div>
         </details>
@@ -202,7 +203,7 @@ export function Setup() {
 
 const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly built: boolean }> = [
   { name: "lemma_preview", text: "Free compatibility check from package metadata. Also checks local files for drift before any purchase.", built: true },
-  { name: "lemma_buy_resolution", text: "Pays for an open offer through x402, within your local spending caps.", built: false },
+  { name: "lemma_buy_resolution", text: "Pays for an open offer through x402 and your local signer, within your spending limits. Never pays twice.", built: true },
   { name: "lemma_apply_resolution", text: "Previews the patch by default. Applies it all or nothing on request, or exports it to merge by hand.", built: true },
   { name: "lemma_verify_adoption", text: "Runs the release's acceptance tests and records the Adoption Receipt.", built: true },
 ];
@@ -212,9 +213,11 @@ const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; re
   { name: "LEMMA_WORKSPACE", text: "The repository root the bridge may read. Nothing above it is read.", fallback: "the working directory", later: false },
   { name: "LEMMA_STATE_DIR", text: "Purchases, receipts, apply journals and exports, private to you.", fallback: "~/.local/state/lemma", later: false },
   { name: "LEMMA_ACCEPTANCE_OFFLINE", text: "Set to 1 to run acceptance tests without network, on Linux.", fallback: "off", later: false },
-  { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost.", fallback: "0.25 in .env.example", later: true },
-  { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a day.", fallback: "1.00 in .env.example", later: true },
-  { name: "ARBITRUM_SEPOLIA_RPC_URL", text: "RPC endpoint for payments and warranty activation.", fallback: "none", later: true },
+  { name: "LEMMA_SIGNER_SOCKET", text: "The socket of lemma-signer, the separate process that holds the buyer key. Purchases stay off while no signer answers.", fallback: "the signer's own default, <state>/signer/signer.sock", later: false },
+  { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost, in atomic USDC (250000 is 0.25 USDC).", fallback: "none: purchases stay off", later: false },
+  { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a rolling day, in atomic USDC.", fallback: "none: purchases stay off", later: false },
+  { name: "LEMMA_ALLOWED_PAY_TO", text: "The recipient addresses the buyer will pay, comma-separated.", fallback: "none: purchases stay off", later: false },
+  { name: "LEMMA_REFUND_TO", text: "Where warranty credits are paid. A withdrawal shows this address on chain, so use another one you control to keep your wallet out of it.", fallback: "the buyer's address", later: false },
 ];
 
 const NEVER: readonly string[] = [

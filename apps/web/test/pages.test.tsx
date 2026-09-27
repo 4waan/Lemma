@@ -232,6 +232,10 @@ describe("pages", () => {
     for (const tab of ["Cursor", "Claude Code", "Other agents"]) expect(html).toContain(tab);
     expect(html).toContain("&lt;path to your Lemma checkout&gt;/apps/bridge/dist/main.js");
     expect(html).toContain("lemma_buy_resolution");
+    // Purchases go through the separate signer, with limits in atomic USDC; the bridge itself needs no RPC or key.
+    for (const name of ["LEMMA_SIGNER_SOCKET", "LEMMA_MAX_USDC_PER_RESOLUTION", "LEMMA_DAILY_USDC_CAP", "LEMMA_ALLOWED_PAY_TO"]) expect(html).toContain(name);
+    expect(html).toContain("250000 is 0.25 USDC");
+    expect(html).not.toContain("ARBITRUM_SEPOLIA_RPC_URL");
   });
 
   it("says why nothing is for sale, and shows capabilities that have no release", () => {

@@ -24,14 +24,14 @@ Set `LEMMA_API_URL` when the development server should proxy to an address other
 | `#/catalog` | One card per release: what it fits, price, warranty, source and expiry, with the digest and the per-profile table under Details. A capability without a release shows its free build answer. | `CatalogView` |
 | `#/evidence` | Proof: the two-arm benchmark and its fixed parameters, every evidenced profile with its numbers and cost chart, the pricing rule with a calculator, and what to trust. | `CatalogView` |
 | `#/what-to-trust` | Proof, scrolled to its limits. | as above |
-| `#/setup` | Get started: add the bridge to Cursor, Claude Code or another MCP agent (the configuration names this server's own origin), install the rule for that agent, and ask for an integration. | none (static) |
+| `#/setup` | Get started: add the bridge to Cursor, Claude Code or another MCP agent (the configuration names this server's own origin), install the rule for that agent, and ask for an integration. Its tables list the bridge's tools and settings, including the buyer signer's socket and the spending limits in atomic USDC. | none (static) |
 | `#/resolutions`, `#/resolutions/<id>` | Look up a resolution by its public id; its lifecycle (quote, payment, adoption receipt, warranty), terms and digests. | `ResolutionView` |
 | `#/demand` | Privacy-thresholded unmet demand ranked by repository count. | `DemandView` |
 | `#/status` | Network, catalog, economics, purchases, provisional evidence, storage, and the settlement contracts. | `StatusView` |
 
 The header links How it works, Catalog and Proof, shows a Testnet pill, and ends with Get started; on phones the links sit behind a menu button. The footer links the explorer pages.
 
-Every API response is parsed with an `@lemma/core` read-model schema before rendering. Invalid responses become visible errors instead of partially rendered data. Nothing is invented where the product is unfinished: warranty activation, the registry address and paid purchases show as in progress until the payment work adds them to the read models.
+Every API response is parsed with an `@lemma/core` read-model schema before rendering. Invalid responses become visible errors instead of partially rendered data. Nothing is invented where the product is unfinished: warranty activation and the registry address show as in progress until the warranty work adds them to the read models, and purchases show as enabled only when the server registers its paid tool (`StatusView.paidTools`).
 
 ## Design
 

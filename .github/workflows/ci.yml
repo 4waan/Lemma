@@ -136,6 +136,38 @@ jobs:
         working-directory: .
         run: node packages/confidence/scripts/build-wasm.mjs --check
 
+  e2e:
+    name: end-to-end run on anvil (npm run e2e)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # No secret and no RPC: a local anvil (with no accounts of its own) poses as Arbitrum Sepolia,
+    # every key is made at run time, and the third-party contracts come from the sha256-checked
+    # fixtures in e2e/fixtures. Nothing is uploaded or cached besides npm's download cache.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The run builds the registry from contracts/, with its pinned OpenZeppelin and forge-std.
+          submodules: true
+      - uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
+        with:
+          # anvil and forge as in the contracts job and the fixtures' provenance.
+          version: v1.7.1
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      # Checks the fixtures and tools, builds the workspaces and contracts, then runs the scenarios.
+      - run: npm run e2e
+      # The warranty chain client against the real registry on anvil (built into contracts/out by the step above):
+      # refusals decoded from the simulation, consecutive nonces for concurrent sends, no nonce gap after a send
+      # past its deadline. npm run verify skips it, having no contracts build.
+      - run: npx vitest run apps/server/test/warranty-anvil.test.ts
+        env:
+          LEMMA_REGISTRY_ARTIFACTS: contracts/out
+
   secrets:
     name: gitleaks (full history)
     runs-on: ubuntu-24.04

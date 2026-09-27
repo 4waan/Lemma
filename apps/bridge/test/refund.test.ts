@@ -252,7 +252,7 @@ async function world(options: { readonly test?: string; readonly pipeline?: bool
     runningNodeMajor: 22,
     monotonic: () => 0,
     registerPaidTools: buyTool({ signer, policy, ledger: new SpendLedger(temp("lemma-ledger-")), root, clock, refundTo: REFUND_TO }),
-    registerAdoptionTools: adoptionTools({ inbox, remote, scanner, root, cwd: () => root, runningNodeMajor: 22, clock, offlineAcceptance: false, installTimeoutSec: 60, signReceipt: (receipt) => signer.signAdoptionReceipt(receipt) }),
+    registerAdoptionTools: adoptionTools({ inbox, remote, scanner, root, cwd: () => root, runningNodeMajor: 22, clock, offlineAcceptance: false, installTimeoutSec: 60, signReceipt: (receipt, previewId) => signer.signAdoptionReceipt(receipt, previewId) }),
   });
   const [a, b] = InMemoryTransport.createLinkedPair();
   await bridge.connect(a);
@@ -301,7 +301,7 @@ async function world(options: { readonly test?: string; readonly pipeline?: bool
     /** Posts the buyer's signed receipt directly, as verify would after a run with this outcome. */
     async report(id: Hex32, outcome: AdoptionReceipt["outcome"]): Promise<void> {
       const receipt: AdoptionReceipt = { schemaVersion: "1", resolutionId: id, outcome, acceptance: { exitCode: outcome === "passed" ? 0 : 1, durationMs: 900, outputDigest: null }, recordedAt: new Date().toISOString(), signature: null };
-      expect(await remote.postReceipt({ ...receipt, signature: await signer.signAdoptionReceipt(receipt) }, inbox.get(id)!.resolution.previewId)).toBe("ACCEPTED");
+      expect(await remote.postReceipt({ ...receipt, signature: await signer.signAdoptionReceipt(receipt, inbox.get(id)!.resolution.previewId) }, inbox.get(id)!.resolution.previewId)).toBe("ACCEPTED");
     },
     /** The server's jobs: the provider activates the warranty, and the indexer reads it. */
     async activate(): Promise<void> {

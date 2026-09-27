@@ -28,7 +28,7 @@ const Entry = z.strictObject({
 
 export type SpendEntry = z.infer<typeof Entry>;
 
-const LedgerFile = z.strictObject({ schemaVersion: z.literal("1"), entries: z.array(Entry).max(10_000) });
+const LedgerFile = z.strictObject({ schemaVersion: z.literal("1"), entries: z.array(Entry).max(50_000) });
 
 export class LedgerError extends Error {
   override name = "LedgerError";
@@ -50,9 +50,15 @@ export class SpendLedger {
   private readonly file: string;
   private readonly lockFile: string;
 
+  /**
+   * `retainMs` is how long an entry is kept after it was last written (two
+   * cap windows by default). The signer keeps its entries longer, since it
+   * also answers whether it paid for a resolution when asked for its receipt.
+   */
   constructor(
     readonly dir: string,
     private readonly windowMs: number = DAY_MS,
+    private readonly retainMs: number = 2 * windowMs,
   ) {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     this.file = join(dir, "spend.json");
@@ -92,6 +98,11 @@ export class SpendLedger {
     this.update(nonce, now, (e) => (e.state === "reserved" ? { ...e, state: "released" } : e));
   }
 
+  /** Whether an authorization with this nonce was signed (or reserved to be) and is still kept: `reserved` or `settled`. */
+  signed(nonce: Hex32): boolean {
+    return this.withLock(() => this.load().some((e) => e.nonce === nonce && e.state !== "released"));
+  }
+
   entries(): SpendEntry[] {
     return this.withLock(() => this.load());
   }
@@ -124,9 +135,9 @@ export class SpendLedger {
     return parsed.data.entries;
   }
 
-  /** Writes a temporary file, flushes it, then renames it over the ledger. Entries past two windows are dropped. */
+  /** Writes a temporary file, flushes it, then renames it over the ledger. Entries older than `retainMs` are dropped. */
   private save(entries: readonly SpendEntry[], now: Date): void {
-    const keepSince = now.getTime() - 2 * this.windowMs;
+    const keepSince = now.getTime() - this.retainMs;
     const body = `${JSON.stringify(LedgerFile.parse({ schemaVersion: "1", entries: entries.filter((e) => Date.parse(e.at) > keepSince) }))}\n`;
     const temp = `${this.file}.${process.pid}.tmp`;
     const fd = openSync(temp, "w", 0o600);

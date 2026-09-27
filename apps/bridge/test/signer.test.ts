@@ -11,6 +11,7 @@ import {
   type SpendingPolicy,
   USDC_EIP712_DOMAIN,
   adoptionReceiptTypedData,
+  derivePaymentNonce,
   toAddress,
 } from "@lemma/core";
 import { authorizationTypes } from "@x402/evm";
@@ -70,9 +71,18 @@ const auth = (over: Partial<{ to: string; value: string; validBefore: string; no
   ...over,
 });
 
+const receiptFor = (resolutionId: Hex32, outcome: "passed" | "failed"): AdoptionReceipt => ({
+  schemaVersion: "1",
+  resolutionId,
+  outcome,
+  acceptance: { exitCode: outcome === "passed" ? 0 : 1, durationMs: 10, outputDigest: null },
+  recordedAt: NOW.toISOString(),
+  signature: null,
+});
+
 function localSigner(p: SpendingPolicy = policy, clock = () => NOW) {
   const account = privateKeyToAccount(generatePrivateKey());
-  const ledger = new SpendLedger(temp("lemma-signer-ledger-"));
+  const ledger = new SpendLedger(temp("lemma-signer-ledger-"), 24 * 3600_000, 30 * 24 * 3600_000);
   return { account, ledger, signer: new LocalSigner(account, p, ledger, clock) };
 }
 
@@ -120,12 +130,39 @@ describe("LocalSigner", () => {
     expect(await refusal(signer.signTransferAuthorization(auth({ nonce: nonce(3), validBefore: String(Math.floor(now.getTime() / 1000) + 300) })))).toBe("signed");
   });
 
-  it("signs Adoption Receipts as core's typed data", async () => {
+  it("signs Adoption Receipts as core's typed data, for a resolution it paid for", async () => {
     const { account, signer } = localSigner();
-    const receipt: AdoptionReceipt = { schemaVersion: "1", resolutionId: nonce(9), outcome: "passed", acceptance: { exitCode: 0, durationMs: 10, outputDigest: null }, recordedAt: NOW.toISOString(), signature: null };
-    const signature = await signer.signAdoptionReceipt(receipt);
+    const [resolutionId, previewId] = [nonce(9), nonce(10)];
+    await signer.signTransferAuthorization(auth({ nonce: derivePaymentNonce(resolutionId, previewId) }));
+    const receipt = receiptFor(resolutionId, "passed");
+    const signature = await signer.signAdoptionReceipt(receipt, previewId);
     expect(signature).toMatch(/^0x[0-9a-f]{130}$/);
     expect(await recoverTypedDataAddress({ ...adoptionReceiptTypedData(receipt, 421614), signature: signature as `0x${string}` })).toBe(account.address);
+  });
+
+  it("refuses a receipt for a resolution it never paid for, or paid under another preview", async () => {
+    const { signer } = localSigner();
+    const [resolutionId, previewId] = [nonce(9), nonce(10)];
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "passed"), previewId))).toBe("NOT_PAID");
+    await signer.signTransferAuthorization(auth({ nonce: derivePaymentNonce(resolutionId, previewId) }));
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "passed"), nonce(11)))).toBe("NOT_PAID");
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(nonce(12), "passed"), previewId))).toBe("NOT_PAID");
+  });
+
+  it("signs one receipt per resolution: the same one again, never a different one", async () => {
+    let now = NOW;
+    const { signer } = localSigner(policy, () => now);
+    const [resolutionId, previewId] = [nonce(9), nonce(10)];
+    await signer.signTransferAuthorization(auth({ nonce: derivePaymentNonce(resolutionId, previewId) }));
+    // A release's tests asking first for a passing receipt ...
+    const forged = receiptFor(resolutionId, "passed");
+    const first = await signer.signAdoptionReceipt(forged, previewId);
+    // ... get the same signature on a retry, and the bridge's real result is refused, so two signed receipts never exist.
+    expect(await signer.signAdoptionReceipt(forged, previewId)).toBe(first);
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "failed"), previewId))).toBe("RECEIPT_ALREADY_SIGNED");
+    // Still remembered well past the spend window.
+    now = new Date(NOW.getTime() + 20 * 24 * 3600_000);
+    expect(await refusal(signer.signAdoptionReceipt(receiptFor(resolutionId, "failed"), previewId))).toBe("RECEIPT_ALREADY_SIGNED");
   });
 });
 

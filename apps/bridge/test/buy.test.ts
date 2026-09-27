@@ -402,7 +402,7 @@ describe("lemma_buy_resolution in the bridge", () => {
     const [resolution] = w.inbox.resolutions();
     if (resolution === undefined) throw new Error("expected a purchase");
     const receipt: AdoptionReceipt = { schemaVersion: "1", resolutionId: resolution.resolutionId, outcome: "passed", acceptance: { exitCode: 0, durationMs: 900, outputDigest: null }, recordedAt: NOW.toISOString(), signature: null };
-    const signed = { ...receipt, signature: await w.signer.signAdoptionReceipt(receipt) };
+    const signed = { ...receipt, signature: await w.signer.signAdoptionReceipt(receipt, resolution.previewId) };
     expect(await w.remote.postReceipt(signed, resolution.previewId)).toBe("ACCEPTED");
     // A public client whose deployless validator call reverts, as it does for an EOA buyer: viem falls back to recovery.
     const chain = createPublicClient({
@@ -449,6 +449,14 @@ describe("lemma_buy_resolution in the bridge", () => {
     const refunded = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_REFUND_TO: "0x00000000000000000000000000000000000000c3" }, { ...deps, signerFor });
     expect(refunded.registerPaidTools).toBeDefined();
     expect(refunded.note).toBeUndefined();
+    // LEMMA_BUYER_ADDRESS pins the signer: one answering another address is not used, for purchases or receipts.
+    const own = await signer.address();
+    const pinned = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_BUYER_ADDRESS: own, LEMMA_REFUND_TO: "0x00000000000000000000000000000000000000c3" }, { ...deps, signerFor });
+    expect(pinned.registerPaidTools).toBeDefined();
+    expect(pinned.note).toBeUndefined();
+    const impostor = await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_BUYER_ADDRESS: "0x00000000000000000000000000000000000000c3" }, { ...deps, signerFor });
+    expect(impostor).toEqual({ note: expect.stringMatching(/^purchases are off: the signer at LEMMA_SIGNER_SOCKET answers another address than LEMMA_BUYER_ADDRESS/) });
+    expect((await paymentsFromEnv({ ...env, LEMMA_SIGNER_SOCKET: "/unused.sock", LEMMA_BUYER_ADDRESS: "0xnope" }, { ...deps, signerFor })).note).toMatch(/^purchases are off: LEMMA_BUYER_ADDRESS /);
     // A socket in a directory others can write to could be anyone's: purchases and receipt signing stay off.
     const open = temp("lemma-open-");
     chmodSync(open, 0o777);

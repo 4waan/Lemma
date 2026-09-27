@@ -119,6 +119,7 @@ lemma-signer serve
 | `LEMMA_MAX_USDC_PER_RESOLUTION` | unset | Most one purchase may cost, in atomic USDC (`250000` is 0.25 USDC). |
 | `LEMMA_DAILY_USDC_CAP` | unset | Most spent in a rolling 24 hours, in atomic USDC. |
 | `LEMMA_ALLOWED_PAY_TO` | unset | Comma-separated recipient addresses the buyer will pay. |
+| `LEMMA_BUYER_ADDRESS` | unset | The address `lemma-signer init` printed. When set, a signer that answers another address is not used for purchases or receipts, so a socket another local user put in its place is refused. |
 | `LEMMA_REFUND_TO` | Buyer address | Where warranty credits are paid. Withdrawing a credit shows this address next to the public resolution id on chain. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
 
 The state directory must be absolute and outside the workspace. Empty values count as unset.

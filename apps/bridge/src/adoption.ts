@@ -57,7 +57,7 @@ export interface AdoptionDeps {
   /** Longest a dependency install may take. */
   readonly installTimeoutSec: number;
   /** The payment work's signing hook: the receipt's signature, or null to send it unsigned. */
-  readonly signReceipt?: ((receipt: AdoptionReceipt) => Promise<AdoptionReceipt["signature"]>) | undefined;
+  readonly signReceipt?: ((receipt: AdoptionReceipt, previewId: Hex32) => Promise<AdoptionReceipt["signature"]>) | undefined;
 }
 
 const Target = { capability: CapabilityId, package: PackagePath.optional() };
@@ -200,7 +200,7 @@ async function verify(deps: AdoptionDeps, ctx: PaidToolContext, capability: Capa
     if (earlier.answer !== null) return answer(earlier.answer === "ACCEPTED" || earlier.answer === "DUPLICATE" ? "recorded-before" : earlier.answer, first, first);
     let stored = earlier;
     if (stored.needsSignature) {
-      const signature = await sign(deps, stored.receipt);
+      const signature = await sign(deps, stored.receipt, stored.previewId);
       if (signature === "failed") return answer("unsigned", first, first);
       stored = { ...stored, receipt: { ...stored.receipt, signature }, needsSignature: false };
       deps.inbox.putReceipt(stored);
@@ -211,7 +211,7 @@ async function verify(deps: AdoptionDeps, ctx: PaidToolContext, capability: Capa
   // Never dated before the resolution: a buyer clock running slow would make the server refuse it.
   const now = new Date(Math.max(deps.clock().getTime(), Date.parse(delivery.resolution.createdAt)));
   const receipt = receiptFor(resolutionId, run, now);
-  const signature = await sign(deps, receipt);
+  const signature = await sign(deps, receipt, previewId);
   if (signature === "failed") {
     // Kept, never sent unsigned: the first write wins on the server, so an unsigned copy would block the signed one.
     deps.inbox.putReceipt({ receipt, previewId, answer: null, lastAnswer: null, needsSignature: true });
@@ -240,10 +240,10 @@ async function underWarranty(deps: AdoptionDeps, resolutionId: Hex32): Promise<b
 }
 
 /** The receipt's signature from the payment work's hook: null without a hook, "failed" when the hook throws. */
-async function sign(deps: AdoptionDeps, receipt: AdoptionReceipt): Promise<AdoptionReceipt["signature"] | "failed"> {
+async function sign(deps: AdoptionDeps, receipt: AdoptionReceipt, previewId: Hex32): Promise<AdoptionReceipt["signature"] | "failed"> {
   if (deps.signReceipt === undefined) return null;
   try {
-    return await deps.signReceipt(receipt);
+    return await deps.signReceipt(receipt, previewId);
   } catch {
     return "failed";
   }

@@ -64,17 +64,17 @@ export class DemandRecorder {
 
   /**
    * Records a preview. A buyer pass counts only when the server issued it
-   * (its digest is stored); an unknown one is ignored, never an error, so a
-   * made-up pass counts as a preview without one.
+   * (its digest is stored, checked in the same write); an unknown one is
+   * ignored, never an error, so a made-up pass counts as a preview without one.
    */
   async record(preview: Preview, capability: string, profile: RepositoryProfile, now: Date, source: string, buyerPass?: BuyerPass): Promise<void> {
     const day = now.toISOString().slice(0, 10);
     const keyedSource = createHmac("sha256", this.sourceKey).update(`${day}\n${source}`).digest("hex");
     const bucket = demandBucket(preview, capability, profile);
-    const write = (async () => {
-      const buyer = buyerPass !== undefined && (await this.store.hasBuyerPass(passDigest(buyerPass))) ? createHmac("sha256", this.sourceKey).update(`${day}\nbuyer:${buyerPass}`).digest("hex") : undefined;
-      await this.store.recordDemand(day, bucket, preview.profileDigest, keyedSource, buyer);
-    })().catch((error: unknown) => this.logger.log("warn", "demand.record_failed", { error: describeError(error) }));
+    const buyer = buyerPass === undefined ? undefined : { passDigest: passDigest(buyerPass), keyed: createHmac("sha256", this.sourceKey).update(`${day}\nbuyer:${buyerPass}`).digest("hex") };
+    const write = this.store
+      .recordDemand(day, bucket, preview.profileDigest, keyedSource, buyer)
+      .catch((error: unknown) => this.logger.log("warn", "demand.record_failed", { error: describeError(error) }));
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([write, new Promise<void>((resolve) => (timer = setTimeout(resolve, this.budgetMs)))]);
     clearTimeout(timer);

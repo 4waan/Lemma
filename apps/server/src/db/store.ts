@@ -19,6 +19,7 @@ import {
   DAMPER_ACTION_STATES,
   type DamperQuery,
   type DemandBucket,
+  type DemandBuyer,
   type LemmaStore,
   type NewReputationPost,
   type NewWarrantyAction,
@@ -270,7 +271,7 @@ export class PgStore implements LemmaStore {
     return updated.length === 1;
   }
 
-  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: string): Promise<void> {
+  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: DemandBuyer): Promise<void> {
     await this.db.transaction(async (tx) => {
       // Shared per-day lock: a close of this day waits for in-flight writes, and a
       // write that starts after a close sees the day closed, so nothing is counted
@@ -282,21 +283,18 @@ export class PgStore implements LemmaStore {
         insert into demand_seen (day, bucket, salted_digest, salted_source)
         values (${day}, ${bucket}, ${saltedDigest(salt, profileDigest)}, ${saltedDigest(salt, `source:${source}`)})
         on conflict do nothing`);
+      // The pass is checked in the same statement: an unissued one inserts nothing.
       if (buyer !== undefined)
         await tx.execute(sql`
           insert into demand_buyers_seen (day, bucket, salted_buyer)
-          values (${day}, ${bucket}, ${saltedDigest(salt, `buyer:${buyer}`)})
+          select ${day}, ${bucket}, ${saltedDigest(salt, `buyer:${buyer.keyed}`)}
+          where exists (select 1 from buyer_passes where pass_digest = ${buyer.passDigest})
           on conflict do nothing`);
     });
   }
 
   async addBuyerPass(passDigest: Hex32): Promise<void> {
     await this.db.insert(t.buyerPasses).values({ passDigest }).onConflictDoNothing();
-  }
-
-  async hasBuyerPass(passDigest: Hex32): Promise<boolean> {
-    const [row] = await this.db.select({ d: t.buyerPasses.passDigest }).from(t.buyerPasses).where(eq(t.buyerPasses.passDigest, passDigest)).limit(1);
-    return row !== undefined;
   }
 
   async closeDemandDaysBefore(today: string): Promise<number> {

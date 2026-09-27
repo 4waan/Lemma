@@ -73,17 +73,21 @@ describe.skipIf(url === undefined || url === "")("Postgres", () => {
   it("counts a demand day exactly once, however many closes and late writes race it", async () => {
     const stores = Array.from({ length: 4 }, () => new PgStore(drizzle(postgres(url as string, { max: 3, onnotice: () => {} }))));
     const digest = (i: number) => `0x${i.toString(16).padStart(64, "0")}` as const;
+    // One buyer with an issued pass, and one whose pass was never issued.
+    const buyer = { passDigest: digest(90), keyed: "buyer-90" };
+    const madeUp = { passDigest: digest(91), keyed: "buyer-91" };
+    await stores[0]?.addBuyerPass(buyer.passDigest);
     for (let trial = 0; trial < 10; trial++) {
       await db.execute(sql`truncate demand_salts, demand_seen, demand_buyers_seen, demand_daily`);
-      for (const i of [1, 2, 3, 4, 5]) await stores[0]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`);
+      for (const i of [1, 2, 3, 4, 5]) await stores[0]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`, i === 5 ? madeUp : buyer);
       // Closes race writes of pairs that are already counted: before the per-day lock, a write that
       // landed after a close's snapshot was added by a later close (5 became 6).
       await Promise.all([
         ...stores.map((s) => s.closeDemandDaysBefore("2026-10-01")),
-        ...[1, 2, 3, 4, 5].map((i) => stores[i % 4]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`)),
+        ...[1, 2, 3, 4, 5].map((i) => stores[i % 4]?.recordDemand("2026-09-30", "bucket", digest(i), `10.0.0.${i}`, buyer)),
       ]);
       await Promise.all(stores.map((s) => s.closeDemandDaysBefore("2026-10-01")));
-      expect(await stores[0]?.demandBuckets(1), `trial ${trial}`).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 5, sources: 5, buyers: 0 }]);
+      expect(await stores[0]?.demandBuckets(1), `trial ${trial}`).toEqual([{ day: "2026-09-30", bucket: "bucket", profiles: 5, sources: 5, buyers: 1 }]);
       // No salt survives a closed day: a late write never re-creates one.
       await stores[1]?.recordDemand("2026-09-30", "bucket", digest(6), "10.0.0.6");
       expect(await db.execute(sql`select day from demand_salts where day = '2026-09-30'`)).toHaveLength(0);

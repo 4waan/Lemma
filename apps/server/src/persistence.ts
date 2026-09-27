@@ -77,6 +77,14 @@ export function compareUnsettled(a: UnsettledCursor, b: UnsettledCursor): number
   return a.resolutionId < b.resolutionId ? -1 : a.resolutionId > b.resolutionId ? 1 : 0;
 }
 
+/** A preview's buyer pass as demand records it. */
+export interface DemandBuyer {
+  /** The pass's digest; the buyer counts only if a pass with it was issued. */
+  readonly passDigest: Hex32;
+  /** The pass keyed for the day (never the pass itself), salted into the day's buyer set. */
+  readonly keyed: string;
+}
+
 /** A stored adoption receipt, with the ERC-8004 agent id its buyer opted in with (the outcome feed reads it). */
 export interface StoredReceipt {
   readonly receipt: AdoptionReceipt;
@@ -385,14 +393,14 @@ export interface LemmaStore extends PreviewStore {
 
   /**
    * Adds one salted profile digest and one salted source to a bucket for its
-   * day, and one salted buyer pass when the preview carried a valid one. A
-   * day that is already closed is not reopened: a late write is dropped.
+   * day, and one salted buyer when the preview carried a pass: only if the
+   * pass was issued (`addBuyerPass`), checked in the same write, so a made-up
+   * pass counts as none. A day that is already closed is not reopened: a late
+   * write is dropped.
    */
-  recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: string): Promise<void>;
+  recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: DemandBuyer): Promise<void>;
   /** Records a buyer pass by its digest; issuing the same pass again changes nothing. */
   addBuyerPass(passDigest: Hex32): Promise<void>;
-  /** Whether a pass with this digest was ever issued. */
-  hasBuyerPass(passDigest: Hex32): Promise<boolean>;
   /**
    * Collapses every open day before `today` into counts and discards its salt
    * and digests. Safe to run twice or concurrently: each digest is counted by
@@ -661,7 +669,7 @@ export class MemoryStore implements LemmaStore {
     return true;
   }
 
-  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: string): Promise<void> {
+  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: DemandBuyer): Promise<void> {
     if ([...this.daily.values()].some((b) => b.day === day)) return;
     let salt = this.salts.get(day);
     if (salt === undefined) {
@@ -672,16 +680,12 @@ export class MemoryStore implements LemmaStore {
     const sets = this.seen.get(key) ?? { profiles: new Set<string>(), sources: new Set<string>(), buyers: new Set<string>() };
     sets.profiles.add(saltedDigest(salt, profileDigest));
     sets.sources.add(saltedDigest(salt, `source:${source}`));
-    if (buyer !== undefined) sets.buyers.add(saltedDigest(salt, `buyer:${buyer}`));
+    if (buyer !== undefined && this.passes.has(buyer.passDigest)) sets.buyers.add(saltedDigest(salt, `buyer:${buyer.keyed}`));
     this.seen.set(key, sets);
   }
 
   async addBuyerPass(passDigest: Hex32): Promise<void> {
     this.passes.add(passDigest);
-  }
-
-  async hasBuyerPass(passDigest: Hex32): Promise<boolean> {
-    return this.passes.has(passDigest);
   }
 
   async closeDemandDaysBefore(today: string): Promise<number> {

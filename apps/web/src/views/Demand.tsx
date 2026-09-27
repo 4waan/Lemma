@@ -12,11 +12,11 @@ export function Demand({ view }: { view: DemandView }) {
     <>
       <PageHead eyebrow="Demand" title="Unmet demand">
         <p className="lead">
-          What agents asked for that Lemma could not sell, ranked by how many bridges that have bought before asked, then by how many repositories asked. It is the list of what to build next.
+          What agents asked for that Lemma could not sell, ranked by how many bridges that have bought before asked. It is the list of what to build next.
         </p>
         <p className="small muted">
           Each preview counts once per repository and day, through a salted digest that is discarded when the day closes. A group is published only with at least {view.minProfiles}{" "}
-          repositories, and it carries a coarse class, never dependency names. A buyer is a bridge carrying a pass from an earlier purchase, so previews from addresses that never bought cannot lift a group above one with more buyers.
+          repositories, and it carries a coarse class, never dependency names. A buyer is a bridge carrying a pass from an earlier purchase. Groups with as many buyers keep a fixed order, and repositories are shown but never order the list, so previews from addresses that never bought cannot move it.
         </p>
       </PageHead>
       {ranked.length === 0 ? (

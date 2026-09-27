@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   type AuthorizationOutcome,
+  LOG_CHUNK_BLOCKS,
   type Logger,
   MemoryStore,
   type PaymentChain,
@@ -385,13 +386,15 @@ describe("viem chain reads", () => {
   /**
    * A JSON-RPC node for viem: block n's timestamp is `latestTime` less (latest - n) / blocksPerSecond seconds
    * (default four blocks a second), one AuthorizationUsed log at `logAt` in transaction TX, whose receipt holds
-   * `receipt` (by default that log and USDC's Transfer of the quoted terms), and `eth_getLogs` ranges wider than
-   * `maxRange` refused with a JSON-RPC error, as providers do.
+   * `receipt` (by default that log and USDC's Transfer of the quoted terms), and `eth_getLogs` requests refused
+   * with a JSON-RPC error, as providers do: the first `refuseFirst` of them (a passing rate limit), and any range
+   * wider than `maxRange`.
    */
-  function fakeRpc(options: { used: boolean; latest: bigint; latestTime: number; logAt?: bigint; blocksPerSecond?: number; maxRange?: bigint; receipt?: RawLog[] }) {
+  function fakeRpc(options: { used: boolean; latest: bigint; latestTime: number; logAt?: bigint; blocksPerSecond?: number; maxRange?: bigint; refuseFirst?: number; receipt?: RawLog[] }) {
     const requests: Array<{ method: string; params: unknown }> = [];
     const rate = BigInt(options.blocksPerSecond ?? 4);
     const timestampAt = (n: bigint) => BigInt(options.latestTime) - (options.latest - n) / rate;
+    let refused = 0;
     const client = createPublicClient({
       chain: arbitrumSepolia,
       transport: custom(
@@ -406,6 +409,10 @@ describe("viem chain reads", () => {
             }
             if (method === "eth_getLogs") {
               const [filter] = params as [{ topics: Array<string | string[] | null>; fromBlock: Hex; toBlock: Hex }];
+              if (refused < (options.refuseFirst ?? 0)) {
+                refused++;
+                throw Object.assign(new Error("rate limit exceeded"), { code: -32005 });
+              }
               if (options.maxRange !== undefined && BigInt(filter.toBlock) - BigInt(filter.fromBlock) + 1n > options.maxRange) {
                 throw Object.assign(new Error("block range too large"), { code: -32005 });
               }
@@ -473,10 +480,20 @@ describe("viem chain reads", () => {
     const latestTime = 2_000_000;
     const { client, logRequests } = fakeRpc({ used: true, latest: 50_000n, latestTime, logAt: 49_000n, maxRange: 1_000n });
     expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((latestTime - 900) * 1000) })).toEqual({ kind: "used", transaction: TX });
-    // The whole way to the head at first (3,605 blocks), refused and halved twice, then walked in accepted ranges.
+    // The whole way to the head at first (3,605 blocks), refused and halved twice, then walked in accepted ranges;
+    // each accepted range doubles the next one, which this provider's fixed limit refuses and halves again.
     const ranges = logRequests().map((f) => BigInt(f.toBlock) - BigInt(f.fromBlock) + 1n);
-    expect(ranges.slice(0, 3)).toEqual([3_605n, 1_802n, 901n]);
-    expect(ranges.slice(2).every((r) => r <= 1_000n)).toBe(true);
+    expect(ranges).toEqual([3_605n, 1_802n, 901n, 1_802n, 901n, 1_802n, 901n]);
+  });
+
+  it("grows the block range back after the RPC refused a few ranges, so a passing rate limit never leaves the search in small steps", async () => {
+    const latestTime = 2_000_000;
+    // Twelve hours back at four blocks a second: 172,805 blocks to walk, with the log near the head.
+    const { client, logRequests } = fakeRpc({ used: true, latest: 200_000n, latestTime, logAt: 199_000n, refuseFirst: 3 });
+    expect(await viemPaymentChain(client, USDC).authorizationOutcome(BUYER, nonce, TERMS, { from: new Date((latestTime - 43_200) * 1000) })).toEqual({ kind: "used", transaction: TX });
+    // Refused and halved three times, then doubled after each accepted range back to the widest, which the walk keeps.
+    const ranges = logRequests().map((f) => BigInt(f.toBlock) - BigInt(f.fromBlock) + 1n);
+    expect(ranges).toEqual([10_000n, 5_000n, 2_500n, 1_250n, 2_500n, 5_000n, ...Array<bigint>(16).fill(LOG_CHUNK_BLOCKS), 4_055n]);
   });
 
   it("answers used only when the log right after AuthorizationUsed is USDC's Transfer of the quoted amount to the quoted payee", async () => {

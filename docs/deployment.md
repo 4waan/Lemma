@@ -74,7 +74,7 @@ Set `PAID_TOOLS=on` only with `PROVIDER_ADDRESS` set, `FACILITATOR_PRIVATE_KEY` 
 
 At startup the server checks that the RPC serves chain 421614 and refuses to start otherwise. It logs the facilitator address, warns when the facilitator holds no ETH, and starts the settlement reconciler and the receipt verifier, which each run every minute. There are no public facilitator endpoints to verify.
 
-The reconciler needs `eth_getBlockByNumber` for past blocks and `eth_getLogs` filtered by address and topics. Choose an RPC plan that serves `eth_getLogs` over at least 10,000 blocks per request. A provider with a smaller limit still works, more slowly: the reconciler halves a range the RPC refuses with a JSON-RPC error, down to one block.
+The reconciler needs `eth_getBlockByNumber` for past blocks and `eth_getLogs` filtered by address and topics. Choose an RPC plan that serves `eth_getLogs` over at least 10,000 blocks per request. A provider with a smaller limit still works, more slowly: the reconciler halves a range the RPC refuses with a JSON-RPC error, down to one block, and doubles it again after each accepted range, back up to 10,000.
 
 ## Runtime checks
 

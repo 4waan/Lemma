@@ -72,7 +72,11 @@ const BLOCKS_PER_SECOND_GUESS = 4n;
  * The widest `eth_getLogs` block range asked for, within what RPC providers
  * accept for a filtered query. A range the RPC refuses with a JSON-RPC error
  * is halved, down to a single block, so a provider with a smaller limit is
- * slower, never stuck.
+ * slower, never stuck. Each accepted range doubles the next one again, up to
+ * this width: a refusal may be a passing rate limit rather than a range
+ * limit, so a few of them never leave a search walking a long range in tiny
+ * steps. A provider with a smaller fixed limit costs about one refused
+ * request per accepted range.
  */
 export const LOG_CHUNK_BLOCKS = 10_000n;
 
@@ -120,6 +124,7 @@ export function viemPaymentChain(client: PublicClient, asset: Address): PaymentC
         if (used?.transactionHash) return outcomeOfUse(client, token, used.transactionHash, isThisUse, expected);
         if (live.some((log) => log.topics[0]?.toLowerCase() === canceledTopic?.toLowerCase())) return { kind: "canceled" };
         from = to + 1n;
+        span = span * 2n < LOG_CHUNK_BLOCKS ? span * 2n : LOG_CHUNK_BLOCKS;
       }
       return { kind: "unknown" };
     },

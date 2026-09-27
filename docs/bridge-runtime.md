@@ -91,3 +91,33 @@ The first started acceptance run creates the receipt that counts. Retryable serv
 `lemma-signer` signs the receipt over core `adoptionReceiptTypedData` when a signer answers. If signing fails, the bridge keeps the receipt and never submits it unsigned; it is signed at the next verify. Without a signer, the receipt is sent unsigned and the server stores it as unverified. The receipt is posted with the preview id, which proves the sender is the buyer, and the server's receipt verifier then checks its signature against the resolution's buyer.
 
 With `LEMMA_AGENT_ID` set, the receipt is posted with `agentId`, this agent's own ERC-8004 agent id, beside the receipt rather than inside it. The bridge checks the value at startup and refuses to start with an invalid one; without it, no receipt names an agent. The server stores the id with the receipt, and once the outcome is finalized its attester gives that agent the same feedback it gives the provider, but only when the address that paid owns the agent or is its ERC-8004 agent wallet. Opting in therefore publishes that the paying wallet adopted each resolution (see [Security Model](security-model.md#reputation-threat-model)). The value is the buyer agent's id, never the server's `LEMMA_AGENT_ID`.
+
+## Warranty refunds
+
+Every purchase keeps its warranty claim in `claims/<resolutionId>.json` (see [Purchasing](#purchasing)). Only its hash reaches the server, which activates the warranty on the registry. When the evaluator finalizes an eligible failure, the registry turns the reserved amount into a credit that only the claim can withdraw, and only to its refund address.
+
+`lemma_claim_refund` collects those credits. For each stored claim, or only the one named by `resolutionId`:
+
+1. It reads the resolution's warranty from `GET /api/v1/resolutions/:id`, a request that carries nothing about the claim. The server builds the view from the registry events it indexed.
+2. Only when the warranty is `failed` does it post `{ resolutionId, claimSecret, to }` to `POST /api/v1/warranty/withdrawals`. The server checks the claim against the hash it stored, and that the indexed registry shows the credit outstanding, then queues one relay. Its evaluator key sends `withdrawCredit` and pays the gas, so the buyer's agent holds no ETH and the tool makes no chain call.
+3. Asking again is safe. The route answers the same request with the same relay state, and once the indexer has read the withdrawal, the view shows `refunded` and nothing more is posted.
+
+The claim secret goes in that request and nowhere else. The request refuses redirects, so a redirect cannot carry the secret to another host, and no answer shows the secret or the refund address. The secret can only pay the address it was committed with, so relaying it through the server is safe.
+
+The withdrawal shows the refund address next to the public resolution id on chain. When a refund the tool asks for pays the wallet that paid for the purchase (the default refund address), its entry says `to the paying wallet`, and one line says that the chain then links the two and that `LEMMA_REFUND_TO` sets another refund address for later purchases. The claim was committed at purchase time, so this refund still goes to that wallet.
+
+The answer names each resolution by its first eight hex digits:
+
+| Word | Meaning |
+| --- | --- |
+| `queued` | The server relays the refund: it is queued or sent. |
+| `refunded` | The credit reached the refund address. |
+| `open` | The warranty is pending or active, with no verdict yet. |
+| `none` | No refund is due: the run passed or was void, the warranty expired or was never activated, or the server runs no warranty pipeline. A claim the server never saw, from a purchase that did not go through, is `none` too. |
+| `abandoned` | The relay gave up: the registry holds no credit for it, or refused the claim. |
+| `CLAIM_MISMATCH`, `NO_CREDIT`, `UNKNOWN_RESOLUTION`, `WARRANTY_OFF` | The route refused the request, and nothing was queued. `UNKNOWN_RESOLUTION` also means the server does not know a purchase this machine holds. |
+| `UNREACHABLE`, `RATE_LIMITED`, `SERVER_ERROR` | The server could not be asked. The claims after it are not asked either, so a server that is down costs one timeout. |
+
+Amounts are testnet USDC. The answer stays within 600 characters: resolutions that do not fit are counted by word, and each word that needs it gets one line of explanation.
+
+After a failed acceptance run, `lemma_verify_adoption` adds one line: the evaluator reviews failures, and `lemma_claim_refund` collects a confirmed refund. It adds it only when the receipt that counts failed, the server has not refused that receipt for good (`UNKNOWN_RESOLUTION`, `MISMATCH`), this machine holds the claim, and the server shows the warranty `pending`, `active`, or `failed`. With the server's default `EVALUATOR_FAILURES=review`, a failure waits for an operator's decision, so a refund can stay `open` for a while.

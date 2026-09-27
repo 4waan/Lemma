@@ -34,7 +34,7 @@ Inputs the engine cannot represent throw `RangeError` instead of wrapping: a neg
 The server and the contract run the same code, but they compute the same number only from the same inputs:
 
 - **The same prior.** The contract uses what the owner passed to `setPrior`. The catalog uses the manifest's evidence, including the testnet-only provisional overlay when the server loads it. Set on-chain priors from frozen evidence only.
-- **The same outcomes at the same times.** A key's list must hold exactly the outcomes the contract recorded: one per `OutcomeRecorded` event, weight 0 included, and none it did not record (VOID verdicts, or outcomes whose engine call failed). Each `at` must be the timestamp of the block that recorded it.
+- **The same outcomes at the same times.** A key's list must hold exactly the outcomes the contract recorded: one per `OutcomeRecorded` event, and none it did not record. The registry records only PASSED and FAILED outcomes with a weight above zero, so VOID verdicts, zero-weight outcomes (the evaluator's damper), and outcomes whose engine call failed are never in it. Each `at` must be the timestamp of the block that recorded it. The server's warranty pipeline builds this list from the registry events it indexed.
 - **The same time.** The catalog scores at the request's clock, the contract at `block.timestamp`.
 
 Decay rounds down after every record, so the sums depend on the exact record times. An `at` a few seconds off, or a missing zero-weight record, can change the score. `test/engine.test.ts` pins examples of both.

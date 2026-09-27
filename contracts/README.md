@@ -2,7 +2,7 @@
 
 This Foundry workspace holds `ResolutionWarrantyRegistry`, the Arbitrum Sepolia contract that backs paid Compatibility Resolutions with provider-funded USDC. x402 stays the payment rail. The registry adds bounded recourse after payment, not a custom escrow.
 
-The contract, its tests, exported ABIs, and a fail-closed deploy script are in place. It is not deployed or audited. Do not treat it as safe for funds. Still open: deploy it, verify the bytecode on Arbitrum Sepolia, and take one real paid resolution through the pass path and one through the refunded failure path. The [Warranty Registry Review](../docs/warranty-registry-review.md) records how it was checked so far.
+The contract, its tests, exported ABIs, and a fail-closed deploy script are in place. The server's warranty pipeline signs and sends its vouchers, outcomes, expiries, and credit withdrawals, and `npm run e2e` runs them against this contract on a local chain. It is not deployed or audited. Do not treat it as safe for funds. Still open: deploy it, verify the bytecode on Arbitrum Sepolia, and take one real paid resolution through the pass path and one through the refunded failure path, as the [runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) does. The [Warranty Registry Review](../docs/warranty-registry-review.md) records how it was checked so far.
 
 ## Layout
 
@@ -56,12 +56,12 @@ Outcome(bytes32 resolutionId,uint8 verdict,uint16 weightBps,bytes32 evidenceHash
 ```
 
 - `amount` is atomic USDC.
-- `paymentRef` is an opaque salted commitment to the settled payment. It is never a public function of payer and nonce, and each one activates once.
+- `paymentRef` is an opaque reference to the settled payment, chosen by the server; Lemma's server makes 32 random bytes per resolution. It is never a public function of payer and nonce, and each one activates once.
 - `claimHash = keccak256(abi.encode(bytes32 resolutionId, bytes32 claimSecret, address refundTo))`.
 - `verdict` is 1 PASSED, 2 FAILED, or 3 VOID. `weightBps` is 0 to 10000.
 - `activateBy` and `validUntil` are the last timestamps at which the voucher or the outcome may be submitted.
 
-[Protocol](../docs/protocol.md#payment-and-warranty-boundary) says which component makes the claim hash and the payment reference, and who signs and relays each message. `test/Vectors.t.sol` pins a claim hash, a voucher digest, and an outcome digest computed with viem, and the TypeScript side must reproduce them. The test also checks every digest against Foundry's own EIP-712 encoder.
+[Protocol](../docs/protocol.md#payment-and-warranty-boundary) says which component makes the claim hash and the payment reference, and who signs and relays each message. `test/Vectors.t.sol` pins a claim hash, a voucher digest, and an outcome digest computed with viem, and `@lemma/core`'s tests reproduce them from its copy of the layouts (`packages/core/src/warranty.ts`). The test also checks every digest against Foundry's own EIP-712 encoder.
 
 ## Roles
 
@@ -166,11 +166,13 @@ Forge also writes the broadcast to `broadcast/`, and each transaction's RPC URL 
 
 `npm run contracts:rehearse` runs both steps against a local anvil that poses as chain 421614, with mock USDC at the real USDC address and a throwaway deployer key made at run time. It checks the record and that the record does not contain the key, then deletes its broadcast, cache, and record. It refuses to run while a real deployment's broadcast (`broadcast/DeployRegistry.s.sol/421614/`) exists, unless `REHEARSAL_OVERWRITE=1`. `REHEARSAL_PORT` moves anvil off port 8545.
 
+The [Arbitrum Sepolia runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) runs both steps with the testnet role keys, then sets the engine, registers releases, and deposits bonds with `npm run warranty:admin -w @lemma/server`.
+
 ## Stylus compatibility-confidence engine
 
 `contracts/stylus/` is a Rust workspace, separate from the Foundry project. It computes compatibility confidence for one release digest and profile index. The [confidence package guide](../packages/confidence/README.md#the-model) describes the model, and the crate docs in [`lemma-confidence/src/lib.rs`](stylus/lemma-confidence/src/lib.rs) give each integer step. The server runs the same crate as wasm for the catalog, so the catalog and the contract agree when they use [the same inputs](../packages/confidence/README.md#when-the-catalog-and-the-chain-agree).
 
-The contract is not deployed, and nothing records outcomes into it yet.
+The contract is not deployed yet. Once the registry's owner points `setEngine` at it, the registry records each finalized pass or failure with a weight above zero into it. The local end-to-end run (`npm run e2e`) puts a Solidity stand-in with its interface behind the registry (`e2e/contracts/src/ConfidenceStandIn.sol`), because anvil cannot run Stylus.
 
 | Crate | Contents |
 | --- | --- |
@@ -237,4 +239,4 @@ Deployment needs a reachable Arbitrum Sepolia RPC and a deployer with about 0.00
 cargo stylus deploy --endpoint <rpc> --private-key-path <key file, mode 0600> --constructor-args <owner> <registry> --no-verify
 ```
 
-This deploys, activates and runs the constructor in one transaction. Never run the constructor in a separate transaction: it runs once, for whoever calls it first. Never pass `--private-key`, which exposes the key in shell history and process listings. After deployment, call `setRegistry` if the registry was deployed later, call `setPrior` for each benchmarked profile from frozen evidence only, and measure `record`'s gas before the registry calls `setEngine` with this contract. A Stylus program must be reactivated every 365 days.
+This deploys, activates and runs the constructor in one transaction. Never run the constructor in a separate transaction: it runs once, for whoever calls it first. Never pass `--private-key`, which exposes the key in shell history and process listings. After deployment, call `setRegistry` if the registry was deployed later, call `setPrior` for each benchmarked profile from frozen evidence only, and measure `record`'s gas before the registry calls `setEngine` with this contract. `npm run warranty:admin -w @lemma/server -- set-priors` calls `setPrior` from each profile's frozen evidence, and `-- set-engine` points the registry at the contract; the [runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) gives the order. A Stylus program must be reactivated every 365 days.

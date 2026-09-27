@@ -4,7 +4,7 @@ Lemma handles repository metadata, generated patches, acceptance commands, payme
 
 ## Supported environment
 
-Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, benchmark, and testnet x402 payment surfaces are implemented. The warranty contract is tested but not deployed or audited.
+Lemma is an unaudited testnet MVP. The free preview, catalog, persistence, local apply, verification, dashboard, benchmark, testnet x402 payment, and warranty outcome pipeline surfaces are implemented. The warranty contract is tested but not deployed or audited.
 
 Do not use Lemma with mainnet assets or production signing keys. Use disposable Arbitrum Sepolia identities and public or synthetic repositories while developing the paid path.
 

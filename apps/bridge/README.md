@@ -2,7 +2,7 @@
 
 `@lemma/bridge` is the local stdio MCP server used by a coding agent. It is the only Lemma component allowed to inspect the buyer's repository, manage buyer-side state, apply a resolution, or run its acceptance recipe.
 
-The bridge supports the complete workflow: free preview, purchase through x402 and a separate buyer signer, apply, and adoption verification.
+The bridge supports the complete workflow: free preview, purchase through x402 and a separate buyer signer, apply, adoption verification, and warranty refunds. It makes no chain call: the server activates and settles warranties.
 
 ## Run locally
 
@@ -68,6 +68,22 @@ Runs the release's acceptance recipe only when the resolution is present and the
 
 The first started run produces the receipt that counts. Retryable delivery failures are kept in the local inbox and sent again later. `lemma-signer` signs the receipt when it answers; without a signer, the receipt is sent unsigned and the server keeps it unverified. The receipt carries `LEMMA_AGENT_ID` when it is set.
 
+When the receipt that counts failed and the purchase is under warranty, the answer ends with one line: the evaluator reviews failures, and `lemma_claim_refund` collects a confirmed refund.
+
+### `lemma_claim_refund`
+
+Collects confirmed warranty refunds through the server's credit relay. For each claim the bridge kept at purchase, or only the named resolution's, it reads the resolution's warranty from the server. Only when the warranty is `failed`, an eligible failure with its credit outstanding, does it post the claim to the relay. The server's evaluator key sends the withdrawal to the refund address and pays the gas; the tool makes no chain call.
+
+Input:
+
+```json
+{ "resolutionId": "0x…" }
+```
+
+`resolutionId` is optional; without it, every stored claim is checked. The answer names each resolution by its first eight hex digits with `queued`, `refunded`, `open`, `none`, `abandoned`, or a refusal code, and the amount in testnet USDC. The claim secret goes only to the relay and appears in no answer. A refund that pays the wallet that paid says so, because the withdrawal then shows that wallet next to the resolution id on chain. Asking again is safe. The details are in [Bridge Runtime](../../docs/bridge-runtime.md#warranty-refunds).
+
+Every tool answers in short text of at most 600 characters. The bridge lists its tools without two fields the MCP SDK adds to every definition that only restate protocol defaults, each input schema's draft-07 `$schema` and `execution: { taskSupport: "forbidden" }`, because every character of a definition is in the agent's context on every turn. Arguments are still checked against the full schemas.
+
 ## Normal agent flow
 
 1. Call `lemma_preview` before implementing a supported capability.
@@ -76,6 +92,7 @@ The first started run produces the receipt that counts. Retryable delivery failu
 4. Call `lemma_apply_resolution` in preview mode.
 5. Apply directly when exact, or merge the exported files when the result is `adapt`.
 6. Call `lemma_verify_adoption`, with `adapted: true` after a manual merge.
+7. After a failed run on a warranted purchase, call `lemma_claim_refund` once the evaluator has confirmed the failure; it answers `open` until then.
 
 ## Buyer signer
 
@@ -102,7 +119,7 @@ lemma-signer serve
 | `LEMMA_MAX_USDC_PER_RESOLUTION` | unset | Most one purchase may cost, in atomic USDC (`250000` is 0.25 USDC). |
 | `LEMMA_DAILY_USDC_CAP` | unset | Most spent in a rolling 24 hours, in atomic USDC. |
 | `LEMMA_ALLOWED_PAY_TO` | unset | Comma-separated recipient addresses the buyer will pay. |
-| `LEMMA_REFUND_TO` | Buyer address | Where warranty credits are paid. Withdrawing a credit shows this address next to the public resolution id on chain. |
+| `LEMMA_REFUND_TO` | Buyer address | Where warranty credits are paid. Withdrawing a credit shows this address next to the public resolution id on chain. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
 
 The state directory must be absolute and outside the workspace. Empty values count as unset.
 
@@ -121,6 +138,7 @@ The bridge needs no RPC URL and never holds the buyer key. The key must not ente
 - **A receipt remains pending:** restart or verify again. The bridge retries retryable signing and delivery failures without replacing the first receipt.
 - **Purchases are off:** the bridge's stderr says why at startup: no signer answers at the socket, the socket's directory can be written by others, or a spending policy variable is missing or not atomic USDC.
 - **A purchase answer was lost:** call `lemma_apply_resolution` a minute later. The bridge recovers the purchase for free and never pays again.
+- **A refund stays `open`:** the warranty has no verdict yet. With the server's default `EVALUATOR_FAILURES=review`, a failure waits for an operator's decision.
 
 The filesystem, process, recovery, and acceptance guarantees are documented in [Bridge Runtime](../../docs/bridge-runtime.md). Shared protocol rules live in [Protocol](../../docs/protocol.md).
 
@@ -130,4 +148,4 @@ The filesystem, process, recovery, and acceptance guarantees are documented in [
 npm run test -w @lemma/bridge
 ```
 
-The tests use a real MCP client and the server app in-process, including the adoption record in preview answers and the opted-in agent id on receipts. Purchase tests pay that app's real x402 facilitator through an in-process signer and the server's in-memory USDC. Process identity and offline-network tests require Linux facilities for full coverage.
+The tests use a real MCP client and the server app in-process, including the adoption record in preview answers and the opted-in agent id on receipts. Purchase tests pay that app's real x402 facilitator through an in-process signer and the server's in-memory USDC, and refund tests add the server's warranty pipeline over its fake registry. Process identity and offline-network tests require Linux facilities for full coverage.

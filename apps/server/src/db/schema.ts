@@ -79,6 +79,7 @@ export const resolutions = pgTable(
  * signature check sets `checked_at` when it reaches a verdict, and `verified`
  * only when the signature is the resolution buyer's. A check that could not
  * run (the chain was unreachable) leaves both, so it runs again.
+ * `buyer_agent_id` is the ERC-8004 agent id a buyer's bridge opted in with (LEMMA_AGENT_ID), if any.
  */
 export const adoptionReceipts = pgTable(
   "adoption_receipts",
@@ -89,8 +90,43 @@ export const adoptionReceipts = pgTable(
     verified: boolean("verified").notNull().default(false),
     receivedAt: timestamp("received_at", { withTimezone: true, mode: "date" }).notNull(),
     checkedAt: timestamp("checked_at", { withTimezone: true, mode: "date" }),
+    buyerAgentId: text("buyer_agent_id"),
   },
   (t) => [index("adoption_receipts_unchecked_idx").on(t.receivedAt).where(isNull(t.checkedAt))],
+);
+
+export const reputationTarget = pgEnum("reputation_target", ["provider", "buyer"]);
+export const reputationPostState = pgEnum("reputation_post_state", ["pending", "posted", "skipped"]);
+
+/**
+ * The ERC-8004 attester's ledger: one feedback per finalized outcome and
+ * target (the provider's agent, or a buyer agent that opted in). Each row's
+ * feedback file (its own, since the file names the agent) is kept as the bytes
+ * served, so `feedback_hash` always matches them.
+ * `attempts` counts sends begun; once it is above zero, the attester looks for
+ * the feedback on chain (from `from_block`) before it ever sends again, so a
+ * crash between a send and this row's update never double-posts.
+ */
+export const reputationPosts = pgTable(
+  "reputation_posts",
+  {
+    resolutionId: text("resolution_id").notNull(),
+    target: reputationTarget("target").notNull(),
+    agentId: text("agent_id").notNull(),
+    capability: text("capability").notNull(),
+    value: integer("value").notNull(),
+    feedbackHash: text("feedback_hash").notNull(),
+    evidence: text("evidence").notNull(),
+    state: reputationPostState("state").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true, mode: "date" }).notNull(),
+    fromBlock: text("from_block"),
+    txHash: text("tx_hash"),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.resolutionId, t.target] }), index("reputation_posts_due_idx").on(t.state, t.nextAttemptAt)],
 );
 
 /** A daily secret that salts profile digests for distinct counting; deleted when its day closes. */

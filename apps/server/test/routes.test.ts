@@ -66,6 +66,21 @@ describe("paid path seam over HTTP", () => {
     await client.close();
   });
 
+  it("takes an optional ERC-8004 agent id with the receipt, as a decimal string only", async () => {
+    const { a, client, store, service, preview } = await sellableApp();
+    const id = deriveResolutionId(preview.previewId, BUYER);
+    await service.prepare(preview.previewId, { payer: BUYER, nonce: "0x01", validBefore: new Date(NOW.getTime() + 300_000) });
+    await service.commit(id, { nonce: "0x01", settlementRef: "0xsettlement" });
+    const receipt = { schemaVersion: "1", resolutionId: id, outcome: "passed", acceptance: { exitCode: 0, durationMs: 10, outputDigest: null }, recordedAt: "2026-10-01T00:00:00.000Z", signature: null };
+    const post = (body: unknown) => a.request("/api/v1/adoption-receipts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    for (const agentId of [42, "0x2a", "-1", "", "042"]) expect((await post({ receipt, previewId: preview.previewId, agentId })).status, String(agentId)).toBe(400);
+    expect((await post({ receipt, previewId: preview.previewId, agentId: "42" })).status).toBe(201);
+    expect((await store.getReceipt(id))?.buyerAgentId).toBe("42");
+    // The public view never shows it.
+    expect(await (await a.request(`/api/v1/resolutions/${id}`)).text()).not.toContain('"42"');
+    await client.close();
+  });
+
   it("answers 500, not 400, when the store fails, so the bridge retries a valid receipt", async () => {
     const store = new (class extends MemoryStore {
       override async getResolution(): Promise<undefined> {

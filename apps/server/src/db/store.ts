@@ -1,13 +1,18 @@
 import type { CatalogIndex } from "@lemma/catalog";
-import { type Address, AdoptionReceipt, CapabilityRelease, type Hex32, PatchBundle, type Preview } from "@lemma/core";
-import { and, asc, eq, gt, gte, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
+import { type Address, AdoptionReceipt, type AgentId, type CapabilityId, CapabilityRelease, type Hex32, PatchBundle, type Preview } from "@lemma/core";
+import { and, asc, eq, gt, gte, isNull, lt, lte, ne, notExists, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import {
   type DemandBucket,
   type LemmaStore,
+  type NewReputationPost,
   type RearmResult,
+  type ReputationPost,
+  type ReputationPostChange,
+  type ReputationTarget,
   type ResolutionRow,
+  type StoredReceipt,
   type UncheckedReceipt,
   type UnsettledCursor,
   decodePreview,
@@ -152,18 +157,63 @@ export class PgStore implements LemmaStore {
     return rows.map(toRow);
   }
 
-  async insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date): Promise<boolean> {
+  async insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date, buyerAgentId: AgentId | null = null): Promise<boolean> {
     const inserted = await this.db
       .insert(t.adoptionReceipts)
-      .values({ resolutionId: receipt.resolutionId, receiptDigest, body: encode(receipt), verified: false, receivedAt: now })
+      .values({ resolutionId: receipt.resolutionId, receiptDigest, body: encode(receipt), verified: false, receivedAt: now, buyerAgentId })
       .onConflictDoNothing()
       .returning({ id: t.adoptionReceipts.resolutionId });
     return inserted.length === 1;
   }
 
-  async getReceipt(resolutionId: Hex32) {
+  async getReceipt(resolutionId: Hex32): Promise<StoredReceipt | undefined> {
     const [row] = await this.db.select().from(t.adoptionReceipts).where(eq(t.adoptionReceipts.resolutionId, resolutionId)).limit(1);
-    return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified };
+    return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified, buyerAgentId: row.buyerAgentId };
+  }
+
+  async enqueueReputationPosts(posts: readonly NewReputationPost[], now: Date): Promise<number> {
+    if (posts.length === 0) return 0;
+    const inserted = await this.db
+      .insert(t.reputationPosts)
+      .values(posts.map((p) => ({ ...p, state: "pending" as const, attempts: 0, nextAttemptAt: now, createdAt: now, updatedAt: now })))
+      .onConflictDoNothing()
+      .returning({ id: t.reputationPosts.resolutionId });
+    return inserted.length;
+  }
+
+  async dueReputationPosts(now: Date, limit: number): Promise<ReputationPost[]> {
+    const rows = await this.db
+      .select()
+      .from(t.reputationPosts)
+      .where(and(eq(t.reputationPosts.state, "pending"), lte(t.reputationPosts.nextAttemptAt, now)))
+      .orderBy(asc(t.reputationPosts.nextAttemptAt))
+      .limit(limit);
+    return rows.map(toPost);
+  }
+
+  async getReputationPost(resolutionId: Hex32, target: ReputationTarget): Promise<ReputationPost | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(t.reputationPosts)
+      .where(and(eq(t.reputationPosts.resolutionId, resolutionId), eq(t.reputationPosts.target, target)))
+      .limit(1);
+    return row === undefined ? undefined : toPost(row);
+  }
+
+  async updateReputationPost(resolutionId: Hex32, target: ReputationTarget, expectedAttempts: number, change: ReputationPostChange, now: Date): Promise<boolean> {
+    const updated = await this.db
+      .update(t.reputationPosts)
+      .set({ ...change, updatedAt: now })
+      .where(
+        and(
+          eq(t.reputationPosts.resolutionId, resolutionId),
+          eq(t.reputationPosts.target, target),
+          eq(t.reputationPosts.state, "pending"),
+          eq(t.reputationPosts.attempts, expectedAttempts),
+        ),
+      )
+      .returning({ id: t.reputationPosts.resolutionId });
+    return updated.length === 1;
   }
 
   async listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]> {
@@ -292,6 +342,24 @@ function toRow(row: typeof t.resolutions.$inferSelect): ResolutionRow {
     settlementRef: row.settlementRef,
     claimHash: row.claimHash as Hex32 | null,
     resolution: decodeResolution(row.body),
+  };
+}
+
+function toPost(row: typeof t.reputationPosts.$inferSelect): ReputationPost {
+  return {
+    resolutionId: row.resolutionId as Hex32,
+    target: row.target,
+    agentId: row.agentId,
+    capability: row.capability as CapabilityId,
+    value: row.value === 100 ? 100 : 0,
+    feedbackHash: row.feedbackHash as Hex32,
+    evidence: row.evidence,
+    state: row.state,
+    attempts: row.attempts,
+    nextAttemptAt: row.nextAttemptAt,
+    fromBlock: row.fromBlock,
+    txHash: row.txHash as Hex32 | null,
+    note: row.note,
   };
 }
 

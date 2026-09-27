@@ -15,6 +15,13 @@
       "when": 1790486842220,
       "tag": "0001_payment_path",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790499058217,
+      "tag": "0002_reputation",
+      "breakpoints": true
     }
   ]
 }

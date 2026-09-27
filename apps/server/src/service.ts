@@ -1,6 +1,7 @@
 import {
   type Address,
   AdoptionReceipt,
+  AgentId,
   Hex32,
   type PatchBundle,
   type PaymentTerms,
@@ -66,9 +67,11 @@ export type ReceiptResult = "ACCEPTED" | "DUPLICATE" | "NOT_SETTLED" | "TOO_EARL
  * A receipt as the buyer's bridge submits it: the receipt, and the preview id
  * it bought. The preview id is the recovery secret, known only to the buyer's
  * bridge, so it proves the submitter is the buyer. A resolution id is public
- * and proves nothing.
+ * and proves nothing. `agentId` is the buyer's ERC-8004 agent, when its bridge
+ * opted in (LEMMA_AGENT_ID): it is stored with the receipt, and the attester
+ * gives that agent feedback on the outcome only if the buyer's address controls it.
  */
-export const ReceiptSubmission = z.strictObject({ receipt: AdoptionReceipt, previewId: Hex32 });
+export const ReceiptSubmission = z.strictObject({ receipt: AdoptionReceipt, previewId: Hex32, agentId: AgentId.optional() });
 
 export type ReceiptSubmission = z.infer<typeof ReceiptSubmission>;
 
@@ -235,7 +238,7 @@ export class ResolutionService implements ResolutionReader {
    * nothing to anyone else.
    */
   async acceptReceipt(submission: ReceiptSubmission): Promise<ReceiptResult> {
-    const { receipt, previewId } = ReceiptSubmission.parse(submission);
+    const { receipt, previewId, agentId } = ReceiptSubmission.parse(submission);
     const row = await this.store.getResolution(receipt.resolutionId);
     if (row === undefined || row.previewId !== previewId) return "UNKNOWN_RESOLUTION";
     if (row.state !== "settled") return "NOT_SETTLED";
@@ -245,7 +248,7 @@ export class ResolutionService implements ResolutionReader {
     if (recordedAt < Date.parse(row.resolution.createdAt) - RECEIPT_CLOCK_SKEW_MS) return "MISMATCH";
     // A buyer clock running fast: the signed receipt stays valid, so the bridge keeps it and sends it again later.
     if (recordedAt > now.getTime() + RECEIPT_CLOCK_SKEW_MS) return "TOO_EARLY";
-    return (await this.store.insertReceipt(receipt, adoptionReceiptDigest(receipt), now)) ? "ACCEPTED" : "DUPLICATE";
+    return (await this.store.insertReceipt(receipt, adoptionReceiptDigest(receipt), now, agentId ?? null)) ? "ACCEPTED" : "DUPLICATE";
   }
 
   async publicResolution(resolutionId: Hex32): Promise<PublicResolution | undefined> {

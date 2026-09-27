@@ -1,5 +1,17 @@
 import type { CatalogIndex } from "@lemma/catalog";
-import { type Address, AdoptionReceipt, CapabilityRelease, type Hex32, PatchBundle, Preview, Resolution, canonicalize, fileDigest } from "@lemma/core";
+import {
+  type Address,
+  AdoptionReceipt,
+  type AgentId,
+  type CapabilityId,
+  CapabilityRelease,
+  type Hex32,
+  PatchBundle,
+  Preview,
+  Resolution,
+  canonicalize,
+  fileDigest,
+} from "@lemma/core";
 
 import type { PreviewStore } from "./store.js";
 
@@ -54,6 +66,59 @@ export function compareUnsettled(a: UnsettledCursor, b: UnsettledCursor): number
   return a.resolutionId < b.resolutionId ? -1 : a.resolutionId > b.resolutionId ? 1 : 0;
 }
 
+/** A stored adoption receipt, with the ERC-8004 agent id its buyer opted in with (the outcome feed reads it). */
+export interface StoredReceipt {
+  readonly receipt: AdoptionReceipt;
+  readonly verified: boolean;
+  readonly buyerAgentId: AgentId | null;
+}
+
+/**
+ * Who an ERC-8004 feedback is for: the provider's agent, or the buyer agent
+ * that opted in. Its feedback file is served under `provider` or `buyer-agent`
+ * (`evidencePath`).
+ */
+export type ReputationTarget = "provider" | "buyer";
+
+/** `posted` and `skipped` are final; `pending` rows are attempted when due. */
+export type ReputationPostState = "pending" | "posted" | "skipped";
+
+/** One feedback the attester owes, as it is queued. */
+export interface NewReputationPost {
+  readonly resolutionId: Hex32;
+  readonly target: ReputationTarget;
+  readonly agentId: AgentId;
+  /** `tag2`. */
+  readonly capability: CapabilityId;
+  /** 100 for a pass, 0 for a failure (valueDecimals 0). */
+  readonly value: 0 | 100;
+  readonly feedbackHash: Hex32;
+  /** This feedback's own file (core `AdoptionFeedbackFile`), as the bytes served at its feedback URI; `feedbackHash` is their keccak256. */
+  readonly evidence: string;
+}
+
+export interface ReputationPost extends NewReputationPost {
+  readonly state: ReputationPostState;
+  /** Sends begun. Above zero, the chain is searched for the feedback before any further send. */
+  readonly attempts: number;
+  readonly nextAttemptAt: Date;
+  /** The block (decimal) before the first send: where the chain search starts. */
+  readonly fromBlock: string | null;
+  readonly txHash: Hex32 | null;
+  /** Why the row was skipped, or the last failure's code. */
+  readonly note: string | null;
+}
+
+/** Fields the attester changes on a row, only while it is pending with the attempts it read. */
+export interface ReputationPostChange {
+  readonly state?: ReputationPostState;
+  readonly attempts?: number;
+  readonly nextAttemptAt?: Date;
+  readonly fromBlock?: string;
+  readonly txHash?: Hex32;
+  readonly note?: string | null;
+}
+
 /**
  * Everything the server persists. `MemoryStore` serves development and tests;
  * `PgStore` (drizzle over postgres.js or PGlite) serves production. One
@@ -100,9 +165,12 @@ export interface LemmaStore extends PreviewStore {
    */
   listUnsettled(before: Date, limit: number, after?: UnsettledCursor): Promise<ResolutionRow[]>;
 
-  /** Stores a receipt; false when one already exists for the resolution (first write wins). */
-  insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date): Promise<boolean>;
-  getReceipt(resolutionId: Hex32): Promise<{ receipt: AdoptionReceipt; verified: boolean } | undefined>;
+  /**
+   * Stores a receipt, with the ERC-8004 agent id the buyer opted in with, if
+   * any; false when one already exists for the resolution (first write wins).
+   */
+  insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date, buyerAgentId?: AgentId | null): Promise<boolean>;
+  getReceipt(resolutionId: Hex32): Promise<StoredReceipt | undefined>;
   /** Receipts whose signature check has not reached a verdict yet, oldest first. */
   listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]>;
   /**
@@ -117,6 +185,19 @@ export interface LemmaStore extends PreviewStore {
    * conditions as `markReceiptVerified`.
    */
   markReceiptChecked(resolutionId: Hex32, receiptDigest: Hex32, now: Date): Promise<boolean>;
+
+  /** Queues feedback for the attester; a post already queued for its resolution and target is kept as it is. Returns how many were new. */
+  enqueueReputationPosts(posts: readonly NewReputationPost[], now: Date): Promise<number>;
+  /** Pending posts due at `now`, the longest waiting first. */
+  dueReputationPosts(now: Date, limit: number): Promise<ReputationPost[]>;
+  /** One post, with its feedback file: the evidence route serves the file from here. */
+  getReputationPost(resolutionId: Hex32, target: ReputationTarget): Promise<ReputationPost | undefined>;
+  /**
+   * Applies `change` only while the post is pending and still has
+   * `expectedAttempts`, so two attesters never both send the same attempt;
+   * false when the row moved on.
+   */
+  updateReputationPost(resolutionId: Hex32, target: ReputationTarget, expectedAttempts: number, change: ReputationPostChange, now: Date): Promise<boolean>;
 
   /**
    * Adds one salted profile digest and one salted source to a bucket for its
@@ -154,6 +235,8 @@ export function decodeResolution(body: string): Resolution {
   return Resolution.parse(JSON.parse(body));
 }
 
+const postKey = (resolutionId: Hex32, target: ReputationTarget) => `${resolutionId}\n${target}`;
+
 /** The most offers the memory store holds; beyond it, saving fails and the preview says so. */
 export const MAX_MEMORY_OFFERS = 50_000;
 
@@ -169,7 +252,8 @@ export class MemoryStore implements LemmaStore {
   private readonly snapshots = new Map<string, string>();
   private readonly previews = new Map<string, { body: string; validUntil: Date }>();
   private readonly resolutions = new Map<string, ResolutionRow>();
-  private readonly receipts = new Map<string, { body: string; digest: Hex32; verified: boolean; receivedAt: Date; checkedAt: Date | null }>();
+  private readonly receipts = new Map<string, { body: string; digest: Hex32; verified: boolean; receivedAt: Date; checkedAt: Date | null; buyerAgentId: AgentId | null }>();
+  private readonly posts = new Map<string, ReputationPost>();
   private readonly salts = new Map<string, string>();
   private readonly seen = new Map<string, { profiles: Set<string>; sources: Set<string> }>();
   private readonly daily = new Map<string, DemandBucket>();
@@ -266,15 +350,46 @@ export class MemoryStore implements LemmaStore {
       .slice(0, limit);
   }
 
-  async insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date): Promise<boolean> {
+  async insertReceipt(receipt: AdoptionReceipt, receiptDigest: Hex32, now: Date, buyerAgentId: AgentId | null = null): Promise<boolean> {
     if (this.receipts.has(receipt.resolutionId)) return false;
-    this.receipts.set(receipt.resolutionId, { body: encode(receipt), digest: receiptDigest, verified: false, receivedAt: now, checkedAt: null });
+    this.receipts.set(receipt.resolutionId, { body: encode(receipt), digest: receiptDigest, verified: false, receivedAt: now, checkedAt: null, buyerAgentId });
     return true;
   }
 
-  async getReceipt(resolutionId: Hex32) {
+  async getReceipt(resolutionId: Hex32): Promise<StoredReceipt | undefined> {
     const row = this.receipts.get(resolutionId);
-    return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified };
+    return row === undefined ? undefined : { receipt: AdoptionReceipt.parse(JSON.parse(row.body)), verified: row.verified, buyerAgentId: row.buyerAgentId };
+  }
+
+  async enqueueReputationPosts(posts: readonly NewReputationPost[], now: Date): Promise<number> {
+    let added = 0;
+    for (const post of posts) {
+      const key = postKey(post.resolutionId, post.target);
+      if (this.posts.has(key)) continue;
+      this.posts.set(key, { ...post, state: "pending", attempts: 0, nextAttemptAt: now, fromBlock: null, txHash: null, note: null });
+      added++;
+    }
+    return added;
+  }
+
+  async dueReputationPosts(now: Date, limit: number): Promise<ReputationPost[]> {
+    return [...this.posts.values()]
+      .filter((p) => p.state === "pending" && p.nextAttemptAt <= now)
+      .sort((a, b) => a.nextAttemptAt.getTime() - b.nextAttemptAt.getTime())
+      .slice(0, limit);
+  }
+
+  async getReputationPost(resolutionId: Hex32, target: ReputationTarget): Promise<ReputationPost | undefined> {
+    return this.posts.get(postKey(resolutionId, target));
+  }
+
+  async updateReputationPost(resolutionId: Hex32, target: ReputationTarget, expectedAttempts: number, change: ReputationPostChange, _now?: Date): Promise<boolean> {
+    const key = postKey(resolutionId, target);
+    const row = this.posts.get(key);
+    if (row?.state !== "pending" || row.attempts !== expectedAttempts) return false;
+    const defined = Object.fromEntries(Object.entries(change).filter(([, v]) => v !== undefined)) as ReputationPostChange;
+    this.posts.set(key, { ...row, ...defined });
+    return true;
   }
 
   async listUncheckedReceipts(limit: number): Promise<UncheckedReceipt[]> {

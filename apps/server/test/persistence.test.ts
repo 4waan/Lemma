@@ -35,7 +35,7 @@ const stores: Array<[string, () => Promise<LemmaStore>]> = [
   [
     "postgres (PGlite)",
     async () => {
-      await pgDb.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily`);
+      await pgDb.execute(sql`truncate releases, bundles, catalog_snapshots, previews, resolutions, adoption_receipts, demand_salts, demand_seen, demand_daily, reputation_posts`);
       return new PgStore(pgDb);
     },
   ],
@@ -248,6 +248,71 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
     expect(view).not.toContain(BUYER.slice(2));
   });
 
+  it("stores the ERC-8004 agent id a buyer opted in with, next to its receipt", async () => {
+    const id = deriveResolutionId(offer.previewId, BUYER);
+    const receipt: AdoptionReceipt = { schemaVersion: "1", resolutionId: id, outcome: "passed", acceptance: { exitCode: 0, durationMs: 1000, outputDigest: null }, recordedAt: "2026-10-01T00:02:00.000Z", signature: null };
+    await service.prepare(offer.previewId, payment());
+    await service.commit(id, settled());
+    await expect(service.acceptReceipt({ receipt, previewId: offer.previewId, agentId: "01" })).rejects.toThrow();
+    expect(await service.acceptReceipt({ receipt, previewId: offer.previewId, agentId: "42" })).toBe("ACCEPTED");
+    expect(await store.getReceipt(id)).toMatchObject({ verified: false, buyerAgentId: "42" });
+    // The first write wins, agent id included.
+    expect(await service.acceptReceipt({ receipt, previewId: offer.previewId, agentId: "43" })).toBe("DUPLICATE");
+    expect((await store.getReceipt(id))?.buyerAgentId).toBe("42");
+    const other = deriveResolutionId(offer.previewId, OTHER_BUYER);
+    await service.prepare(offer.previewId, payment(OTHER_BUYER, "0x07"));
+    await service.commit(other, settled("0x07", "0xother"));
+    expect(await service.acceptReceipt({ receipt: { ...receipt, resolutionId: other }, previewId: offer.previewId })).toBe("ACCEPTED");
+    expect((await store.getReceipt(other))?.buyerAgentId).toBeNull();
+  });
+
+  it("keeps one reputation post per resolution and target, changed only by the attester that read it", async () => {
+    const a = `0x${"a1".repeat(32)}` as Hex32;
+    const b = `0x${"b2".repeat(32)}` as Hex32;
+    // Each target has its own file (it names the agent), and so its own hash.
+    const post = (resolutionId: Hex32, target: "provider" | "buyer", evidence = `{"r":"${resolutionId}","t":"${target}"}`) => ({
+      resolutionId,
+      target,
+      agentId: target === "provider" ? "7" : "42",
+      capability: "mcp-server.add-payment-gating" as const,
+      value: 100 as const,
+      feedbackHash: `0x${(target === "provider" ? "cc" : "cd").repeat(32)}` as Hex32,
+      evidence,
+    });
+    expect(await store.enqueueReputationPosts([], NOW)).toBe(0);
+    expect(await store.enqueueReputationPosts([post(a, "provider"), post(a, "buyer")], NOW)).toBe(2);
+    // Queued again (a restart re-reads the feed): nothing changes, and the first file stays.
+    expect(await store.enqueueReputationPosts([post(a, "provider", "{}"), post(b, "provider")], LATER)).toBe(1);
+    expect(await store.getReputationPost(a, "provider")).toMatchObject({ evidence: `{"r":"${a}","t":"provider"}`, feedbackHash: `0x${"cc".repeat(32)}` });
+    expect(await store.getReputationPost(a, "buyer")).toMatchObject({ evidence: `{"r":"${a}","t":"buyer"}`, feedbackHash: `0x${"cd".repeat(32)}` });
+    expect(await store.getReputationPost(`0x${"dd".repeat(32)}`, "provider")).toBeUndefined();
+    expect(await store.getReputationPost(b, "buyer")).toBeUndefined();
+
+    // Both rows of `a` were queued at NOW, before `b`; their order between themselves is not fixed.
+    expect((await store.dueReputationPosts(NOW, 10)).map((p) => `${p.resolutionId}/${p.target}`).sort()).toEqual([`${a}/buyer`, `${a}/provider`]);
+    expect(await store.dueReputationPosts(LATER, 10)).toHaveLength(3);
+    expect(await store.dueReputationPosts(LATER, 1)).toHaveLength(1);
+
+    // Begin an attempt: only for the attempts it read, so two attesters never both send it.
+    const retryAt = new Date(LATER.getTime() + 60_000);
+    expect(await store.updateReputationPost(a, "provider", 0, { attempts: 1, fromBlock: "12345", nextAttemptAt: retryAt }, LATER)).toBe(true);
+    expect(await store.updateReputationPost(a, "provider", 0, { attempts: 1, fromBlock: "99999", nextAttemptAt: retryAt }, LATER)).toBe(false);
+    expect(await store.getReputationPost(a, "provider")).toMatchObject({ state: "pending", attempts: 1, fromBlock: "12345", nextAttemptAt: retryAt, txHash: null, note: null });
+    expect((await store.dueReputationPosts(LATER, 10)).map((p) => `${p.resolutionId}/${p.target}`)).not.toContain(`${a}/provider`);
+    expect((await store.dueReputationPosts(retryAt, 10)).some((p) => p.resolutionId === a && p.target === "provider")).toBe(true);
+
+    const tx = `0x${"ee".repeat(32)}` as Hex32;
+    expect(await store.updateReputationPost(a, "provider", 1, { txHash: tx, note: "sent" }, LATER)).toBe(true);
+    expect(await store.updateReputationPost(a, "provider", 1, { state: "posted", note: null }, LATER)).toBe(true);
+    expect(await store.getReputationPost(a, "provider")).toMatchObject({ state: "posted", attempts: 1, txHash: tx, note: null, fromBlock: "12345" });
+    // Final: never due, never changed again.
+    expect(await store.updateReputationPost(a, "provider", 1, { state: "pending" }, LATER)).toBe(false);
+    expect(await store.dueReputationPosts(retryAt, 10)).not.toContainEqual(expect.objectContaining({ resolutionId: a, target: "provider" }));
+    expect(await store.updateReputationPost(a, "buyer", 0, { state: "skipped", note: "AGENT_NOT_BUYER" }, LATER)).toBe(true);
+    expect(await store.getReputationPost(a, "buyer")).toMatchObject({ state: "skipped", note: "AGENT_NOT_BUYER", agentId: "42", value: 100 });
+    expect((await store.dueReputationPosts(retryAt, 10)).map((p) => [p.resolutionId, p.target])).toEqual([[b, "provider"]]);
+  });
+
   it("counts distinct profiles and sources per bucket and day, and publishes only buckets with at least five of each", async () => {
     const bucket = demandBucket(offer, gatingTask.capability, matchingProfile);
     const digest = (i: number) => `0x${i.toString(16).padStart(64, "0")}` as Hex32;
@@ -319,7 +384,7 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
     expect(await store.markReceiptVerified(id, adoptionReceiptDigest(receipt), LATER)).toBe(false);
     expect(await store.markReceiptChecked(id, adoptionReceiptDigest(receipt), LATER)).toBe(false);
     expect(await store.listUncheckedReceipts(10)).toEqual([]);
-    expect(await store.getReceipt(id)).toEqual({ receipt, verified: true });
+    expect(await store.getReceipt(id)).toEqual({ receipt, verified: true, buyerAgentId: null });
     expect((await service.publicResolution(id))?.receipt).toEqual({ outcome: "passed", verified: true });
 
     // A verdict that leaves the receipt unverified also ends the checks.
@@ -330,6 +395,6 @@ describe.each(stores)("ResolutionService on the %s store", (_name, makeStore) =>
     expect(await service.acceptReceipt({ receipt: unsigned, previewId: offer.previewId })).toBe("ACCEPTED");
     expect(await store.markReceiptChecked(otherId, adoptionReceiptDigest(unsigned), LATER)).toBe(true);
     expect(await store.listUncheckedReceipts(10)).toEqual([]);
-    expect(await store.getReceipt(otherId)).toEqual({ receipt: unsigned, verified: false });
+    expect(await store.getReceipt(otherId)).toEqual({ receipt: unsigned, verified: false, buyerAgentId: null });
   });
 });

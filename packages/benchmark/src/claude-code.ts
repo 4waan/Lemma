@@ -6,11 +6,14 @@ import { delimiter, isAbsolute, join } from "node:path";
 import type { AgentAdapter, AgentRunOutcome, AgentRunRequest, ToolCallSummary, UsageReport } from "./adapter.js";
 import { superviseAgent } from "./agent-process.js";
 import { type AnthropicPrices, type ResponseUsage, modelPrice, pricesDigest } from "./anthropic-usage.js";
-import { MeterRecord, MeteringProxy, anthropicApi } from "./meter.js";
+import { MeterRecord, type MeterReading, MeteringProxy, anthropicApi } from "./meter.js";
 import { childEnv, secretVariables } from "./process.js";
 import type { ReportedUsage } from "./tokens.js";
 
 export { EXIT_GRACE_MS, STOP_GRACE_MS } from "./agent-process.js";
+
+/** Limit for the short run that checks a Claude plan's token before a probe. */
+export const PLAN_CHECK_MS = 3 * 60_000;
 
 /** Session ids are UUIDs; anything else is refused before it names a file. */
 const AGENT_ID = /^[A-Za-z0-9-]{1,100}$/;
@@ -21,6 +24,12 @@ export interface ClaudeCodeOptions {
   /** Where each run's meter record is kept for `usage`, one file per agent id. */
   readonly meterDir: string;
   readonly prices: AnthropicPrices;
+  /**
+   * The credential is a Claude plan's token (`claude setup-token`), not an API
+   * key. Runs are metered and priced the same way; the check before a probe
+   * is then one short real run, because a plan's token is only for Claude Code.
+   */
+  readonly plan?: boolean;
   /** The Anthropic API origin; tests point it at a stand-in. */
   readonly upstream?: string;
   readonly graceMs?: { readonly stop: number; readonly exit: number };
@@ -57,8 +66,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     private readonly apiKey: string,
     private readonly options: ClaudeCodeOptions,
   ) {
-    if (apiKey === "") throw new Error("an Anthropic API key is required");
-    this.proxy = new MeteringProxy({ apiKey, api: anthropicApi(options.prices, options.upstream), ...(options.drainMs === undefined ? {} : { drainMs: options.drainMs }) });
+    if (apiKey === "") throw new Error(options.plan === true ? "a Claude plan token is required" : "an Anthropic API key is required");
+    this.proxy = new MeteringProxy({ apiKey, api: anthropicApi(options.prices, options.upstream, options.plan === true), ...(options.drainMs === undefined ? {} : { drainMs: options.drainMs }) });
     this.pricesDigest = pricesDigest(options.prices);
   }
 
@@ -91,7 +100,36 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     throw new Error(`a one-token request to ${model} failed: HTTP ${response.status} ${error.type}`.trim());
   }
 
+  /**
+   * Checks a Claude plan's token with one short real run in `dir` (made the
+   * way every run is, through the meter): the token, the model, a usage limit
+   * already reached, and whether the meter can price the plan's replies. It
+   * uses a sliver of the plan's usage and no money, and no meter record is kept.
+   */
+  async checkPlan(model: string, dir: string): Promise<void> {
+    if (modelPrice(this.options.prices, model) === undefined) throw new Error(`model ${model} is not in prices/anthropic.json; use an exact model id the table prices`);
+    const cwd = join(dir, "work");
+    const home = join(dir, "home");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(home, "tmp"), { recursive: true });
+    const { outcome, reading } = await this.runMetered({ cwd, home, prompt: "Reply with the word OK and nothing else.", model: { id: model }, mcpServers: {}, timeoutMs: PLAN_CHECK_MS }, false);
+    if (outcome.status !== "finished") {
+      const why = outcome.error ?? outcome.status;
+      if (/HTTP 40[13]\b/.test(why)) throw new Error(`the Anthropic API refused the Claude plan token (${why}); make a new one with \`claude setup-token\``);
+      if (/HTTP 429\b/.test(why) || /limit/i.test(why)) throw new Error(`the Claude plan is at a usage limit (${why}); run the same command again once it resets`);
+      if (/HTTP 404\b/.test(why)) throw new Error(`model ${model} is not available on this Claude plan (${why})`);
+      throw new Error(`a short check run on the Claude plan did not finish: ${why}`);
+    }
+    if (reading.responses === 0) throw new Error("the check run made no request through the meter, so its cost could not be measured");
+    if (reading.incomplete > 0 || reading.unpriced.length > 0) throw new Error(`the meter could not price the Claude plan's replies: ${[...reading.unpriced, ...(reading.incomplete > 0 ? ["a reply stopped before its final usage"] : [])].join("; ")}`);
+  }
+
   async run(request: AgentRunRequest): Promise<AgentRunOutcome> {
+    return (await this.runMetered(request, true)).outcome;
+  }
+
+  /** One run; its meter record is written only when `keep` is set. */
+  private async runMetered(request: AgentRunRequest, keep: boolean): Promise<{ outcome: AgentRunOutcome; reading: MeterReading }> {
     const startedAt = new Date().toISOString();
     const command = this.options.command;
     if (command === null) throw new Error("no claude executable was given to run agents with");
@@ -159,7 +197,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     // Every response the run started is read to its end before the run counts as over.
     const reading = await this.proxy.end(token);
     const usage = seen.result === null ? null : reportedUsage(seen.result);
-    if (seen.agentId !== null) {
+    if (keep && seen.agentId !== null) {
       const record = MeterRecord.parse({
         schemaVersion: "1",
         agentId: seen.agentId,
@@ -173,7 +211,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       writeFileSync(`${path}.tmp`, `${JSON.stringify(record, null, 2)}\n`);
       renameSync(`${path}.tmp`, path);
     }
-    return outcomeOf(startedAt, seen, usage);
+    return { outcome: outcomeOf(startedAt, seen, usage), reading };
   }
 
   /** The run's metered usage and list-price cost (`readMeteredUsage`). */

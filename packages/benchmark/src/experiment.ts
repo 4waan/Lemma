@@ -20,14 +20,17 @@ export const AgentSetup = z
     version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
     pricesDigest: Hex32.nullable(),
     /**
-     * Codex signed in with a ChatGPT plan instead of an API key: its cost is
-     * its own token counts at list price, not metered, so only a probe may use
-     * it (`freeze` refuses it).
+     * The agent ran on a plan instead of an API key, so only a probe may use
+     * it (`freeze` refuses it). `chatgpt`: Codex signed in with a ChatGPT
+     * plan, its cost its own token counts at list price, not metered.
+     * `claude-plan`: Claude Code on a Claude plan's token, still metered at
+     * list price, but paid for by the plan, not an API account.
      */
-    login: z.literal("chatgpt").optional(),
+    login: z.enum(["chatgpt", "claude-plan"]).optional(),
   })
   .refine((a) => (a.name !== "cursor") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code and Codex runs name their price table; Cursor runs do not" })
-  .refine((a) => a.login === undefined || a.name === "codex", { path: ["login"], message: "only Codex runs can use a ChatGPT login" });
+  .refine((a) => a.login !== "chatgpt" || a.name === "codex", { path: ["login"], message: "only Codex runs can use a ChatGPT login" })
+  .refine((a) => a.login !== "claude-plan" || a.name === "claude-code", { path: ["login"], message: "only Claude Code runs can use a Claude plan" });
 
 export type AgentSetup = z.infer<typeof AgentSetup>;
 

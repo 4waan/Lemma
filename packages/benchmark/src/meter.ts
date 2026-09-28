@@ -75,8 +75,16 @@ export interface MeteredApi<U = unknown> {
   errorBody(type: string, message: string): string;
 }
 
-/** The Anthropic Messages API, as Claude Code uses it. */
-export function anthropicApi(prices: AnthropicPrices, upstream = "https://api.anthropic.com"): MeteredApi<ResponseUsage> {
+/** The beta Claude Code sends with a Claude plan's token; the API refuses that token without it. */
+export const OAUTH_BETA = "oauth-2025-04-20";
+
+/**
+ * The Anthropic Messages API, as Claude Code uses it. With `plan`, the key is
+ * a Claude plan's token (`claude setup-token`): it goes on as a bearer token
+ * with the OAuth beta Claude Code itself sends on a plan, and every response
+ * is still read and priced the same way.
+ */
+export function anthropicApi(prices: AnthropicPrices, upstream = "https://api.anthropic.com", plan = false): MeteredApi<ResponseUsage> {
   return {
     name: "the Anthropic API",
     upstream,
@@ -88,7 +96,15 @@ export function anthropicApi(prices: AnthropicPrices, upstream = "https://api.an
     },
     // Claude Code checks that its API is reachable before the first request.
     answersLocally: (method, path) => (method === "HEAD" || method === "GET") && path === "/api/hello",
-    authorize: (headers, apiKey) => headers.set("x-api-key", apiKey),
+    authorize: (headers, apiKey) => {
+      if (!plan) {
+        headers.set("x-api-key", apiKey);
+        return;
+      }
+      headers.set("authorization", `Bearer ${apiKey}`);
+      const betas = (headers.get("anthropic-beta") ?? "").split(",").map((b) => b.trim()).filter((b) => b !== "");
+      headers.set("anthropic-beta", [...new Set([...betas, OAUTH_BETA])].join(","));
+    },
     streamReader: () => new UsageStreamReader(),
     readJson: readJsonResponse,
     price: (model, usage) => responseCost(prices, model, usage),

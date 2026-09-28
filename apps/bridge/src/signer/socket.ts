@@ -2,7 +2,7 @@ import { chmodSync, lstatSync, mkdirSync, rmSync } from "node:fs";
 import { type IncomingMessage, type ServerResponse, createServer, request } from "node:http";
 import { dirname } from "node:path";
 
-import { Address, AdoptionReceipt } from "@lemma/core";
+import { Address, AdoptionReceipt, Hex32 } from "@lemma/core";
 import type { Hex } from "viem";
 import { z } from "zod";
 
@@ -15,7 +15,7 @@ export const MAX_SIGNER_BODY = 32 * 1024;
 export const MAX_SOCKET_PATH = 103;
 
 const TransferBody = z.strictObject({ authorization: TransferAuthorization });
-const ReceiptBody = z.strictObject({ receipt: AdoptionReceipt });
+const ReceiptBody = z.strictObject({ receipt: AdoptionReceipt, previewId: Hex32 });
 const SignatureAnswer = z.strictObject({ signature: z.string().regex(/^0x(?:[0-9a-fA-F]{2}){65,4096}$/) });
 const AddressAnswer = z.strictObject({ address: Address });
 const ErrorAnswer = z.object({ error: z.string().regex(/^[A-Z_]{2,40}$/) });
@@ -34,6 +34,8 @@ const REFUSALS: ReadonlySet<string> = new Set<SignerRefusalCode>([
   "AUTHORIZATION_EXPIRED",
   "LEDGER_UNAVAILABLE",
   "SIGNING_FAILED",
+  "NOT_PAID",
+  "RECEIPT_ALREADY_SIGNED",
 ]);
 
 /** The signer could not be reached or answered something unusable. Nothing was signed as far as the caller knows. */
@@ -74,7 +76,7 @@ export function socketDirectoryProblem(socketPath: string, options: { readonly o
  *
  * - `GET /address` → `{ address }`
  * - `POST /sign/transfer-authorization` `{ authorization }` → `{ signature }`
- * - `POST /sign/adoption-receipt` `{ receipt }` → `{ signature }`
+ * - `POST /sign/adoption-receipt` `{ receipt, previewId }` → `{ signature }`
  *
  * A refusal answers 403 `{ error: <code> }`. The socket is created under a
  * 0177 umask in a directory this user owns and nobody else can write to
@@ -152,7 +154,7 @@ async function handle(signer: Signer, req: IncomingMessage, res: ServerResponse,
     if (req.url === "/sign/adoption-receipt") {
       const parsed = ReceiptBody.safeParse(body);
       if (!parsed.success) throw new SignerRefusal("BAD_REQUEST");
-      const signature = await signer.signAdoptionReceipt(parsed.data.receipt);
+      const signature = await signer.signAdoptionReceipt(parsed.data.receipt, parsed.data.previewId);
       log?.({ event: "signed.receipt", resolutionId: parsed.data.receipt.resolutionId, outcome: parsed.data.receipt.outcome });
       return answer(res, 200, { signature });
     }
@@ -211,8 +213,8 @@ export class SocketSigner implements Signer {
     return SignatureAnswer.parse(await this.call("POST", "/sign/transfer-authorization", { authorization })).signature.toLowerCase() as Hex;
   }
 
-  async signAdoptionReceipt(receipt: AdoptionReceipt): Promise<string> {
-    return SignatureAnswer.parse(await this.call("POST", "/sign/adoption-receipt", { receipt })).signature.toLowerCase();
+  async signAdoptionReceipt(receipt: AdoptionReceipt, previewId: Hex32): Promise<string> {
+    return SignatureAnswer.parse(await this.call("POST", "/sign/adoption-receipt", { receipt, previewId })).signature.toLowerCase();
   }
 
   private call(method: "GET" | "POST", path: string, body?: unknown): Promise<unknown> {

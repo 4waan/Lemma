@@ -24,6 +24,7 @@ import {
   type RegistryStatus,
   SENDER_OF,
   SendDeadlineError,
+  senderQueues,
   type TxStatus,
   type WarrantyChain,
   type WarrantySender,
@@ -255,7 +256,12 @@ export class FakeRegistry implements WarrantyChain {
     return { status: r.status, releaseDigest: r.releaseDigest, profileIndex: r.profileIndex, amount: r.amount, claimDeadline: r.status === "active" ? this.deadlineOf(r) : 0n };
   }
 
-  async send(call: RegistryCall, options: RegistrySendOptions): Promise<Hex32> {
+  /** Sends from one sender go out one at a time, through the sender's queue, as `viemWarrantyChain` sends them. */
+  send(call: RegistryCall, options: RegistrySendOptions): Promise<Hex32> {
+    return this.queues(SENDER_OF[call.fn], () => this.sendNow(call, options));
+  }
+
+  private async sendNow(call: RegistryCall, options: RegistrySendOptions): Promise<Hex32> {
     this.up();
     const sender = SENDER_OF[call.fn];
     if (this.failSends > 0) {
@@ -281,6 +287,15 @@ export class FakeRegistry implements WarrantyChain {
     this.sent.push({ sender, call, txHash, nonce });
     if (this.mineOnSend) await this.mine();
     return txHash;
+  }
+
+  /** The sender's send queue, as `viemWarrantyChain` keeps it. `exclusiveCalls` records every entry, for tests. */
+  readonly exclusiveCalls: WarrantySender[] = [];
+  private readonly queues = senderQueues();
+
+  exclusive<T>(sender: WarrantySender, task: () => Promise<T>): Promise<T> {
+    this.exclusiveCalls.push(sender);
+    return this.queues(sender, task);
   }
 
   async receiptStatus(txHash: Hex32): Promise<TxStatus> {

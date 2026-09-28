@@ -1,7 +1,7 @@
 import { existsSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
 
-import { type Address, type AdoptionReceipt, toAddress } from "@lemma/core";
+import { type Address, type AdoptionReceipt, type Hex32, toAddress } from "@lemma/core";
 import { zeroAddress } from "viem";
 
 import { buyTool } from "./buy.js";
@@ -16,7 +16,7 @@ export interface BridgePayments {
   /** The buy tool's registrar, for `createBridgeServer({ registerPaidTools })`; absent when purchases are off. */
   readonly registerPaidTools?: ReturnType<typeof buyTool>;
   /** The receipt signing hook for `adoptionTools({ signReceipt })`; absent without a signer. */
-  readonly signReceipt?: (receipt: AdoptionReceipt) => Promise<string>;
+  readonly signReceipt?: (receipt: AdoptionReceipt, previewId: Hex32) => Promise<string>;
   /** Why purchases are off, or a warning, for the bridge's stderr; never a secret. */
   readonly note?: string;
 }
@@ -27,10 +27,11 @@ export interface BridgePayments {
  * (`<state>/signer/signer.sock`). The buy tool is registered only when a signer
  * answers there, in a directory nobody else can write to, the spending policy
  * variables (LEMMA_MAX_USDC_PER_RESOLUTION, LEMMA_DAILY_USDC_CAP,
- * LEMMA_ALLOWED_PAY_TO) parse, and LEMMA_REFUND_TO, when set, is a usable
- * address; receipts are signed whenever the signer answers. With purchases on
- * and no LEMMA_REFUND_TO, the note says warranty credits go to the buyer's
- * own address.
+ * LEMMA_ALLOWED_PAY_TO) parse, and LEMMA_REFUND_TO names a usable address
+ * other than the buyer's own (a refund to the paying wallet would show that
+ * wallet next to the resolution id on chain); receipts are signed whenever
+ * the signer answers. With LEMMA_BUYER_ADDRESS set, a signer that answers another
+ * address is not used at all: neither purchases nor receipts.
  * The bridge itself never holds a wallet secret: the key lives in the signer,
  * and the bridge only asks it to sign. A wallet secret found in the bridge's
  * environment, or the one it started with (`startEnv`, read from /proc by
@@ -58,29 +59,48 @@ export async function paymentsFromEnv(
   // Whoever can write to the socket's directory could answer in the signer's place, and would learn every purchase.
   const unsafe = socketDirectoryProblem(socket, { ownedByMe: false });
   if (unsafe !== undefined) return { note: `purchases are off: ${unsafe}, so a signer there cannot be trusted.${warning}` };
+  const expected = buyerAddressFromEnv(env);
+  if (!expected.ok) return { note: `purchases are off: ${expected.problem}.${warning}` };
   const signer = deps.signerFor?.(socket) ?? new SocketSigner(socket);
+  let answered: Address;
   try {
-    await signer.address();
+    answered = await signer.address();
   } catch {
     return absent;
   }
-  const signReceipt = (receipt: AdoptionReceipt) => signer.signAdoptionReceipt(receipt);
+  // The directory check cannot see a directory another user made under a world-writable parent: the address can.
+  if (expected.address !== undefined && answered !== expected.address) return { note: `purchases are off: the signer at ${where} answers another address than LEMMA_BUYER_ADDRESS, so it is not this buyer's signer.${warning}` };
+  const signReceipt = (receipt: AdoptionReceipt, previewId: Hex32) => signer.signAdoptionReceipt(receipt, previewId);
   const policy = spendingPolicyFromEnv(env);
   if (!policy.ok) return { signReceipt, note: `purchases are off: ${policy.problems.join("; ")}.${warning}` };
   const refund = refundToFromEnv(env);
   if (!refund.ok) return { signReceipt, note: `purchases are off: ${refund.problem}.${warning}` };
+  // A refund to the paying wallet would show that wallet next to the resolution id on chain: a separate address is required.
+  if (refund.address === undefined) return { signReceipt, note: `purchases are off: LEMMA_REFUND_TO is not set; name an address you control other than the buyer's, since withdrawing a warranty credit shows the refund address next to the resolution id on chain.${warning}` };
+  if (refund.address === answered) return { signReceipt, note: `purchases are off: LEMMA_REFUND_TO is the buyer's own address, which a refund would show next to the resolution id on chain; name another address you control.${warning}` };
   const registerPaidTools = buyTool({ signer, policy: policy.policy, ledger: new SpendLedger(join(deps.stateDir, "ledger")), root: deps.root, clock: deps.clock, refundTo: refund.address });
-  const ownRefund =
-    refund.address === undefined
-      ? " Warranty credits go to the buyer's own address, which withdrawing a credit shows next to the resolution id on chain; set LEMMA_REFUND_TO to another address you control to keep the two apart."
-      : "";
-  const note = `${ownRefund}${warning}`.trim();
-  return note === "" ? { registerPaidTools, signReceipt } : { registerPaidTools, signReceipt, note };
+  return warning === "" ? { registerPaidTools, signReceipt } : { registerPaidTools, signReceipt, note: warning.trim() };
 }
 
 /**
- * LEMMA_REFUND_TO: where warranty credits are paid, when not the buyer's own
- * address. Optional; the zero address is refused, since a credit sent there
+ * LEMMA_BUYER_ADDRESS: the address `lemma-signer init` printed. Optional; when
+ * set, the bridge uses a signer only if it answers this address, so a socket
+ * another local user put in the signer's place is refused. Problems name the
+ * variable, never its value.
+ */
+export function buyerAddressFromEnv(env: NodeJS.ProcessEnv): { ok: true; address: Address | undefined } | { ok: false; problem: string } {
+  const value = env["LEMMA_BUYER_ADDRESS"]?.trim();
+  if (value === undefined || value === "") return { ok: true, address: undefined };
+  try {
+    return { ok: true, address: toAddress(value) };
+  } catch {
+    return { ok: false, problem: "LEMMA_BUYER_ADDRESS is not an address with a valid checksum" };
+  }
+}
+
+/**
+ * LEMMA_REFUND_TO: where warranty credits are paid. Purchases need it (see
+ * `paymentsFromEnv`); here unset is `undefined`, and the zero address is refused, since a credit sent there
  * could never be spent. Problems name the variable, never its value.
  */
 export function refundToFromEnv(env: NodeJS.ProcessEnv): { ok: true; address: Address | undefined } | { ok: false; problem: string } {

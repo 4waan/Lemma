@@ -36,6 +36,20 @@ export const SIGN_MARGIN_SECONDS = 180;
 export const BOND_RETRY_MS = 24 * 3_600_000;
 /** `WARRANTY_ACTIVATION_JITTER_SECONDS`'s default. */
 export const DEFAULT_ACTIVATION_JITTER_SECONDS = 300;
+/** `WARRANTY_ACTIVATION_BATCH_SECONDS`'s default: activations go out together once an hour. */
+export const DEFAULT_ACTIVATION_BATCH_SECONDS = 3600;
+
+/**
+ * When an activation written at `now` is due. With batches (`batchSeconds` >
+ * 0), at the next whole multiple of `batchSeconds` since the Unix epoch, so
+ * every activation of that period goes out together at one fixed time; else
+ * after a random delay of up to `jitterSeconds`.
+ */
+export function activationDueAt(now: Date, batchSeconds: number, jitterSeconds: number, jitter: Jitter): Date {
+  const batch = Math.max(0, Math.floor(batchSeconds)) * 1000;
+  if (batch > 0) return new Date(Math.ceil(now.getTime() / batch) * batch);
+  return new Date(now.getTime() + jitter(Math.max(0, Math.floor(jitterSeconds))) * 1000);
+}
 
 /** Why an activation was closed without a voucher to send: a price the registry cannot reserve, say. */
 export const NO_VOUCHER = "NO_VOUCHER";
@@ -52,6 +66,15 @@ export interface ActivatorDeps extends ActionJobDeps {
    * settlements that paid for them. 0 sends at once (tests, local runs).
    */
   readonly jitterSeconds: number;
+  /**
+   * `WARRANTY_ACTIVATION_BATCH_SECONDS`: when above 0, each new activation is
+   * due at the next whole multiple of this many seconds (on the server's
+   * clock, from the Unix epoch) instead of after a random delay, so all the
+   * period's activations are sent together and an observer cannot pair one
+   * activation with the one settlement just before it. 0 (the default here;
+   * the server's config defaults to 3600) uses `jitterSeconds`.
+   */
+  readonly batchSeconds?: number;
   /** Makes a payment reference: 32 random bytes (`crypto.randomBytes` by default). */
   readonly paymentRef?: () => Hex32;
 }
@@ -73,8 +96,9 @@ const randomRef = (): Hex32 => `0x${randomBytes(32).toString("hex")}`;
  * 32 random bytes made once and kept in the action (never derived from the
  * payer, the nonce or the settlement, and one per resolution, so one
  * transaction that paid several resolutions still activates each), and the
- * resolution's `claimHash`. The action is due after a random delay of up to
- * `jitterSeconds`.
+ * resolution's `claimHash`. The action is due at the next batch time
+ * (`batchSeconds`), or with batches off after a random delay of up to
+ * `jitterSeconds` (`activationDueAt`).
  *
  * Then it attempts the due ones (`ActionSender`'s discipline). Before signing
  * it checks on chain that the release is registered, active, and names this
@@ -115,7 +139,7 @@ export class WarrantyActivator {
     try {
       for (const row of await store.listResolutionsToActivate(this.deps.batch ?? 25)) {
         const now = this.deps.clock();
-        const dueAt = new Date(now.getTime() + this.jitter(Math.max(0, Math.floor(this.deps.jitterSeconds))) * 1000);
+        const dueAt = activationDueAt(now, this.deps.batchSeconds ?? 0, this.deps.jitterSeconds, this.jitter);
         const voucher = WarrantyVoucher.safeParse({
           schemaVersion: "1",
           resolutionId: row.resolutionId,

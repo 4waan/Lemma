@@ -64,7 +64,7 @@ Selects the newest applicable local purchase for the capability and package.
 
 ### `lemma_verify_adoption`
 
-Runs the release's acceptance recipe only when the resolution is present and the package still fits the purchased profile. The command runs without a shell, with bounded output, a timeout, a fresh home directory, and wallet-secret checks.
+Runs the release's acceptance recipe only when the resolution is present and the package still fits the purchased profile. The command runs without a shell, with bounded output, a timeout, a fresh home directory, and wallet-secret checks. On Linux it also runs in a sandbox that hides the Lemma state directory and the signer from the tests and ends every process they start (see `LEMMA_ACCEPTANCE_CONFINE`).
 
 The first started run produces the receipt that counts. Retryable delivery failures are kept in the local inbox and sent again later. `lemma-signer` signs the receipt when it answers; without a signer, the receipt is sent unsigned and the server keeps it unverified. The receipt carries `LEMMA_AGENT_ID` when it is set.
 
@@ -113,17 +113,19 @@ lemma-signer serve
 | `LEMMA_WORKSPACE` | Current directory | Repository boundary for scans and writes. |
 | `LEMMA_STATE_DIR` | `$XDG_STATE_HOME/lemma` or `~/.local/state/lemma` | Private inbox, manifests, receipts, journals, exports, and recovery data. |
 | `LEMMA_ACCEPTANCE_OFFLINE` | unset | Set to `1` on Linux to run acceptance in a network namespace. |
+| `LEMMA_ACCEPTANCE_CONFINE` | on where it works | Set to `0` to run acceptance tests without the Linux sandbox (user, mount and PID namespaces) that hides the state directory and the signer socket's directory from them. Where unprivileged user namespaces are unavailable, tests run unconfined and the bridge warns at startup. |
 | `LEMMA_BRIDGE_TRACE` | unset | Benchmark-only path for minimal tool-call tracing. |
 | `LEMMA_AGENT_ID` | unset | This agent's own ERC-8004 agent id, a decimal number. Opt-in: sent as `agentId` with every adoption receipt. An invalid value stops the bridge at startup. |
 | `LEMMA_SIGNER_SOCKET` | `<state>/signer/signer.sock` | Socket of `lemma-signer`. Purchases stay off while no signer answers there. |
 | `LEMMA_MAX_USDC_PER_RESOLUTION` | unset | Most one purchase may cost, in atomic USDC (`250000` is 0.25 USDC). |
 | `LEMMA_DAILY_USDC_CAP` | unset | Most spent in a rolling 24 hours, in atomic USDC. |
 | `LEMMA_ALLOWED_PAY_TO` | unset | Comma-separated recipient addresses the buyer will pay. |
-| `LEMMA_REFUND_TO` | Buyer address | Where warranty credits are paid. Withdrawing a credit shows this address next to the public resolution id on chain. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
+| `LEMMA_BUYER_ADDRESS` | unset | The address `lemma-signer init` printed. When set, a signer that answers another address is not used for purchases or receipts, so a socket another local user put in its place is refused. |
+| `LEMMA_REFUND_TO` | unset (required for purchases) | Where warranty credits are paid: an address you control other than the buyer's. Withdrawing a credit shows this address next to the public resolution id on chain, so purchases stay off while it is unset or is the buyer's own address. Each claim commits to the address set at purchase, so a change applies only to later purchases. |
 
 The state directory must be absolute and outside the workspace. Empty values count as unset.
 
-Purchases need a signer and all three policy variables; decimal amounts are refused. The network and asset are fixed to Arbitrum Sepolia USDC, and authorizations to at most 600 seconds. The signer reads the same policy variables, plus `LEMMA_SIGNER_KEY_FILE` (default `<state>/signer/key`) and `LEMMA_SIGNER_SOCKET_MODE` (`600`, or `660` for a signer run as another user). Set those two only in the signer's environment.
+Purchases need a signer, all three policy variables, and `LEMMA_REFUND_TO`; decimal amounts are refused. The network and asset are fixed to Arbitrum Sepolia USDC, and authorizations to at most 600 seconds. The signer reads the same policy variables, plus `LEMMA_SIGNER_KEY_FILE` (default `<state>/signer/key`) and `LEMMA_SIGNER_SOCKET_MODE` (`600`, or `660` for a signer run as another user). Set those two only in the signer's environment.
 
 `LEMMA_AGENT_ID` opts the agent into public, task-specific reputation: once an outcome is finalized, Lemma's attester gives the agent the same feedback it gives the provider, at no cost to the buyer and with no extra tool step. The server posts to the agent only when the address that paid owns it or is its ERC-8004 agent wallet. So opting in publishes, on chain and for good, that the paying wallet adopted each resolution. Without it, no receipt names an agent. It is the buyer agent's id, not the server's `LEMMA_AGENT_ID` (the provider's): set it only in the bridge's MCP configuration.
 

@@ -2,7 +2,7 @@ import { lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { checkReleaseProfile } from "@lemma/catalog";
-import { type AdoptionReceipt, CapabilityId, type CapabilityRelease, type Hex32, type ReasonCode, type RepositoryProfile, type Resolution, type ResolutionDelivery, acceptanceArgv, fileDigest, profileDigest } from "@lemma/core";
+import { type AdoptionReceipt, CapabilityId, type CapabilityRelease, type Hex32, type ReasonCode, type RepositoryProfile, type Resolution, type ResolutionDelivery, acceptanceArgv, adoptionReceiptDigest, fileDigest, profileDigest } from "@lemma/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
@@ -56,8 +56,13 @@ export interface AdoptionDeps {
   readonly offlineAcceptance: boolean;
   /** Longest a dependency install may take. */
   readonly installTimeoutSec: number;
+  /**
+   * Paths acceptance tests must not see (the signer's socket and its
+   * directory); the state directory is always among them. False runs tests unconfined (LEMMA_ACCEPTANCE_CONFINE=0).
+   */
+  readonly acceptanceHidden?: readonly string[] | false;
   /** The payment work's signing hook: the receipt's signature, or null to send it unsigned. */
-  readonly signReceipt?: ((receipt: AdoptionReceipt) => Promise<AdoptionReceipt["signature"]>) | undefined;
+  readonly signReceipt?: ((receipt: AdoptionReceipt, previewId: Hex32) => Promise<AdoptionReceipt["signature"]>) | undefined;
 }
 
 const Target = { capability: CapabilityId, package: PackagePath.optional() };
@@ -185,7 +190,9 @@ async function verify(deps: AdoptionDeps, ctx: PaidToolContext, capability: Capa
   const command = { manager, script: release.acceptanceRecipe.script };
   // Without the script the recipe runs, the package manager fails before any test: that is no result either.
   if (acceptanceScriptMissing(packageDir, release.acceptanceRecipe.script)) return notStartedText(command, "script-missing");
-  const run = await runAcceptance(acceptanceArgv(release.acceptanceRecipe, manager), { cwd: packageDir, recipe: release.acceptanceRecipe, offline: deps.offlineAcceptance });
+  // Confined where it works: the tests cannot read the purchase's preview id and claim, or reach the signer, so they cannot sign or post a receipt first.
+  const hide = deps.acceptanceHidden === false ? [] : [deps.inbox.dir, ...(deps.acceptanceHidden ?? [])];
+  const run = await runAcceptance(acceptanceArgv(release.acceptanceRecipe, manager), { cwd: packageDir, recipe: release.acceptanceRecipe, offline: deps.offlineAcceptance, hide });
   if (!run.started) return notStartedText(command, run.notStarted);
 
   // A failed receipt that counts, on a purchase under warranty, gets the line naming the refund tool.
@@ -194,32 +201,33 @@ async function verify(deps: AdoptionDeps, ctx: PaidToolContext, capability: Capa
     return warrantyHintMayApply(outcome, note) && (await underWarranty(deps, resolutionId)) ? withWarrantyHint(text) : text;
   };
 
-  // The first run's receipt is the one that counts; a later run only retries sending (or signing) it, and every answer says so.
-  if (earlier !== undefined) {
-    const first = earlier.receipt.outcome;
-    if (earlier.answer !== null) return answer(earlier.answer === "ACCEPTED" || earlier.answer === "DUPLICATE" ? "recorded-before" : earlier.answer, first, first);
-    let stored = earlier;
+  // Signs a stored receipt that still needs it, then sends it. Unsigned, it is kept and never sent: the first write wins on the server, so an unsigned copy would block the signed one.
+  const signAndSend = async (stored: StoredReceipt, first?: AdoptionReceipt["outcome"]) => {
     if (stored.needsSignature) {
-      const signature = await sign(deps, stored.receipt);
-      if (signature === "failed") return answer("unsigned", first, first);
+      const signature = await sign(deps, stored.receipt, stored.previewId);
+      if (signature === "failed") return answer("unsigned", stored.receipt.outcome, first);
       stored = { ...stored, receipt: { ...stored.receipt, signature }, needsSignature: false };
       deps.inbox.putReceipt(stored);
     }
-    return answer(await send(deps, stored), first, first);
-  }
+    return answer(await send(deps, stored), stored.receipt.outcome, first);
+  };
+
+  // The first run's receipt is the one that counts; a later run only retries sending (or signing) it, and every answer says so.
+  const counted = (stored: StoredReceipt) => {
+    const first = stored.receipt.outcome;
+    if (stored.answer !== null) return answer(stored.answer === "ACCEPTED" || stored.answer === "DUPLICATE" ? "recorded-before" : stored.answer, first, first);
+    return signAndSend(stored, first);
+  };
+  if (earlier !== undefined) return counted(earlier);
 
   // Never dated before the resolution: a buyer clock running slow would make the server refuse it.
   const now = new Date(Math.max(deps.clock().getTime(), Date.parse(delivery.resolution.createdAt)));
   const receipt = receiptFor(resolutionId, run, now);
-  const signature = await sign(deps, receipt);
-  if (signature === "failed") {
-    // Kept, never sent unsigned: the first write wins on the server, so an unsigned copy would block the signed one.
-    deps.inbox.putReceipt({ receipt, previewId, answer: null, lastAnswer: null, needsSignature: true });
-    return answer("unsigned", receipt.outcome);
-  }
-  const stored = { receipt: { ...receipt, signature }, previewId, answer: null, lastAnswer: null, needsSignature: false };
-  deps.inbox.putReceipt(stored);
-  return answer(await send(deps, stored), receipt.outcome);
+  // Stored before it is signed: after a crash between the signer recording it and the bridge storing it, the same receipt is signed again (the signer
+  // allows that), where a new one would be refused. A run that finished at the same time as another one keeps the receipt stored first.
+  const stored = deps.inbox.firstReceipt({ receipt, previewId, answer: null, lastAnswer: null, needsSignature: true });
+  if (adoptionReceiptDigest(stored.receipt) !== adoptionReceiptDigest(receipt)) return counted(stored);
+  return signAndSend(stored);
 }
 
 /**
@@ -240,10 +248,10 @@ async function underWarranty(deps: AdoptionDeps, resolutionId: Hex32): Promise<b
 }
 
 /** The receipt's signature from the payment work's hook: null without a hook, "failed" when the hook throws. */
-async function sign(deps: AdoptionDeps, receipt: AdoptionReceipt): Promise<AdoptionReceipt["signature"] | "failed"> {
+async function sign(deps: AdoptionDeps, receipt: AdoptionReceipt, previewId: Hex32): Promise<AdoptionReceipt["signature"] | "failed"> {
   if (deps.signReceipt === undefined) return null;
   try {
-    return await deps.signReceipt(receipt);
+    return await deps.signReceipt(receipt, previewId);
   } catch {
     return "failed";
   }

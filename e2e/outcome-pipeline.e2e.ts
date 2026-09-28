@@ -91,6 +91,8 @@ describe("the outcome pipeline on a local chain", () => {
     EVALUATOR_PRIVATE_KEY: roles.evaluator.key,
     EVALUATOR_FAILURES: "auto",
     WARRANTY_ACTIVATION_JITTER_SECONDS: "0",
+    WARRANTY_ACTIVATION_BATCH_SECONDS: "0",
+    BUYER_COUNTS_REFRESH_SECONDS: "0",
     // A shallow depth, so the run waits seconds rather than the minute 64 blocks of anvil's one-second blocks take.
     WARRANTY_INDEXER_CONFIRMATIONS: "2",
     EXPLORER_BASE_URL: "",
@@ -144,7 +146,8 @@ describe("the outcome pipeline on a local chain", () => {
     return b;
   };
   const bridgeFor = async (key: Hex, variant: "pass" | "fail", refundTo?: Address, signer = inProcessSigner(key, roles.provider.address, tmp)) => {
-    const b = await startBridge({ apiUrl: server.url, signer, provider: roles.provider.address, variant, dir: tmp, ...(refundTo === undefined ? {} : { refundTo }) });
+    // Purchases need a refund address apart from the paying wallet: a fresh one unless the scenario names it.
+    const b = await startBridge({ apiUrl: server.url, signer, provider: roles.provider.address, variant, dir: tmp, refundTo: refundTo ?? runtimeKey().address });
     bridges.push(b);
     return b;
   };

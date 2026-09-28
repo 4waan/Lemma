@@ -15,7 +15,7 @@ import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
 import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
 import { loadOpenAiPrices, openAiPricesDigest } from "./openai-usage.js";
-import { isProbeMeasurement, nextProbeSlot, probeVerdict } from "./probe.js";
+import { isProbeMeasurement, nextProbeSlot, probeReplacementsLeft, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
 import { RunLog } from "./records.js";
@@ -148,7 +148,7 @@ function assertSameAgent(bound: AgentSetup): void {
 
 interface OpenAgent {
   readonly adapter: AgentAdapter;
-  /** Checks, without a benchmark run, that the key can use the model (Claude Code and Codex: with one tiny request). */
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code and Codex: with one tiny request; a Codex ChatGPT login: with one short run). */
   checkModel(model: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -167,7 +167,7 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
   }
   if (setup.name === "codex" && setup.login !== undefined) {
     const codex = new CodexAdapter(null, { command: findCodex(), meterDir, prices: loadOpenAiPrices(), chatgptLogin: codexLoginHome() });
-    return { adapter: codex, checkModel: async (model) => codex.checkLogin(model), close: () => codex.close() };
+    return { adapter: codex, checkModel: (model) => inScratch((dir) => codex.checkLogin(model, dir)), close: () => codex.close() };
   }
   if (setup.name === "codex") {
     const codex = new CodexAdapter(await readKey("codex"), { command: findCodex(), meterDir, prices: loadOpenAiPrices() });
@@ -176,6 +176,23 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
   if (process.getuid?.() === 0) throw new Error("Claude Code will not run with permission checks off as root, and a benchmark run cannot stop for prompts: run the harness as a normal user");
   const claude = new ClaudeCodeAdapter(await readKey("claude-code"), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices() });
   return { adapter: claude, checkModel: (model) => claude.checkModel(model), close: () => claude.close() };
+}
+
+/**
+ * Runs a check that starts an agent in a fresh directory under the run base,
+ * which is outside the repository and below no ambient settings, then kills
+ * whatever the agent left running and removes the directory.
+ */
+async function inScratch(check: (dir: string) => Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(prepareRunBase(runBase(), REPOSITORY_ROOT), "check-"));
+  const untrack = trackHome(join(dir, "home"));
+  try {
+    await check(dir);
+  } finally {
+    killByHome(join(dir, "home"));
+    untrack();
+    removeTree(dir);
+  }
 }
 
 /** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's or Codex's meter records (without one). */
@@ -354,7 +371,15 @@ async function probeRuns(v: string, taskId: string, fixture: LoadedBenchmarkFixt
     announce(taskId, slot.arm, slot.repetition, fixture);
     const attempt = await runSlot(slot, 1, { ...base, preApply: slot.arm === "treatment" ? bundle : null });
     log.appendAttempt(attempt);
-    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    const startup = attempt.startupFailure ? ` (startup failure: ${attempt.startupReason})` : "";
+    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}${startup}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    // The replacement waits for the next invocation: what failed this run (a plan's usage limit, a
+    // lost login, credit that ran out) would fail the replacements too and use them all up at once.
+    // With none left, nextProbeSlot gives up instead.
+    const left = probeReplacementsLeft(log.attempts(), taskId, slot.arm);
+    if (!isProbeMeasurement(attempt) && left >= 0) {
+      throw new Error(`${taskId} ${slot.arm} #${slot.repetition} measured nothing, so the probe stopped rather than replace it straight away (${left} ${left === 1 ? "replacement" : "replacements"} left for the ${slot.arm} runs). Once its cause is fixed or has passed, run the same command again: it continues where it stopped.`);
+    }
   }
   // Only the runs the verdict can use are waited for: one that measured nothing (an interrupted run
   // has no meter record) may never settle, and the verdict does not read it.

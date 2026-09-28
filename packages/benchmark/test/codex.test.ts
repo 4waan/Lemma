@@ -505,7 +505,8 @@ describe("the Codex treatment", () => {
  * A stand-in `codex` signed in with ChatGPT: it answers `login status` from
  * its auth.json, records what a run got, never calls a model, and reports
  * token counts as its prompt says: at the end of the turn, only in its
- * session log (it hangs until its deadline), or not at all.
+ * session log (it hangs until its deadline), as zeros, or not at all. A login
+ * whose tokens are "limited" has used up its plan: every turn fails.
  */
 function fakeChatgptCodex(dir: string): string {
   const path = join(dir, "codex-chatgpt.mjs");
@@ -518,6 +519,7 @@ const args = process.argv.slice(2);
 const auth = join(process.env.CODEX_HOME, "auth.json");
 if (args[0] === "login") {
   if (existsSync(auth) && readFileSync(auth, "utf8").includes("chatgpt")) { console.log("Logged in using ChatGPT"); process.exit(0); }
+  if (existsSync(auth) && readFileSync(auth, "utf8").includes("apikey")) { console.log("Logged in using an API key - sk-proj-***" + "ABCDE"); process.exit(0); }
   console.log("Not logged in"); process.exit(1);
 }
 let prompt = "";
@@ -527,8 +529,22 @@ writeFileSync("seen.json", JSON.stringify({ args, env: process.env, config, auth
 const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
 out({ type: "thread.started", thread_id: "019a3c5e-1f0e-7c1e-9a55-2f3d4c5b6a71" });
 const total = { input_tokens: 1000, cached_input_tokens: 200, cache_write_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 10, total_tokens: 1050 };
+if (JSON.parse(readFileSync(auth, "utf8")).tokens === "limited") {
+  const message = "You've hit your usage limit. Try again in 2 hours 13 minutes.";
+  out({ type: "turn.started" });
+  out({ type: "error", message });
+  out({ type: "turn.failed", error: { message } });
+  process.exit(1);
+}
 if (prompt === "refresh") writeFileSync(auth, JSON.stringify({ auth_mode: "chatgpt", tokens: "refreshed" }));
-if (prompt === "hang") {
+if (prompt === "torn") writeFileSync(auth, '{"auth_mode": "chatgpt", "tok');
+if (prompt === "reroute") out({ type: "item.completed", item: { id: "item_0", type: "error", message: "model rerouted: gpt-5.5 -> gpt-5.4-mini (HighRiskCyberActivity)" } });
+if (prompt === "subagent") {
+  out({ type: "item.started", item: { id: "item_1", type: "collab_tool_call", status: "in_progress" } });
+  out({ type: "item.completed", item: { id: "item_1", type: "collab_tool_call", status: "completed" } });
+}
+if (prompt === "zero") out({ type: "turn.completed", usage: { input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, reasoning_output_tokens: 0 } });
+else if (prompt === "hang") {
   const day = join(process.env.CODEX_HOME, "sessions", "2026", "09", "28");
   mkdirSync(day, { recursive: true });
   const line = (n) => JSON.stringify({ timestamp: "2026-09-28T00:00:00Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { ...total, output_tokens: n }, last_token_usage: total } } });
@@ -614,13 +630,47 @@ describe("CodexAdapter on a ChatGPT login (probes only)", { timeout: 20_000 }, (
     await adapter.close();
   });
 
-  it("checks for free that Codex is signed in with ChatGPT and the model is priced", async () => {
-    expect(() => setup().adapter.checkLogin("gpt-5.5")).not.toThrow();
-    expect(() => setup().adapter.checkLogin("gpt-9")).toThrow(/not in prices\/openai\.json/);
-    expect(() => setup({ auth_mode: "apikey", tokens: "" }).adapter.checkLogin("gpt-5.5")).toThrow(/not signed in with ChatGPT/);
+  it("costs nothing, rather than guessing, when Codex's counts are zeros, a run moved model, or used subagents", async () => {
+    const { adapter, request } = setup();
+    await adapter.run(request("zero"));
+    await expect(adapter.usage(THREAD)).rejects.toThrow(/reported no token counts/);
+    expect(await adapter.run(request("reroute"))).toMatchObject({ status: "finished" });
+    await expect(adapter.usage(THREAD)).rejects.toThrow(/moved the run to another model \(model rerouted: gpt-5\.5 -> gpt-5\.4-mini/);
+    await adapter.run(request("subagent"));
+    await expect(adapter.usage(THREAD)).rejects.toThrow(/used subagents/);
+    await adapter.close();
+  });
+
+  it("keeps the user's login when a run leaves its copy half written", async () => {
+    const { adapter, loginHome, request } = setup();
+    await adapter.run(request("torn"));
+    expect(JSON.parse(readFileSync(join(loginHome, "auth.json"), "utf8"))).toEqual({ auth_mode: "chatgpt", tokens: "original" });
+    await adapter.close();
+  });
+
+  it("reports a plan's usage limit as the run's error, in Codex's words", async () => {
+    const { adapter, request } = setup({ auth_mode: "chatgpt", tokens: "limited" });
+    expect(await adapter.run(request("finish"))).toMatchObject({ status: "error", agentId: THREAD, error: "You've hit your usage limit. Try again in 2 hours 13 minutes." });
+    await adapter.close();
+  });
+
+  it("checks the login and the model with one short run, and says why the probe cannot start", async () => {
+    const scratch = () => temp("lemma-codex-check-");
+    const ok = setup();
+    const dir = scratch();
+    await ok.adapter.checkLogin("gpt-5.5", dir);
+    expect(JSON.parse(readFileSync(join(dir, "work", "seen.json"), "utf8"))).toMatchObject({ args: expect.arrayContaining(["--model", "gpt-5.5"]) });
+    // The check's run leaves no meter record, so a later run cannot mistake it for one of its own.
+    expect(existsSync(ok.meterDir)).toBe(false);
+    await expect(setup().adapter.checkLogin("gpt-9", scratch())).rejects.toThrow(/not in prices\/openai\.json/);
+    await expect(setup({ auth_mode: "chatgpt", tokens: "limited" }).adapter.checkLogin("gpt-5.5", scratch())).rejects.toThrow(/short Codex run on gpt-5\.5 with this login ended with error: You've hit your usage limit/);
+    const key = setup({ auth_mode: "apikey", tokens: "" }).adapter.checkLogin("gpt-5.5", scratch());
+    await expect(key).rejects.toThrow(/signed in here, but not with ChatGPT/);
+    await expect(key).rejects.not.toThrow(/sk-/);
     const { adapter, loginHome } = setup();
     rmSync(join(loginHome, "auth.json"));
-    expect(() => adapter.checkLogin("gpt-5.5")).toThrow(/codex login --device-auth/);
+    await expect(adapter.checkLogin("gpt-5.5", scratch())).rejects.toThrow(/codex login --device-auth/);
+    await expect(adapter.checkModel("gpt-5.5")).rejects.toThrow(/checkLogin/);
   });
 
   it("is a Codex-only setting of the version's agent", () => {

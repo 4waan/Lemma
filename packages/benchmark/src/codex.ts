@@ -19,6 +19,8 @@ const PROVIDER = "lemma-meter";
 const TOKEN_VARIABLE = "LEMMA_METER_TOKEN";
 /** Codex reads system-wide settings here; the harness refuses to run Codex below them. */
 const SYSTEM_CONFIG_DIR = "/etc/codex";
+/** How long the ChatGPT login check's one short run may take. */
+const LOGIN_CHECK_MS = 120_000;
 
 export interface CodexOptions {
   /** Absolute path of the `codex` executable. Only `run` needs it. */
@@ -73,7 +75,9 @@ export interface CodexOptions {
  * stopped at its deadline, from the last token count in the session log that
  * Codex keeps in the run's home (a reply cut off at the deadline is then not
  * counted). Subagents are turned off, because their tokens are not in the
- * thread's counts.
+ * thread's counts. Counts of zero, a run Codex moved to another model, and a
+ * run that used subagents or web search anyway leave the cost unknown
+ * (`uncounted`).
  */
 export class CodexAdapter implements AgentAdapter {
   readonly kind = "codex" as const;
@@ -92,11 +96,16 @@ export class CodexAdapter implements AgentAdapter {
   }
 
   /**
-   * For a ChatGPT login, the free check before a probe: the table prices
-   * `model`, and `codex login status` says Codex is signed in with ChatGPT.
-   * Nothing is sent to the model.
+   * For a ChatGPT login, the check before a probe: the table prices `model`,
+   * `codex login status` says Codex is signed in with ChatGPT, and one short
+   * run on `model` ends normally. That run is a real one, made the way every
+   * run is, in `scratchDir` (an empty directory outside the repository, which
+   * the caller removes), so a model the plan cannot use, a usage limit already
+   * reached, or a Codex that cannot start stops the probe before it binds its
+   * version or spends a run. It uses a sliver of the plan's usage, no money,
+   * and is in no run's cost.
    */
-  checkLogin(model: string): void {
+  async checkLogin(model: string, scratchDir: string): Promise<void> {
     const login = this.options.chatgptLogin;
     if (login === undefined) throw new Error("this Codex adapter runs on an API key");
     if (openAiModelPrice(this.options.prices, model) === undefined) throw new Error(`model ${model} is not in prices/openai.json; use an exact model id the table prices`);
@@ -104,8 +113,16 @@ export class CodexAdapter implements AgentAdapter {
     if (command === null) throw new Error("no codex executable was given to run agents with");
     if (!existsSync(join(login, "auth.json"))) throw new Error(`no Codex login in ${login}: run \`codex login --device-auth\` as this user first`);
     const status = spawnSync(command, ["login", "status"], { encoding: "utf8", timeout: 30_000, env: { PATH: process.env["PATH"] ?? "/usr/bin:/bin", HOME: process.env["HOME"] ?? "/", CODEX_HOME: login }, stdio: ["ignore", "pipe", "pipe"] });
-    const said = `${status.stdout ?? ""}${status.stderr ?? ""}`;
-    if (status.status !== 0 || !/chatgpt/i.test(said)) throw new Error(`Codex is not signed in with ChatGPT (codex login status: ${said.trim().slice(0, 200) || `exit ${status.status}`}); run \`codex login --device-auth\` as this user first`);
+    const said = `${status.stdout ?? ""}${status.stderr ?? ""}`.trim();
+    if (status.status !== 0) throw new Error(`Codex is not signed in (codex login status: ${said.slice(0, 200) || `exit ${status.status}`}); run \`codex login --device-auth\` as this user first`);
+    // Not quoted: for a key login, the status line shows part of the key.
+    if (!/chatgpt/i.test(said)) throw new Error("Codex is signed in here, but not with ChatGPT; run `codex logout`, then `codex login --device-auth`, as this user");
+    const cwd = join(scratchDir, "work");
+    const home = join(scratchDir, "home");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(join(home, "tmp"), { recursive: true });
+    const outcome = await this.execute({ cwd, home, prompt: "Reply with the single word OK and do nothing else.", model: { id: model }, mcpServers: {}, timeoutMs: LOGIN_CHECK_MS }, false);
+    if (outcome.status !== "finished") throw new Error(`a short Codex run on ${model} with this login ended with ${outcome.status}: ${outcome.error ?? "no reason given"}`);
   }
 
   /**
@@ -116,7 +133,7 @@ export class CodexAdapter implements AgentAdapter {
    * is not part of any run's cost.
    */
   async checkModel(model: string): Promise<void> {
-    if (this.apiKey === null) return this.checkLogin(model);
+    if (this.apiKey === null) throw new Error("a ChatGPT login is checked with checkLogin");
     if (openAiModelPrice(this.options.prices, model) === undefined) throw new Error(`model ${model} is not in prices/openai.json; use an exact model id the table prices`);
     const url = `${(this.options.upstream ?? "https://api.openai.com").replace(/\/+$/, "")}/v1/responses`;
     // 16 is the smallest output limit the API accepts; a reply cut off there still proves the key can use the model.
@@ -139,7 +156,12 @@ export class CodexAdapter implements AgentAdapter {
     throw new Error(`a short request to ${model} failed: HTTP ${response.status} ${error.type || error.code}`.trim());
   }
 
-  async run(request: AgentRunRequest): Promise<AgentRunOutcome> {
+  run(request: AgentRunRequest): Promise<AgentRunOutcome> {
+    return this.execute(request, true);
+  }
+
+  /** One Codex run; `keepRecord` false leaves no meter record (the login check's run). */
+  private async execute(request: AgentRunRequest, keepRecord: boolean): Promise<AgentRunOutcome> {
     const startedAt = new Date().toISOString();
     const command = this.options.command;
     if (command === null) throw new Error("no codex executable was given to run agents with");
@@ -171,7 +193,7 @@ export class CodexAdapter implements AgentAdapter {
       env = { ...childEnv(request.home), CODEX_HOME: codexHome };
     }
 
-    const seen: RunSeen = { agentId: null, result: null, failure: null, lastError: null, calls: new Map() };
+    const seen: RunSeen = { agentId: null, result: null, failure: null, lastError: null, rerouted: null, calls: new Map() };
     const ran = await superviseAgent({
       command,
       args,
@@ -190,6 +212,9 @@ export class CodexAdapter implements AgentAdapter {
         }
         trackItem(event, seen.calls);
         if (event.type === "error" && typeof event.message === "string") seen.lastError = event.message;
+        // Codex says so in an error item: "model rerouted: <from> -> <to> (<reason>)".
+        const said = event.type === "item.completed" && event.item?.type === "error" ? event.item.message : undefined;
+        if (seen.rerouted === null && typeof said === "string" && said.startsWith("model rerouted")) seen.rerouted = said.slice(0, 200);
         if (seen.result === null && seen.failure === null) {
           if (event.type === "turn.completed") {
             seen.result = event;
@@ -202,7 +227,7 @@ export class CodexAdapter implements AgentAdapter {
       },
     });
 
-    const usage = seen.result === null ? null : reportedUsage(seen.result.usage);
+    const usage = reportedUsage(counted(seen.result?.usage));
     let reading: MeterReading;
     if (this.proxy !== null && token !== null) {
       // Every response the run started is read to its end before the run counts as over.
@@ -210,9 +235,9 @@ export class CodexAdapter implements AgentAdapter {
     } else {
       // Codex may have refreshed the login during the run; the next run needs the refreshed one.
       copyLogin(join(codexHome, "auth.json"), join(login as string, "auth.json"), true);
-      reading = agentReading(this.options.prices, request.model.id, seen.result?.usage ?? lastSessionUsage(join(codexHome, "sessions")));
+      reading = agentReading(this.options.prices, request.model.id, counted(seen.result?.usage) ?? counted(lastSessionUsage(join(codexHome, "sessions"))), uncounted(seen));
     }
-    if (seen.agentId !== null) {
+    if (seen.agentId !== null && keepRecord) {
       const record = MeterRecord.parse({
         schemaVersion: "1",
         agentId: seen.agentId,
@@ -348,7 +373,7 @@ interface ThreadEvent {
   readonly thread_id?: unknown;
   readonly message?: unknown;
   readonly error?: { readonly message?: unknown };
-  readonly item?: { readonly id?: unknown; readonly type?: unknown; readonly status?: unknown; readonly server?: unknown; readonly tool?: unknown };
+  readonly item?: { readonly id?: unknown; readonly type?: unknown; readonly status?: unknown; readonly server?: unknown; readonly tool?: unknown; readonly message?: unknown };
   readonly usage?: Record<string, unknown>;
 }
 
@@ -381,12 +406,19 @@ function trackItem(event: ThreadEvent, calls: Map<string, ToolCallSummary>): voi
 const count = (value: unknown): number => (typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : 0);
 
 /**
+ * Token counts that counted at least one reply, else null. Every reply reads a
+ * prompt, so counts without input tokens counted none: Codex reports zeros
+ * when it never received usage, and a run is then not free but unknown.
+ */
+const counted = (u: Record<string, unknown> | undefined | null): Record<string, unknown> | null => (u !== undefined && u !== null && count(u["input_tokens"]) > 0 ? u : null);
+
+/**
  * The tokens Codex reported for the run (`turn.completed`: the thread's
  * totals), split as the meter splits them: cached and cache-write tokens are
  * parts of input, so uncached input is what is left.
  */
-function reportedUsage(u: Record<string, unknown> | undefined | null): ReportedUsage | null {
-  if (u === undefined || u === null) return null;
+function reportedUsage(u: Record<string, unknown> | null): ReportedUsage | null {
+  if (u === null) return null;
   const input = count(u["input_tokens"]);
   const cacheReadTokens = count(u["cached_input_tokens"]);
   const cacheWriteTokens = count(u["cache_write_input_tokens"]);
@@ -402,7 +434,24 @@ interface RunSeen {
   failure: string | null;
   /** The last error Codex printed, which explains a run that ended without a result. */
   lastError: string | null;
+  /** Codex's notice that it moved the run to another model, when it did. */
+  rerouted: string | null;
   readonly calls: Map<string, ToolCallSummary>;
+}
+
+/**
+ * Why a ChatGPT-login run's thread counts cannot be priced as its model's
+ * tokens: the run moved to another model, used subagents (their tokens are
+ * not in the thread's counts), or searched the web (billed per call, which the
+ * table does not price). The run's settings turn the last two off.
+ */
+function uncounted(seen: RunSeen): string[] {
+  const used = new Set([...seen.calls.values()].map((c) => c.name));
+  return [
+    ...(seen.rerouted === null ? [] : [`Codex moved the run to another model (${seen.rerouted}), and its counts do not say which model used which tokens`]),
+    ...(used.has("subagent") ? ["the run used subagents, whose tokens are not in Codex's counts for the run"] : []),
+    ...(used.has("web_search") ? ["the run searched the web, which is billed per call and not in the price table"] : []),
+  ];
 }
 
 function outcomeOf(startedAt: string, seen: RunSeen, ran: { killedAtDeadline: boolean; spawnError: string | null; stderr: string }, usage: ReportedUsage | null): AgentRunOutcome {
@@ -420,10 +469,24 @@ function outcomeOf(startedAt: string, seen: RunSeen, ran: { killedAtDeadline: bo
   return { agentId: seen.agentId, status: "error", startedAt, finishedAt, toolCalls, usage, error: error.slice(0, 500) };
 }
 
-/** Copies a Codex login file, readable by this user only; `ifChanged` skips a copy that would change nothing (or has nothing to copy). */
-function copyLogin(from: string, to: string, ifChanged = false): void {
-  if (ifChanged && (!existsSync(from) || (existsSync(to) && readFileSync(from).equals(readFileSync(to))))) return;
-  writeFileSync(`${to}.tmp`, readFileSync(from), { mode: 0o600 });
+/**
+ * Copies a Codex login file, readable by this user only. `back` copies a run's
+ * login back over the user's: only when the run changed it, and only when it
+ * is whole JSON, because Codex writes it in place and a run stopped at its
+ * deadline can leave it half written.
+ */
+function copyLogin(from: string, to: string, back = false): void {
+  if (back && !existsSync(from)) return;
+  const login = readFileSync(from);
+  if (back) {
+    if (existsSync(to) && login.equals(readFileSync(to))) return;
+    try {
+      JSON.parse(login.toString("utf8"));
+    } catch {
+      return;
+    }
+  }
+  writeFileSync(`${to}.tmp`, login, { mode: 0o600 });
   chmodSync(`${to}.tmp`, 0o600);
   renameSync(`${to}.tmp`, to);
 }
@@ -462,11 +525,12 @@ export function lastSessionUsage(sessionsDir: string): Record<string, unknown> |
  * A ChatGPT-login run's reading from Codex's own thread totals, priced at
  * list price as one reply. The long-context check is per reply and cannot
  * apply to a thread's totals; Codex keeps each reply under the model's
- * 272K-token window. No counts at all leave the cost unknown.
+ * 272K-token window. No counts at all leave the cost unknown, and so does any
+ * reason in `unpriced` (`uncounted`).
  */
-function agentReading(prices: OpenAiPrices, model: string, u: Record<string, unknown> | null): MeterReading {
+function agentReading(prices: OpenAiPrices, model: string, u: Record<string, unknown> | null, unpriced: readonly string[]): MeterReading {
   const empty = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, reasoningTokens: 0 };
-  if (u === null) return { responses: 0, incomplete: 1, unpriced: [], models: [], usage: empty, webSearches: 0, costMicroUsd: "0" };
+  if (u === null) return { responses: 0, incomplete: 1, unpriced: [...unpriced], models: [], usage: empty, webSearches: 0, costMicroUsd: "0" };
   const reply: OpenAiReply = {
     usage: {
       input_tokens: count(u["input_tokens"]),
@@ -482,7 +546,7 @@ function agentReading(prices: OpenAiPrices, model: string, u: Record<string, unk
   return {
     responses: 0,
     incomplete: 0,
-    unpriced: cost.ok ? [] : [cost.reason],
+    unpriced: [...(cost.ok ? [] : [cost.reason]), ...unpriced],
     models: [model],
     usage: { inputTokens: t.input, outputTokens: t.output, cacheReadTokens: t.cacheRead, cacheWriteTokens: t.cacheWrite, totalTokens: t.input + t.output + t.cacheRead + t.cacheWrite, reasoningTokens: t.reasoning },
     webSearches: 0,

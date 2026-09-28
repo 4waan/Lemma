@@ -18,7 +18,8 @@ export const PROBE_EXTRA_ATTEMPTS = 2;
  */
 const MEASURED: ReadonlySet<Attempt["status"]> = new Set(["finished", "timeout"]);
 
-const measured = (a: Attempt) => !a.startupFailure && MEASURED.has(a.status);
+/** Whether an attempt is a probe measurement: it started, and finished or timed out (MEASURED). */
+export const isProbeMeasurement = (a: Attempt): boolean => !a.startupFailure && MEASURED.has(a.status);
 const byStart = (a: Attempt, b: Attempt) => (a.startedAt === b.startedAt ? (a.runId < b.runId ? -1 : 1) : a.startedAt < b.startedAt ? -1 : 1);
 
 /**
@@ -30,7 +31,7 @@ const byStart = (a: Attempt, b: Attempt) => (a.startedAt === b.startedAt ? (a.ru
 export function nextProbeSlot(attempts: readonly Attempt[], taskId: string): Slot | null {
   for (const [arm, needed] of [["control", PROBE_CONTROL_RUNS], ["treatment", PROBE_TREATMENT_RUNS]] as const) {
     const mine = attempts.filter((a) => a.taskId === taskId && a.arm === arm);
-    const usable = mine.filter(measured).length;
+    const usable = mine.filter(isProbeMeasurement).length;
     if (usable >= needed) continue;
     if (mine.length >= needed + PROBE_EXTRA_ATTEMPTS) {
       throw new BenchmarkError(`probe ${taskId}: ${mine.length} ${arm} attempts and only ${usable} measured; giving up rather than spending more`);
@@ -88,7 +89,7 @@ export interface ProbeVerdict {
 export function probeVerdict(records: readonly RunRecord[], attempts: readonly Attempt[], taskId: string, economics: ProbeEconomics): ProbeVerdict {
   const recordOf = new Map(records.map((r) => [r.runId, r]));
   const mine = attempts.filter((a) => a.taskId === taskId);
-  const usable = mine.filter(measured).sort(byStart);
+  const usable = mine.filter(isProbeMeasurement).sort(byStart);
   const controlAttempts = usable.filter((a) => a.arm === "control").slice(0, PROBE_CONTROL_RUNS);
   const treatmentAttempt = usable.find((a) => a.arm === "treatment");
   if (controlAttempts.length < PROBE_CONTROL_RUNS) throw new BenchmarkError(`probe ${taskId}: ${controlAttempts.length} measured control runs, ${PROBE_CONTROL_RUNS} needed`);
@@ -101,7 +102,7 @@ export function probeVerdict(records: readonly RunRecord[], attempts: readonly A
   const controls = controlAttempts.map(recordFor);
   const treatment = recordFor(treatmentAttempt);
   const notes: string[] = [];
-  const unmeasured = mine.filter((a) => !measured(a)).length;
+  const unmeasured = mine.filter((a) => !isProbeMeasurement(a)).length;
   if (unmeasured > 0) notes.push(`${unmeasured} attempts measured nothing (startup failure, agent error or cancel) and were replaced`);
   if (usable.length > PROBE_CONTROL_RUNS + PROBE_TREATMENT_RUNS) notes.push("later runs beyond the first three controls and first treatment were ignored");
   if (treatmentAttempt.status !== "finished") notes.push(`the pre-applied treatment ended with status ${treatmentAttempt.status}`);

@@ -6,14 +6,14 @@ import { join, resolve } from "node:path";
 import { CATALOG_ROOT, loadCatalog } from "@lemma/catalog";
 import { type Hex32, PatchBundle, bundleDigest, fileDigest } from "@lemma/core";
 
-import type { AgentAdapter, AgentKind, McpStdioServer, ModelSelection } from "./adapter.js";
+import type { AgentAdapter, AgentKind, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
 import { loadAnthropicPrices, pricesDigest } from "./anthropic-usage.js";
 import { ClaudeCodeAdapter, claudeCodeVersion, findClaudeCode, readMeteredUsage } from "./claude-code.js";
 import { CursorAdapter } from "./cursor.js";
 import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
 import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
-import { nextProbeSlot, probeVerdict } from "./probe.js";
+import { isProbeMeasurement, nextProbeSlot, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
 import { RunLog } from "./records.js";
@@ -73,6 +73,8 @@ async function readKey(agent: AgentKind): Promise<string> {
   for await (const chunk of process.stdin) key += String(chunk);
   key = key.trim();
   if (key === "") throw new Error(`standard input carried no ${KEY_NAME[agent]}`);
+  // Cursor is the default agent, so an Anthropic key here usually means LEMMA_BENCHMARK_AGENT was left unset.
+  if (agent === "cursor" && key.startsWith("sk-ant-")) throw new Error("that is an Anthropic API key, and this version runs Cursor: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code");
   return key;
 }
 
@@ -117,7 +119,7 @@ function assertSameAgent(bound: AgentSetup): void {
 
 interface OpenAgent {
   readonly adapter: AgentAdapter;
-  /** Checks, without a paid run, that the key can use the model. */
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request). */
   checkModel(model: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -265,8 +267,9 @@ async function runMatrix(v: string, config: ExperimentConfig, fixtures: readonly
   for (const slot of planMatrix(config.tasks, config.repetitions)) {
     const fixture = fixtures.find((f) => f.fixture.taskId === slot.taskId);
     if (fixture === undefined) throw new Error(`no fixture for ${slot.taskId}`);
-    const ctx = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: RULE_PATH, bridge, preApply: null, payments: noPayments, adoptions: noAdoptions, newRunId, log };
+    const ctx = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: RULE_PATH, bridge, preApply: null, payments: noPayments, adoptions: noAdoptions, newRunId, log, onAgentEnd: warnAgentError };
     for (let n = nextAttempt(log.attempts(), slot); n !== null; n = nextAttempt(log.attempts(), slot)) {
+      announce(slot.taskId, slot.arm, slot.repetition, fixture);
       const attempt = await runSlot(slot, n, ctx);
       log.appendAttempt(attempt);
       const startup = attempt.startupFailure ? ` (startup failure: ${attempt.startupReason})` : "";
@@ -288,16 +291,16 @@ async function probe(v: string): Promise<void> {
   const model: ModelSelection = { id: process.env["LEMMA_BENCHMARK_MODEL"] ?? "" };
   if (model.id === "") throw new Error("set LEMMA_BENCHMARK_MODEL");
   const log = RunLog.forVersion(RUNS_DIR, v);
-  log.lock();
 
   // A probe version is one experiment: the same task, fixture, bundle, agent release and model on every invocation.
   const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent()), model: model.id };
-  log.bind("probe.json", setup, "probe task, fixture, bundle, agent release or model");
-
   const agent = await openAgent(setup.agent, join(log.dir, "meter"));
   try {
-    // Checked for free before the first paid run, so a wrong key or model spends nothing.
+    // Checked before the version is bound and before the first run, so a wrong agent, key or model
+    // leaves nothing behind and the corrected command can reuse the version.
     if (setup.agent.name === "claude-code") await agent.checkModel(model.id);
+    log.lock();
+    log.bind("probe.json", setup, "probe task, fixture, bundle, agent release or model");
     await probeRuns(v, taskId, fixture, bundle, model, agent.adapter, log);
   } finally {
     await agent.close();
@@ -305,17 +308,25 @@ async function probe(v: string): Promise<void> {
 }
 
 async function probeRuns(v: string, taskId: string, fixture: LoadedBenchmarkFixture, bundle: PatchBundle, model: ModelSelection, adapter: AgentAdapter, log: RunLog): Promise<void> {
-  recoverInterrupted(log);
-  const base = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: null, bridge: null, payments: noPayments, adoptions: noAdoptions, newRunId, log };
+  recoverInterrupted(log, "they measured nothing, so the probe replaces them");
+  const base = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: null, bridge: null, payments: noPayments, adoptions: noAdoptions, newRunId, log, onAgentEnd: warnAgentError };
   // Resumes from the attempt log: running the probe again only fills what is missing.
   for (let slot = nextProbeSlot(log.attempts(), taskId); slot !== null; slot = nextProbeSlot(log.attempts(), taskId)) {
+    announce(taskId, slot.arm, slot.repetition, fixture);
     const attempt = await runSlot(slot, 1, { ...base, preApply: slot.arm === "treatment" ? bundle : null });
     log.appendAttempt(attempt);
     console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
   }
+  // Only the runs the verdict can use are waited for: one that measured nothing (an interrupted run
+  // has no meter record) may never settle, and the verdict does not read it.
+  const unsettled = () => log.pending().filter((a) => a.taskId === taskId && isProbeMeasurement(a)).length;
   const waitUntil = Date.now() + PROBE_SETTLE_WAIT_MS;
-  for (let result = await reconcile(log, adapter); result.pending > 0; result = await reconcile(log, adapter)) {
-    printErrors(result);
+  const shown = new Set<string>();
+  for (let first = true; ; first = false) {
+    const result = await reconcile(log, adapter);
+    printErrors(result, shown);
+    if (unsettled() === 0) break;
+    if (first) console.log("waiting for the runs' cost to settle, about six minutes after the last run ended");
     if (Date.now() >= waitUntil) {
       throw new Error("billed cost has not settled yet; run the same `benchmark probe` command again later: it runs nothing new, it only reconciles and decides");
     }
@@ -371,14 +382,29 @@ async function main(): Promise<void> {
 let activeLog: RunLog | null = null;
 
 /** Records runs an earlier invocation started but never recorded, and makes this log the one an interruption records into. */
-function recoverInterrupted(log: RunLog): void {
+function recoverInterrupted(log: RunLog, outcome = "they count and are not run again"): void {
   activeLog = log;
   const recovered = log.recoverInterrupted();
-  if (recovered > 0) console.warn(`recorded ${recovered} run(s) an earlier invocation started but did not finish; they count and are not run again`);
+  if (recovered > 0) console.warn(`recorded ${recovered} run(s) an earlier invocation started but did not finish; ${outcome}`);
 }
 
-function printErrors(result: ReconcileResult): void {
-  for (const e of result.errors) console.warn(`usage lookup for ${e.agentId} failed: ${e.error}; it stays pending`);
+/** Prints failed usage lookups, each run's once when `shown` is given. */
+function printErrors(result: ReconcileResult, shown?: Set<string>): void {
+  for (const e of result.errors) {
+    if (shown?.has(e.agentId) === true) continue;
+    shown?.add(e.agentId);
+    console.warn(`usage lookup for ${e.agentId} failed: ${e.error}; it stays pending`);
+  }
+}
+
+/** Says a run is starting: nothing else prints until it ends. */
+function announce(taskId: string, arm: string, repetition: number, fixture: LoadedBenchmarkFixture): void {
+  console.log(`${taskId} ${arm} #${repetition}: starting; it can take up to ${Math.ceil(fixture.fixture.maxDurationSec / 60)} minutes and prints nothing until it ends`);
+}
+
+/** Says why an agent run failed; the attempt log keeps no agent text. */
+function warnAgentError(outcome: AgentRunOutcome): void {
+  if (outcome.status !== "finished" && outcome.error !== null) console.warn(`the agent run ended with ${outcome.status}: ${outcome.error}`);
 }
 
 // An interrupted harness takes the runs it started down with it, and records the one it was in.
@@ -395,6 +421,8 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  // A failed request says only "fetch failed"; its cause says why (no network, a refused connection).
+  const cause = error instanceof Error && error.cause instanceof Error ? ` (${error.cause.message})` : "";
+  console.error(`${error instanceof Error ? error.message : String(error)}${cause}`);
   process.exitCode = 1;
 });

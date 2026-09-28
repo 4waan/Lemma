@@ -30,6 +30,7 @@ import {
   ancestorSecretVariables,
   installArgv,
   interruptedAttempt,
+  isProbeMeasurement,
   killByHome,
   modelLabel,
   nextAttempt,
@@ -262,8 +263,10 @@ describe("runSlot", () => {
     const root = makeFixture(temp("lemma-fx-"));
     process.env["CURSOR_API_KEY"] = "must-never-reach-a-run";
     const adapter = new FakeAdapter([finished("agent-1", (r) => writeFileSync(join(r.cwd, "done.txt"), "ok\n"))]);
-    const ctx = context(root, adapter, { keepWorkspace: true });
+    const ended: Array<string | null> = [];
+    const ctx = context(root, adapter, { keepWorkspace: true, onAgentEnd: (o: { agentId: string | null }) => ended.push(o.agentId) });
     const attempt = await runSlot({ taskId: "add-greeting", arm: "control", repetition: 1 }, 1, ctx);
+    expect(ended).toEqual(["agent-1"]);
     expect(attempt).toMatchObject({
       arm: "control",
       agentId: "agent-1",
@@ -577,6 +580,15 @@ describe("probe verdict", () => {
     const failing = [1, 2, 3].map((i) => attemptOf({ arm: "treatment", repetition: i, status: "error" }));
     expect(nextProbeSlot([...three, ...failing.slice(0, 2)], "add-greeting")).toEqual({ taskId: "add-greeting", arm: "treatment", repetition: 3 });
     expect(() => nextProbeSlot([...three, ...failing], "add-greeting")).toThrow(/giving up/);
+  });
+
+  it("measures only runs that started and finished or timed out, which are the only ones the probe waits on", () => {
+    const statuses = ["finished", "timeout", "error", "cancelled"] as const;
+    expect(statuses.map((status) => isProbeMeasurement(attemptOf({ status })))).toEqual([true, true, false, false]);
+    expect(isProbeMeasurement(attemptOf({ startupFailure: true, startupReason: "bridge" }))).toBe(false);
+    // An interrupted run is recorded as an error: it never has a meter record, so waiting on it would never end.
+    const intent = { type: "intent", runId: newRunId(), benchmarkVersion: "probe-1", taskId: "add-greeting", arm: "control", repetition: 1, attempt: 1, fixtureProfileDigest: hex("13"), model: "example-model-1", startedAt: "2026-10-01T00:00:00.000Z" } as const;
+    expect(isProbeMeasurement(interruptedAttempt(intent, "agent-1", new Date("2026-10-01T00:01:00.000Z")))).toBe(false);
   });
 });
 

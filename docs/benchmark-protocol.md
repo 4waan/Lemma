@@ -42,6 +42,8 @@ Anthropic's API reports tokens, not cost, and Claude Code's own cost figure is a
 
 The metered cost is the list price of the tokens at the standard service tier. It is not the invoice: it leaves out taxes, credits, and negotiated discounts. The cost is never approximated. A response the table cannot price exactly (an unknown model, the priority tier, fast mode, an inference region other than global or US, or sampling iterations), a response cut off before its final usage, or fewer metered tokens than Claude Code itself reported (traffic that went around the meter) leaves the run's cost unknown and its attempt pending. A response the agent abandons at its deadline is still billed, so the meter reads it to its end, for up to ten minutes.
 
+Before a Claude Code version is bound, `freeze` and `probe` send the model one request for one output token with the real key. A key without API credit can still list models, so only a request that costs something shows that the runs could be paid for. A key that is refused, a model the key cannot use, or no credit left then stops the command before any run, with the reason. That request is not metered and is in no run's cost.
+
 ## Success criteria
 
 - Both arms pass the same acceptance tests.
@@ -57,6 +59,7 @@ The metered cost is the list price of the tokens at the standard service tier. I
 - A treatment whose agent never called Lemma is a valid run. That outcome is part of what the product delivers.
 - Cost is reconciled from billed usage after runs finish, and only once it has settled: reads at least five minutes after the run that agree for at least a minute, with billed tokens no fewer than the run reported. A Claude Code meter record is final when its run ends, so it settles at the first reads after five minutes. A run that did work is never recorded at zero cost because its billing has not landed. An attempt without a settled cost stays pending, never becomes a run record with an estimated cost, and blocks the report.
 - An interrupted matrix or probe is resumed from its attempt log. Every run is logged before its agent starts, so an interrupted or crashed run is recorded too. A slot with a result is never run again, so no repetition is duplicated and no result can be re-rolled. A version is bound to one freeze, and a report fails any frozen task or slot without a result.
+- A Claude Code run cut short with the harness has no meter record, so its cost can never be known. The probe counts it as a run that measured nothing, replaces it, and waits only for the cost of the runs its verdict reads. In a matrix its attempt stays pending and blocks the report; deciding how a paired benchmark treats such a run is open.
 
 ## Integrity rules
 

@@ -347,6 +347,7 @@ if (mode === "die") { process.stderr.write("claude: boom\\n"); process.exit(1); 
 const session = "0b7c5e1a-6f0e-4c1e-9a55-2f3d4c5b6a70";
 out({ type: "system", subtype: "init", session_id: session, model: "claude-sonnet-5" });
 if (mode === "hang") setInterval(() => {}, 1000);
+else if (mode === "no-credit") out({ type: "result", subtype: "success", is_error: true, api_error_status: 400, result: "Credit balance is too low", session_id: session, modelUsage: {} });
 else {
   const reply = await fetch(process.env.ANTHROPIC_BASE_URL + "/v1/messages?beta=true", { method: "POST", headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "content-type": "application/json" }, body: "{}" });
   await reply.text();
@@ -434,6 +435,8 @@ describe("ClaudeCodeAdapter", { timeout: 20_000 }, () => {
     const { adapter, request } = await setup();
     expect((await adapter.run(request("tool-error"))).toolCalls[0]).toEqual({ callId: "toolu_1", name: "Bash", status: "error" });
     expect(await adapter.run(request("fail"))).toMatchObject({ status: "error", error: "error_during_execution: tool loop broke" });
+    // An API error that ends the run comes as a "success" result with is_error set; its text says why.
+    expect(await adapter.run(request("no-credit"))).toMatchObject({ status: "error", error: "error: Credit balance is too low (API HTTP 400)" });
     await adapter.close();
   });
 
@@ -465,6 +468,32 @@ describe("ClaudeCodeAdapter", { timeout: 20_000 }, () => {
     const { adapter, request } = await setup();
     const leaky = { lemma: { command: "/usr/bin/node", args: ["bridge.js"], env: { BUYER_PRIVATE_KEY: ["0x", "ab".repeat(32)].join("") } } };
     await expect(adapter.run({ ...request("finish"), mcpServers: leaky })).rejects.toThrow(/BUYER_PRIVATE_KEY on Claude Code's command line/);
+    await adapter.close();
+  });
+
+  it("checks the key and the model with a one-token request, and says why they cannot run", async () => {
+    let reply: [number, Record<string, unknown>] = [200, { type: "message", content: [] }];
+    const api = await standIn((_req, res) => void res.writeHead(reply[0], { "content-type": "application/json" }).end(JSON.stringify(reply[1])));
+    const adapter = new ClaudeCodeAdapter(REAL, { command: null, meterDir: temp("lemma-meter-"), prices, upstream: api.url });
+    await adapter.checkModel("claude-sonnet-5");
+    expect(api.seen).toHaveLength(1);
+    expect(api.seen[0]).toMatchObject({ method: "POST", url: "/v1/messages" });
+    expect(api.seen[0]?.headers["x-api-key"]).toBe(REAL);
+    expect(JSON.parse(api.seen[0]?.body ?? "")).toEqual({ model: "claude-sonnet-5", max_tokens: 1, messages: [{ role: "user", content: "OK" }] });
+    const error = (type: string, message: string) => ({ type: "error", error: { type, message } });
+    const cases: Array<[number, Record<string, unknown>, RegExp]> = [
+      // A key without credit can still list models; only a request that costs something finds it out.
+      [400, error("invalid_request_error", "Your credit balance is too low to access the Anthropic API."), /no API credit left/],
+      [401, error("authentication_error", "invalid x-api-key"), /refused the key \(HTTP 401\)/],
+      [404, error("not_found_error", "model: claude-sonnet-5"), /not available to this key/],
+      [429, error("rate_limit_error", "slow down"), /rate limiting/],
+      [529, error("overloaded_error", "Overloaded"), /overloaded \(HTTP 529\)/],
+      [500, error("api_error", "Internal server error"), /failed: HTTP 500 api_error$/],
+    ];
+    for (const [status, body, message] of cases) {
+      reply = [status, body];
+      await expect(adapter.checkModel("claude-sonnet-5")).rejects.toThrow(message);
+    }
     await adapter.close();
   });
 

@@ -67,17 +67,32 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   /**
-   * Checks, for free, that the key works and can use `model`, and that the
-   * table prices it: a run on an unpriced model could never be costed.
+   * Checks that the table prices `model` (a run on an unpriced model could
+   * never be costed), then sends `model` one request for one output token, so
+   * a key that is refused, lacks the model, or has no credit left fails here
+   * with the reason instead of in every run. A key without credit can still
+   * list models, so a free check would pass it. The request costs a small
+   * fraction of a cent and is not part of any run's cost.
    */
   async checkModel(model: string): Promise<void> {
     if (modelPrice(this.options.prices, model) === undefined) throw new Error(`model ${model} is not in prices/anthropic.json; use an exact model id the table prices`);
-    const response = await fetch(`${(this.options.upstream ?? "https://api.anthropic.com").replace(/\/+$/, "")}/v1/models/${encodeURIComponent(model)}`, {
-      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01" },
+    const url = `${(this.options.upstream ?? "https://api.anthropic.com").replace(/\/+$/, "")}/v1/messages`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "x-api-key": this.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model, max_tokens: 1, messages: [{ role: "user", content: "OK" }] }),
     });
+    if (response.ok) {
+      await response.body?.cancel();
+      return;
+    }
+    const error = await apiError(response);
     if (response.status === 401 || response.status === 403) throw new Error(`the Anthropic API refused the key (HTTP ${response.status})`);
     if (response.status === 404) throw new Error(`model ${model} is not available to this key`);
-    if (!response.ok) throw new Error(`could not check model ${model}: HTTP ${response.status}`);
+    if (/credit balance/i.test(error.message)) throw new Error("the key's organization has no API credit left; add credit in the Anthropic Console, then run the same command again");
+    if (response.status === 429) throw new Error("the Anthropic API is rate limiting this key (HTTP 429); wait a minute, then run the same command again");
+    if (response.status === 529) throw new Error("the Anthropic API is overloaded (HTTP 529); run the same command again later");
+    throw new Error(`a one-token request to ${model} failed: HTTP ${response.status} ${error.type}`.trim());
   }
 
   async run(request: AgentRunRequest): Promise<AgentRunOutcome> {
@@ -269,6 +284,16 @@ export function findClaudeCode(env: Readonly<Record<string, string | undefined>>
   throw new Error("claude is not on PATH; install Claude Code or set LEMMA_CLAUDE_COMMAND to its absolute path");
 }
 
+/** The type and message of an Anthropic API error reply, or empty strings when it has none. */
+async function apiError(response: Response): Promise<{ type: string; message: string }> {
+  try {
+    const body = (await response.json()) as { error?: { type?: unknown; message?: unknown } };
+    return { type: typeof body.error?.type === "string" ? body.error.type : "", message: typeof body.error?.message === "string" ? body.error.message : "" };
+  } catch {
+    return { type: "", message: "" };
+  }
+}
+
 /** One line of `claude -p --output-format stream-json`, as far as the harness reads it. */
 interface StreamEvent {
   readonly type?: unknown;
@@ -276,6 +301,9 @@ interface StreamEvent {
   readonly session_id?: unknown;
   readonly is_error?: unknown;
   readonly errors?: unknown;
+  /** The run's final text; on an error result, what went wrong (for example "Credit balance is too low"). */
+  readonly result?: unknown;
+  readonly api_error_status?: unknown;
   readonly message?: { readonly content?: unknown };
   readonly usage?: Record<string, unknown>;
   readonly modelUsage?: Record<string, Record<string, unknown>>;
@@ -335,6 +363,19 @@ interface RunSeen {
   readonly calls: Map<string, ToolCallSummary>;
 }
 
+/**
+ * Why a result is not a success. An API error that ends the run (no credit, a
+ * refused key) comes as subtype "success" with `is_error` set, the API's
+ * message as its result text, and the HTTP status.
+ */
+function resultError(result: StreamEvent): string {
+  const errors = Array.isArray(result.errors) ? result.errors.filter((e): e is string => typeof e === "string") : [];
+  const text = result.is_error === true && typeof result.result === "string" ? result.result.trim() : "";
+  const status = typeof result.api_error_status === "number" ? ` (API HTTP ${result.api_error_status})` : "";
+  const kind = result.subtype === "success" || typeof result.subtype !== "string" ? "error" : result.subtype;
+  return `${[kind, ...(text === "" ? [] : [text]), ...errors].join(": ")}${status}`.slice(0, 500);
+}
+
 function outcomeOf(startedAt: string, seen: RunSeen, usage: ReportedUsage | null): AgentRunOutcome {
   const finishedAt = new Date().toISOString();
   const toolCalls = [...seen.calls.values()];
@@ -346,9 +387,7 @@ function outcomeOf(startedAt: string, seen: RunSeen, usage: ReportedUsage | null
   // Stopped at its deadline, whatever it printed on the way out: the agent spent its whole budget.
   if (result !== null && !seen.killedAtDeadline) {
     const ok = result.subtype === "success" && result.is_error !== true;
-    const errors = Array.isArray(result.errors) ? result.errors.filter((e): e is string => typeof e === "string") : [];
-    const error = ok ? null : [String(result.subtype ?? "error"), ...errors].join(": ").slice(0, 500);
-    return { agentId: seen.agentId, status: ok ? "finished" : "error", startedAt, finishedAt, toolCalls, usage, error };
+    return { agentId: seen.agentId, status: ok ? "finished" : "error", startedAt, finishedAt, toolCalls, usage, error: ok ? null : resultError(result) };
   }
   // The run began, so it is billed and it counts: it timed out or failed, it did not fail to start.
   return {

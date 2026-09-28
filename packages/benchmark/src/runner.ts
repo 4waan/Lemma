@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 
 import { DIRECTORY, type Hex32, type PatchBundle, fileDigest, planApply, profileDigest } from "@lemma/core";
 
-import type { AgentAdapter, McpStdioServer, ModelSelection } from "./adapter.js";
+import type { AgentAdapter, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
 import type { LoadedBenchmarkFixture } from "./fixture.js";
 import type { Slot } from "./matrix.js";
 import { childEnv, killByHome, runCommand, trackHome } from "./process.js";
@@ -48,6 +48,8 @@ export interface SlotContext {
   readonly keepWorkspace?: boolean;
   /** Where the run's intent and agent id are logged before it ends, so an interrupted run is still recorded. */
   readonly log?: RunLog;
+  /** Told how the agent's run ended, before acceptance runs, so the caller can say why it failed: the attempt keeps no agent text. */
+  readonly onAgentEnd?: (outcome: AgentRunOutcome) => void;
 }
 
 /** `id` plus `param:value` pairs, the form RunRecord.model accepts. */
@@ -143,6 +145,7 @@ export async function runSlot(slot: Slot, attempt: 1 | 2, ctx: SlotContext): Pro
     });
     // An adapter that reported no start (or lost the line) still has its agent id logged before the post-run steps.
     if (outcome.agentId !== null) logAgent(outcome.agentId);
+    ctx.onAgentEnd?.(outcome);
     // Measured before acceptance, whose own output (builds, coverage) is not the agent's work.
     const changed = filesChanged(before, snapshot(workspace.cwd));
     const trace = readTrace(workspace.trace);

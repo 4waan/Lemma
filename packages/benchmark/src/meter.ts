@@ -39,6 +39,12 @@ export const MeterRecord = z.strictObject({
   costMicroUsd: z.string().regex(/^(0|[1-9]\d*)$/),
   /** The tokens the agent itself reported for the run, when it reported them: never more than the meter saw, unless traffic went around it. */
   reportedTokens: Count.nullable(),
+  /**
+   * Where the usage came from: the meter (absent, the default), or the agent's
+   * own token counts, for a probe run on a subscription login that no meter
+   * can sit in front of (`CodexAdapter` with a ChatGPT login).
+   */
+  source: z.literal("agent").optional(),
 });
 
 export type MeterRecord = z.infer<typeof MeterRecord>;

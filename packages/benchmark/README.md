@@ -46,7 +46,7 @@ The agent is Cursor unless `LEMMA_BENCHMARK_AGENT=claude-code` selects Claude Co
 
 Claude Code runs have their cost metered by the harness at the dated list prices in `prices/anthropic.json`; see [Claude Code cost](../../docs/benchmark-protocol.md#claude-code-cost). They need an Anthropic API key (a Claude subscription login cannot be metered at API prices), and the harness must run as a normal user, because Claude Code refuses to skip its permission prompts as root. Reconciling them reads their meter records and needs no key.
 
-Codex runs are metered the same way at the dated list prices in `prices/openai.json`; see [Codex cost](../../docs/benchmark-protocol.md#codex-cost). They need an OpenAI API key with API credit, from platform.openai.com: a ChatGPT sign-in cannot be used. The table prices `gpt-5.5`; add a model only with its published prices, which makes a new table digest.
+Codex runs are metered the same way at the dated list prices in `prices/openai.json`; see [Codex cost](../../docs/benchmark-protocol.md#codex-cost). They need an OpenAI API key with API credit, from platform.openai.com. A probe alone can run on a ChatGPT plan instead, with `LEMMA_CODEX_LOGIN=chatgpt` after `codex login --device-auth`: no key is read, and its cost is Codex's own token counts at list price, not metered (see [Codex cost](../../docs/benchmark-protocol.md#codex-cost)). The table prices `gpt-5.5`; add a model only with its published prices, which makes a new table digest.
 
 ## Evidence derivation
 

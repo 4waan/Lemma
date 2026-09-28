@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -428,7 +428,7 @@ describe("CodexAdapter", { timeout: 20_000 }, () => {
 
 describe("codexConfig", () => {
   it("writes TOML strings escaped, so a path or argument cannot add settings", () => {
-    const config = codexConfig("http://127.0.0.1:1/v1", "gpt-5.5", { "odd name": { command: '/x/"y"\nmodel = "z"', args: ["a\\b"], env: {} } });
+    const config = codexConfig({ baseUrl: "http://127.0.0.1:1/v1" }, "gpt-5.5", { "odd name": { command: '/x/"y"\nmodel = "z"', args: ["a\\b"], env: {} } });
     expect(config).toContain('[mcp_servers."odd name"]\ncommand = "/x/\\"y\\"\\nmodel = \\"z\\""\nargs = ["a\\\\b"]');
     expect(config.match(/^model = /gm)).toHaveLength(1);
     expect(config).not.toContain("env = ");
@@ -498,5 +498,133 @@ describe("the Codex treatment", () => {
   it("names its price table in the version's agent setup", () => {
     expect(AgentSetup.safeParse({ name: "codex", version: "0.158.0", pricesDigest: openAiPricesDigest(prices) }).success).toBe(true);
     expect(AgentSetup.safeParse({ name: "codex", version: "0.158.0", pricesDigest: null }).success).toBe(false);
+  });
+});
+
+/**
+ * A stand-in `codex` signed in with ChatGPT: it answers `login status` from
+ * its auth.json, records what a run got, never calls a model, and reports
+ * token counts as its prompt says: at the end of the turn, only in its
+ * session log (it hangs until its deadline), or not at all.
+ */
+function fakeChatgptCodex(dir: string): string {
+  const path = join(dir, "codex-chatgpt.mjs");
+  writeFileSync(
+    path,
+    `#!/usr/bin/env node
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const args = process.argv.slice(2);
+const auth = join(process.env.CODEX_HOME, "auth.json");
+if (args[0] === "login") {
+  if (existsSync(auth) && readFileSync(auth, "utf8").includes("chatgpt")) { console.log("Logged in using ChatGPT"); process.exit(0); }
+  console.log("Not logged in"); process.exit(1);
+}
+let prompt = "";
+for await (const chunk of process.stdin) prompt += chunk;
+const config = readFileSync(join(process.env.CODEX_HOME, "config.toml"), "utf8");
+writeFileSync("seen.json", JSON.stringify({ args, env: process.env, config, auth: readFileSync(auth, "utf8"), authMode: statSync(auth).mode & 0o777 }));
+const out = (o) => process.stdout.write(JSON.stringify(o) + "\\n");
+out({ type: "thread.started", thread_id: "019a3c5e-1f0e-7c1e-9a55-2f3d4c5b6a71" });
+const total = { input_tokens: 1000, cached_input_tokens: 200, cache_write_input_tokens: 0, output_tokens: 50, reasoning_output_tokens: 10, total_tokens: 1050 };
+if (prompt === "refresh") writeFileSync(auth, JSON.stringify({ auth_mode: "chatgpt", tokens: "refreshed" }));
+if (prompt === "hang") {
+  const day = join(process.env.CODEX_HOME, "sessions", "2026", "09", "28");
+  mkdirSync(day, { recursive: true });
+  const line = (n) => JSON.stringify({ timestamp: "2026-09-28T00:00:00Z", type: "event_msg", payload: { type: "token_count", info: { total_token_usage: { ...total, output_tokens: n }, last_token_usage: total } } });
+  writeFileSync(join(day, "rollout-1.jsonl"), [JSON.stringify({ type: "session_meta", payload: {} }), line(10), line(50), '{"torn'].join("\\n"));
+  setInterval(() => {}, 1000);
+} else if (prompt === "silent") process.exit(1);
+else out({ type: "turn.completed", usage: total });
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
+
+describe("CodexAdapter on a ChatGPT login (probes only)", { timeout: 20_000 }, () => {
+  const THREAD = "019a3c5e-1f0e-7c1e-9a55-2f3d4c5b6a71";
+  const setup = (login = { auth_mode: "chatgpt", tokens: "original" }) => {
+    const dir = temp("lemma-codex-chatgpt-");
+    const cwd = join(dir, "work");
+    const home = join(dir, "home");
+    const loginHome = join(dir, "login");
+    mkdirSync(cwd);
+    mkdirSync(join(home, "tmp"), { recursive: true });
+    mkdirSync(loginHome);
+    writeFileSync(join(loginHome, "auth.json"), JSON.stringify(login));
+    const meterDir = join(dir, "meter");
+    const adapter = new CodexAdapter(null, { command: fakeChatgptCodex(dir), meterDir, prices, graceMs: { stop: 300, exit: 300 }, systemConfigDir: join(dir, "etc-codex"), chatgptLogin: loginHome });
+    const request = (prompt: string, timeoutMs = 10_000) => ({ cwd, home, prompt, model: { id: "gpt-5.5" }, mcpServers: {}, timeoutMs });
+    const seen = () => JSON.parse(readFileSync(join(cwd, "seen.json"), "utf8")) as { args: string[]; env: Record<string, string>; config: string; auth: string; authMode: number };
+    return { adapter, home, loginHome, meterDir, request, seen };
+  };
+
+  it("takes a login or a key, exactly one", () => {
+    expect(() => new CodexAdapter(REAL, { command: null, meterDir: temp("lemma-meter-"), prices, chatgptLogin: temp("lemma-login-") })).toThrow(/exactly one/);
+    expect(() => new CodexAdapter(null, { command: null, meterDir: temp("lemma-meter-"), prices })).toThrow(/exactly one/);
+  });
+
+  it("runs Codex on OpenAI's own provider with the login copied in, subagents off, and no meter token", async () => {
+    const { adapter, home, request, seen } = await setup();
+    const outcome = await adapter.run(request("finish"));
+    const { args, env, config, auth, authMode } = seen();
+    expect(args).not.toContain("--ephemeral");
+    expect(args).toContain("--dangerously-bypass-approvals-and-sandbox");
+    const given = Object.keys(env).filter((name) => name !== "__CF_USER_TEXT_ENCODING");
+    expect(given.sort()).toEqual([...Object.keys(childEnv(home)), "CODEX_HOME"].sort());
+    expect(config).toMatch(/^forced_login_method = "chatgpt"$/m);
+    expect(config).toMatch(/^\[features\]\nmulti_agent = false$/m);
+    expect(config).not.toContain("model_provider");
+    expect(auth).toBe(JSON.stringify({ auth_mode: "chatgpt", tokens: "original" }));
+    expect(authMode).toBe(0o600);
+    expect(outcome).toMatchObject({ agentId: THREAD, status: "finished", usage: { inputTokens: 800, cacheReadTokens: 200, outputTokens: 50, totalTokens: 1050 } });
+    await adapter.close();
+  });
+
+  it("costs a run from Codex's own counts at list price, and says so in its record", async () => {
+    const { adapter, meterDir, request } = await setup();
+    const outcome = await adapter.run(request("finish"));
+    expect(await adapter.usage(THREAD)).toEqual({ usage: { inputTokens: 800, outputTokens: 50, cacheReadTokens: 200, cacheWriteTokens: 0, totalTokens: 1050, reasoningTokens: 10 }, rawCostCents: 0.56 });
+    const record = MeterRecord.parse(JSON.parse(readFileSync(join(meterDir, `${outcome.agentId}.json`), "utf8")));
+    expect(record).toMatchObject({ source: "agent", responses: 0, models: ["gpt-5.5"], costMicroUsd: "5600", reportedTokens: 1050 });
+    await adapter.close();
+  });
+
+  it("copies a login Codex refreshed during the run back, so the next run has it", async () => {
+    const { adapter, loginHome, request } = await setup();
+    await adapter.run(request("refresh"));
+    expect(JSON.parse(readFileSync(join(loginHome, "auth.json"), "utf8"))).toEqual({ auth_mode: "chatgpt", tokens: "refreshed" });
+    expect(statSync(join(loginHome, "auth.json")).mode & 0o777).toBe(0o600);
+    await adapter.close();
+  });
+
+  it("costs a run stopped at its deadline from the last token count in its session log", async () => {
+    const { adapter, request } = await setup();
+    const outcome = await adapter.run(request("hang", 800));
+    expect(outcome).toMatchObject({ status: "timeout", agentId: THREAD, usage: null });
+    expect(await adapter.usage(THREAD)).toMatchObject({ rawCostCents: 0.56, usage: { outputTokens: 50 } });
+    await adapter.close();
+  });
+
+  it("leaves the cost unknown when Codex reported no token counts at all", async () => {
+    const { adapter, request } = await setup();
+    expect(await adapter.run(request("silent"))).toMatchObject({ status: "error", agentId: THREAD });
+    await expect(adapter.usage(THREAD)).rejects.toThrow(/reported no token counts/);
+    await adapter.close();
+  });
+
+  it("checks for free that Codex is signed in with ChatGPT and the model is priced", async () => {
+    expect(() => setup().adapter.checkLogin("gpt-5.5")).not.toThrow();
+    expect(() => setup().adapter.checkLogin("gpt-9")).toThrow(/not in prices\/openai\.json/);
+    expect(() => setup({ auth_mode: "apikey", tokens: "" }).adapter.checkLogin("gpt-5.5")).toThrow(/not signed in with ChatGPT/);
+    const { adapter, loginHome } = setup();
+    rmSync(join(loginHome, "auth.json"));
+    expect(() => adapter.checkLogin("gpt-5.5")).toThrow(/codex login --device-auth/);
+  });
+
+  it("is a Codex-only setting of the version's agent", () => {
+    expect(AgentSetup.safeParse({ name: "codex", version: "0.158.0", pricesDigest: openAiPricesDigest(prices), login: "chatgpt" }).success).toBe(true);
+    expect(AgentSetup.safeParse({ name: "claude-code", version: "2.1.283", pricesDigest: openAiPricesDigest(prices), login: "chatgpt" }).success).toBe(false);
   });
 });

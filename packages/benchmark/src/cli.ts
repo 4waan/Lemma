@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { CATALOG_ROOT, loadCatalog } from "@lemma/catalog";
@@ -45,7 +45,9 @@ import { prepareRunBase, removeTree } from "./workspace.js";
  * `claude-code` or `codex`; later commands take the agent the version was
  * started with); LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND
  * and LEMMA_CODEX_COMMAND (the absolute path of `claude` or `codex`, default:
- * the first on PATH); LEMMA_BENCH_DIR for run
+ * the first on PATH); LEMMA_CODEX_LOGIN=chatgpt (probe only: Codex on the
+ * ChatGPT plan `codex login` signed this user in with, no key read, cost from
+ * Codex's own token counts); LEMMA_BENCH_DIR for run
  * directories (default: the OS temp directory, outside the repository);
  * LEMMA_BRIDGE_COMMAND and LEMMA_API_URL for the treatment's bridge.
  */
@@ -82,8 +84,8 @@ async function readKey(agent: AgentKind): Promise<string> {
   if (anthropic && agent !== "claude-code") throw new Error(`that is an Anthropic API key, and this version runs ${agent}: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code`);
   // Cursor's key format is not documented, so only Claude Code is told about an OpenAI key.
   if (openai && agent === "claude-code") throw new Error(`that looks like an OpenAI API key, and this version runs Claude Code: start a Codex version with LEMMA_BENCHMARK_AGENT=codex`);
-  // A ChatGPT sign-in (Codex's auth.json, or its access token) is not an API key: Codex would need it where the agent can read it, and it reaches a private ChatGPT backend, not the API the meter serves.
-  if (agent === "codex" && !openai) throw new Error("Codex runs need an OpenAI API key (it starts with sk-), from platform.openai.com; a ChatGPT sign-in cannot be used");
+  // A pasted ChatGPT sign-in (Codex's auth.json, or its access token) is not an API key; a probe signs in through `codex login` instead.
+  if (agent === "codex" && !openai) throw new Error("Codex runs need an OpenAI API key (it starts with sk-), from platform.openai.com; to run a probe on a ChatGPT plan instead, sign in with `codex login --device-auth` and set LEMMA_CODEX_LOGIN=chatgpt, with nothing on standard input");
   return key;
 }
 
@@ -109,10 +111,25 @@ function chosenAgent(): AgentKind {
   return name;
 }
 
+/** Whether Codex runs on a ChatGPT plan login (LEMMA_CODEX_LOGIN=chatgpt) instead of an API key. */
+function chatgptLogin(): boolean {
+  const value = process.env["LEMMA_CODEX_LOGIN"] ?? "";
+  if (value !== "" && value !== "chatgpt") throw new Error(`LEMMA_CODEX_LOGIN must be chatgpt or unset, not ${value}`);
+  if (value === "chatgpt" && chosenAgent() !== "codex") throw new Error("LEMMA_CODEX_LOGIN=chatgpt needs LEMMA_BENCHMARK_AGENT=codex");
+  return value === "chatgpt";
+}
+
+/** Where `codex login` keeps this user's login: CODEX_HOME, else ~/.codex. */
+function codexLoginHome(): string {
+  const home = process.env["CODEX_HOME"];
+  if (home !== undefined && home !== "") return resolve(home);
+  return join(homedir(), ".codex");
+}
+
 /** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version` or `codex --version` with the agent's price table. */
-function agentSetup(name: AgentKind): AgentSetup {
+function agentSetup(name: AgentKind, login = false): AgentSetup {
   if (name === "codex") {
-    return AgentSetup.parse({ name, version: codexVersion(findCodex()), pricesDigest: openAiPricesDigest(loadOpenAiPrices()) });
+    return AgentSetup.parse({ name, version: codexVersion(findCodex()), pricesDigest: openAiPricesDigest(loadOpenAiPrices()), ...(login ? { login: "chatgpt" } : {}) });
   }
   if (name === "claude-code") {
     return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()) });
@@ -124,7 +141,7 @@ function agentSetup(name: AgentKind): AgentSetup {
 
 /** Refuses when the installed agent is not the one a version was started with: every run of a version uses one release. */
 function assertSameAgent(bound: AgentSetup): void {
-  const now = agentSetup(bound.name);
+  const now = agentSetup(bound.name, bound.login !== undefined);
   if (now.version !== bound.version) throw new Error(`${bound.name} is at ${now.version} now and this version ran ${bound.version}; use a new version`);
   if (now.pricesDigest !== bound.pricesDigest) throw new Error(`prices/${bound.name === "codex" ? "openai" : "anthropic"}.json changed since this version started; use a new version`);
 }
@@ -147,6 +164,10 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
       },
       close: async () => undefined,
     };
+  }
+  if (setup.name === "codex" && setup.login !== undefined) {
+    const codex = new CodexAdapter(null, { command: findCodex(), meterDir, prices: loadOpenAiPrices(), chatgptLogin: codexLoginHome() });
+    return { adapter: codex, checkModel: async (model) => codex.checkLogin(model), close: () => codex.close() };
   }
   if (setup.name === "codex") {
     const codex = new CodexAdapter(await readKey("codex"), { command: findCodex(), meterDir, prices: loadOpenAiPrices() });
@@ -193,6 +214,7 @@ async function freeze(v: string): Promise<void> {
     if (listedNoMatch !== (f.fixture.kind === "no-match")) throw new Error(`${f.fixture.taskId} is a ${f.fixture.kind} fixture; list it under ${listedNoMatch ? "--tasks" : "--no-match"}`);
   }
   if (!existsSync(RULE_PATH)) throw new Error(`the Lemma rule ${RULE_PATH} is missing; the treatment cannot run without it`);
+  if (chatgptLogin()) throw new Error("LEMMA_CODEX_LOGIN=chatgpt is for probes only: a benchmark's cost must be metered, so freeze with an OpenAI API key");
   const agent = agentSetup(chosenAgent());
   // Everything that can be checked for free is checked before the paid smoke run.
   const config = ExperimentConfig.parse({
@@ -310,7 +332,7 @@ async function probe(v: string): Promise<void> {
   const log = RunLog.forVersion(RUNS_DIR, v);
 
   // A probe version is one experiment: the same task, fixture, bundle, agent release and model on every invocation.
-  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent()), model: model.id };
+  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent(), chatgptLogin()), model: model.id };
   const agent = await openAgent(setup.agent, join(log.dir, "meter"));
   try {
     // Checked before the version is bound and before the first run, so a wrong agent, key or model

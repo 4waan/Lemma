@@ -19,8 +19,15 @@ export const AgentSetup = z
     name: z.enum(["cursor", "claude-code", "codex"]),
     version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
     pricesDigest: Hex32.nullable(),
+    /**
+     * Codex signed in with a ChatGPT plan instead of an API key: its cost is
+     * its own token counts at list price, not metered, so only a probe may use
+     * it (`freeze` refuses it).
+     */
+    login: z.literal("chatgpt").optional(),
   })
-  .refine((a) => (a.name !== "cursor") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code and Codex runs name their price table; Cursor runs do not" });
+  .refine((a) => (a.name !== "cursor") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code and Codex runs name their price table; Cursor runs do not" })
+  .refine((a) => a.login === undefined || a.name === "codex", { path: ["login"], message: "only Codex runs can use a ChatGPT login" });
 
 export type AgentSetup = z.infer<typeof AgentSetup>;
 

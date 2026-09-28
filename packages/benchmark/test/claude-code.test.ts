@@ -382,7 +382,9 @@ describe("ClaudeCodeAdapter", { timeout: 20_000 }, () => {
     const outcome = await adapter.run({ ...request("finish"), onStarted: (id) => started.push(id) });
     const { args, env } = seen();
     expect(Object.values(env)).not.toContain(REAL);
-    expect(Object.keys(env).sort()).toEqual([...Object.keys(childEnv(home)), "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"].sort());
+    // macOS itself adds __CF_USER_TEXT_ENCODING to every process it starts.
+    const given = Object.keys(env).filter((name) => name !== "__CF_USER_TEXT_ENCODING");
+    expect(given.sort()).toEqual([...Object.keys(childEnv(home)), "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"].sort());
     expect(env["ANTHROPIC_API_KEY"]).toMatch(/^lemma-run-[0-9a-f]{48}$/);
     expect(env["ANTHROPIC_BASE_URL"]).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(api.seen[0]?.headers["x-api-key"]).toBe(REAL);

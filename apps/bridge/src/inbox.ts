@@ -206,6 +206,20 @@ export class ResolutionInbox {
     this.write(join("receipts", `${parsed.receipt.resolutionId}.json`), parsed);
   }
 
+  /**
+   * Stores a resolution's first receipt, unless one is stored already, and
+   * returns the one stored: kept before it is signed, so a crash after the
+   * signer recorded it leaves the same receipt to sign again, and of two runs
+   * at once only one receipt counts.
+   */
+  firstReceipt(stored: StoredReceipt): StoredReceipt {
+    const parsed = StoredReceipt.parse(stored);
+    this.createOnce(join("receipts", `${parsed.receipt.resolutionId}.json`), parsed);
+    const first = this.receipt(parsed.receipt.resolutionId);
+    if (first === undefined) throw new Error("the adoption receipt could not be stored");
+    return first;
+  }
+
   receipt(resolutionId: Hex32): StoredReceipt | undefined {
     const parsed = StoredReceipt.safeParse(this.read(join("receipts", `${Hex32.parse(resolutionId)}.json`)));
     return parsed.success ? parsed.data : undefined;
@@ -277,16 +291,7 @@ export class ResolutionInbox {
     if (existing !== undefined) return existing;
     const made = WarrantyClaim.parse(make());
     if (made.resolutionId !== resolutionId) throw new Error("a claim is for its own resolution only");
-    const path = join(this.dir, "claims", `${resolutionId}.json`);
-    const temp = `${path}.${process.pid}.tmp`;
-    writeFileSync(temp, `${JSON.stringify(made)}\n`, { mode: 0o600, flag: "w" });
-    try {
-      linkSync(temp, path);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    } finally {
-      rmSync(temp, { force: true });
-    }
+    this.createOnce(join("claims", `${resolutionId}.json`), made);
     const stored = this.claim(resolutionId);
     if (stored === undefined) throw new Error("the warranty claim could not be stored");
     return stored;
@@ -328,6 +333,20 @@ export class ResolutionInbox {
   /** Where a resolution's files are written for the agent to adapt by hand. */
   exportDir(resolutionId: Hex32): string {
     return join(this.dir, "export", Hex32.parse(resolutionId));
+  }
+
+  /** Writes `rel` only if it does not exist: linked into place, so it is never half written and a concurrent first write cannot replace it. */
+  private createOnce(rel: string, value: unknown): void {
+    const path = join(this.dir, rel);
+    const temp = `${path}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify(value)}\n`, { mode: 0o600, flag: "w" });
+    try {
+      linkSync(temp, path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    } finally {
+      rmSync(temp, { force: true });
+    }
   }
 
   private write(rel: string, value: unknown): void {

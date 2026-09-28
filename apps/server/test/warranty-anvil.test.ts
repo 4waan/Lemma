@@ -225,7 +225,7 @@ describe.skipIf(artifacts === undefined || artifacts === "")("the warranty chain
     await sendAs(keys.provider, registry, registryAbi, "depositBond", [digest, 1_000_000n]);
     const logger = recordingLogger();
     const pipeline = await startWarrantyPipeline({
-      config: { registry, startBlock: 0n, providerKey: new Secret("held by the chain client"), providerAddress: chain.provider, evaluatorKey: new Secret("held by the chain client"), evaluatorAddress: chain.evaluator, failures: "auto", activationJitterSeconds: 0, indexerConfirmations: 0n },
+      config: { registry, startBlock: 0n, providerKey: new Secret("held by the chain client"), providerAddress: chain.provider, evaluatorKey: new Secret("held by the chain client"), evaluatorAddress: chain.evaluator, failures: "auto", activationJitterSeconds: 0, activationBatchSeconds: 0, buyerCountsRefreshSeconds: 0, indexerConfirmations: 0n },
       store: w.store,
       index: w.index,
       chain,
@@ -245,12 +245,17 @@ describe.skipIf(artifacts === undefined || artifacts === "")("the warranty chain
     expect(await pipeline.evaluator.runOnce()).toMatchObject({ queued: 2, done: 2 });
     await pipeline.indexer.runOnce();
     expect((await pipeline.views.forResolution(passed!.id)).state).toBe("passed");
-    // The pass went into the engine: the catalog's source holds it, at its block's time.
+    // The pass went into the engine: the catalog's source holds it, at its block's time. The two are in finalization order, which follows
+    // activation order, and activations due together go out by resolution id, not by purchase.
     const [finalized] = await w.store.listRegistryEvents({ resolutionId: passed!.id, names: ["OutcomeFinalized"] }, 1);
-    expect(pipeline.source.outcomesFor(digest, 0)).toEqual([
-      { passed: true, weightBps: 10_000, at: BigInt(finalized!.blockTime.getTime() / 1000) },
-      { passed: false, weightBps: 10_000, at: expect.any(BigInt) },
-    ]);
+    const outcomes = pipeline.source.outcomesFor(digest, 0);
+    expect(outcomes).toHaveLength(2);
+    expect(outcomes).toEqual(
+      expect.arrayContaining([
+        { passed: true, weightBps: 10_000, at: BigInt(finalized!.blockTime.getTime() / 1000) },
+        { passed: false, weightBps: 10_000, at: expect.any(BigInt) },
+      ]),
+    );
 
     expect(await requestWithdrawal({ store: w.store, clock: () => w.clock.now, logger }, { resolutionId: failed!.id, claimSecret: failed!.secret, to: failed!.refundTo })).toMatchObject({ status: 202 });
     expect(await pipeline.relay.runOnce()).toMatchObject({ done: 1 });

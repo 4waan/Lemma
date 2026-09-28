@@ -16,13 +16,13 @@ When a release matched, the server may add its capability's public adoption reco
 
 ## Purchasing
 
-`lemma_buy_resolution` is registered only when a signer answers at `LEMMA_SIGNER_SOCKET` (default `<state>/signer/signer.sock`) in a directory nobody else can write to, the spending policy variables parse, and `LEMMA_REFUND_TO`, when set, is a usable address. Otherwise the bridge says on stderr why purchases are off. One purchase is one MCP call, and nothing on it reads or writes the chain:
+`lemma_buy_resolution` is registered only when a signer answers at `LEMMA_SIGNER_SOCKET` (default `<state>/signer/signer.sock`) in a directory nobody else can write to, the spending policy variables parse, and `LEMMA_REFUND_TO` names a usable address other than the buyer's own. Otherwise the bridge says on stderr why purchases are off. One purchase is one MCP call, and nothing on it reads or writes the chain:
 
 1. The offer is the open one from the last preview for the capability: no drift, not expired by the monotonic or the wall clock, and no purchase of that release pending or stored. With `package`, that preview must have been for the same package.
 2. Core `checkPurchase` runs against the bridge's spend ledger, and the price is reserved in it, under the ledger's lock. A refusal (`EXCEEDS_PER_RESOLUTION`, `EXCEEDS_DAILY_CAP`, `WRONG_RECIPIENT`, and so on) signs and sends nothing.
 3. The purchase is marked pending in the inbox, so a lost answer is recovered rather than paid again.
 4. The nonce (core `derivePaymentNonce`) and the x402 requirements (core `paymentRequirementsFor`) come from the preview's own terms, so no challenge round trip is needed.
-5. A warranty claim is made once per resolution: a random 32-byte secret and a refund address (the buyer's, or `LEMMA_REFUND_TO`), kept as a core `WarrantyClaim` in `claims/<resolutionId>.json` with mode 0600. Only its hash is sent, and a retry sends the same one.
+5. A warranty claim is made once per resolution: a random 32-byte secret and a refund address (`LEMMA_REFUND_TO`), kept as a core `WarrantyClaim` in `claims/<resolutionId>.json` with mode 0600. Only its hash is sent, and a retry sends the same one.
 6. The signer signs the `TransferWithAuthorization` after checking its own policy. The authorization is valid for the quoted window less a minute (never under half of it), which gives a buyer clock running fast up to two minutes of room before the server refuses the window.
 7. The paid call carries the payment in `_meta["x402/payment"]`. A delivery is stored only if its resolution matches the preview id, release, profile digest, buyer, and terms; the ledger entry then becomes settled.
 
@@ -30,7 +30,7 @@ When signing fails, no signature left the signer, so the bridge removes the pend
 
 ### Buyer signer
 
-`lemma-signer` is a separate process that holds the buyer key, so neither the bridge nor the installs and acceptance tests it starts ever have it. `lemma-signer init` creates the key file (mode 0600 in a 0700 directory, never overwritten) and prints only the address to fund. `lemma-signer serve` refuses a key file that is a link, that its group or others can access, or that another user owns. It serves JSON over HTTP on a Unix socket: `GET /address`, `POST /sign/transfer-authorization`, and `POST /sign/adoption-receipt`. A refusal answers 403 with its code.
+`lemma-signer` is a separate process that holds the buyer key, so neither the bridge nor the installs and acceptance tests it starts ever have it. `lemma-signer init` creates the key file (mode 0600 in a 0700 directory, never overwritten) and prints only the address to fund. `lemma-signer serve` refuses a key file that is a link, that its group or others can access, or that another user owns. It serves JSON over HTTP on a Unix socket: `GET /address`, `POST /sign/transfer-authorization`, and `POST /sign/adoption-receipt` (`{ receipt, previewId }`). A refusal answers 403 with its code. A receipt is signed only for a resolution whose payment nonce the signer signed (`NOT_PAID` otherwise), and only one receipt per resolution (`RECEIPT_ALREADY_SIGNED` for a different one). With `LEMMA_BUYER_ADDRESS` set, the bridge uses no signer that answers another address.
 
 Every process of the user can reach the socket, so the signer enforces the spending policy itself, with its own ledger. It signs only USDC `TransferWithAuthorization` on Arbitrum Sepolia, only to `LEMMA_ALLOWED_PAY_TO`, within the per-purchase cap, the rolling 24-hour cap, and a window of 10 to 600 seconds; and Adoption Receipt typed data. The socket's directory must be a real directory that the signer's user owns and that neither its group nor others can write to; the bridge also refuses a socket directory its group or others can write to. The socket is mode 0600, or 0660 for a signer run as another user that shares a group with the bridge. The signer logs one JSON line per signature or refusal, never the key or a signature.
 
@@ -82,7 +82,9 @@ The acceptance command runs without a shell, in its own process group, with a fr
 
 The bridge refuses to start an acceptance run when its current or startup environment contains a wallet-secret variable. The buyer key lives in `lemma-signer`, not the bridge, but a key file readable by the operating-system user remains readable by the test process. Production buyer signing should therefore run the signer as another user, or use a hardware or remote signer.
 
-On Linux, optional offline mode creates a new network namespace with loopback enabled. If namespace setup cannot be verified, no test starts and no receipt is recorded.
+On Linux, the run is confined by default: new user, mount and PID namespaces, with an empty tmpfs over the state directory and the signer socket's directory (or `/dev/null` over the socket, when that directory holds the workspace), a fresh `/proc`, and the command in a nested user and mount namespace, as the user's own ids, so the tests cannot unmount the covers and see the same permissions as unconfined. A wrapper shell reports on fd 3 how far setup got, so a failed setup reports `confinement-failed` and never counts as a test result. The bridge probes asynchronously whether this works (again after ten minutes if it failed); where it does not (no unprivileged user namespaces, or no `unshare` or `mount`), runs are unconfined and the bridge warns at startup. `LEMMA_ACCEPTANCE_CONFINE=0` turns confinement off. See [Security Model](security-model.md#receipts-from-acceptance-tests).
+
+Optional offline mode (`LEMMA_ACCEPTANCE_OFFLINE=1`) adds a network namespace with loopback enabled, inside the same sandbox when it is on. If namespace setup cannot be verified, no test starts and no receipt is recorded.
 
 ## Receipt delivery
 
@@ -104,7 +106,7 @@ Every purchase keeps its warranty claim in `claims/<resolutionId>.json` (see [Pu
 
 The claim secret goes in that request and nowhere else. The request refuses redirects, so a redirect cannot carry the secret to another host, and no answer shows the secret or the refund address. The secret can only pay the address it was committed with, so relaying it through the server is safe.
 
-The withdrawal shows the refund address next to the public resolution id on chain. When a refund the tool asks for pays the wallet that paid for the purchase (the default refund address), its entry says `to the paying wallet`, and one line says that the chain then links the two and that `LEMMA_REFUND_TO` sets another refund address for later purchases. The claim was committed at purchase time, so this refund still goes to that wallet.
+The withdrawal shows the refund address next to the public resolution id on chain. When a refund the tool asks for pays the wallet that paid for the purchase (possible only for a purchase made before `LEMMA_REFUND_TO` was required), its entry says `to the paying wallet`, and one line says that the chain then links the two and that `LEMMA_REFUND_TO` sets another refund address for later purchases. The claim was committed at purchase time, so this refund still goes to that wallet.
 
 The answer names each resolution by its first eight hex digits:
 

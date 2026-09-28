@@ -1,4 +1,5 @@
 export * from "./acceptance.js";
+export * from "./confine.js";
 export * from "./adoption.js";
 export * from "./apply.js";
 export * from "./bridge.js";

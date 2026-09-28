@@ -11,6 +11,7 @@ import {
   type RegistryStatus,
   type WarrantyChain,
   WarrantyActivator,
+  activationDueAt,
   WarrantyEvaluator,
   WarrantyExpirer,
   decideReview,
@@ -257,6 +258,36 @@ describe("the activator", () => {
     expect(w.chain.logs.filter((l) => l.name === "ResolutionActivated")).toHaveLength(1);
   });
 
+  it("reads a resend's nonce, checks the registry and sends inside the sender's queue, so another job's send cannot take the nonce in between", async () => {
+    const w = await warrantyWorld();
+    const b = await w.buy();
+    w.chain.mineOnSend = false;
+    w.chain.pendingVisible = false;
+    await w.jobs.activator.runOnce();
+    w.advance(30);
+    const order: string[] = [];
+    const nonces = w.chain.nonces.bind(w.chain);
+    let other: Promise<unknown> | undefined;
+    w.chain.nonces = async (sender) => {
+      order.push("resend reads its nonce");
+      // Another job (the expirer, say) sends from the same account right now.
+      const action = await w.store.getWarrantyAction(b.id, "activate");
+      other ??= w.chain
+        .send({ fn: "activateResolution", voucher: WarrantyVoucher.parse(action?.payload), signature: action?.signature as `0x${string}` }, { notAfter: new Date(8.64e15), clock: () => new Date(0) })
+        .then(() => order.push("other job sends"));
+      return nonces(sender);
+    };
+    const send = w.chain.send.bind(w.chain);
+    w.chain.send = async (call, options) => {
+      if (options.nonce !== undefined) order.push("resend sends");
+      return send(call, options);
+    };
+    expect(await w.jobs.activator.runOnce()).toMatchObject({ sent: 1 });
+    await other;
+    expect(w.chain.exclusiveCalls).toContain("provider");
+    expect(order).toEqual(["resend reads its nonce", "resend sends", "other job sends"]);
+  });
+
   it("backs off while the registry is paused and activates after", async () => {
     const w = await warrantyWorld();
     const b = await w.buy();
@@ -420,11 +451,14 @@ describe("the evaluator", () => {
     expect(await w.jobs.evaluator.runOnce()).toMatchObject({ queued: 5, done: 5 });
     const weight = async (b: Bought) => WarrantyOutcome.parse((await w.store.getWarrantyAction(b.id, "finalize"))?.payload).weightBps;
     // The 31-day-old outcome is not counted: three weighed in full, the fourth at zero; another buyer is not affected.
-    expect(await Promise.all(recent.map(weight))).toEqual([10_000, 10_000, 10_000, 0]);
+    // Which one is fourth follows the activation batch's order on chain (by resolution id), not purchase order.
+    const weights = await Promise.all(recent.map(weight));
+    expect([...weights].sort((a, b) => a - b)).toEqual([0, 10_000, 10_000, 10_000]);
+    const fourth = recent[weights.indexOf(0)]!;
     expect(await weight(theirs)).toBe(10_000);
-    expect(w.logger.lines.find((l) => l.event === "warranty.outcome_queued" && l.fields["resolutionId"] === recent[3]!.id)?.fields).toMatchObject({ weightBps: 0, code: "DAMPED" });
+    expect(w.logger.lines.find((l) => l.event === "warranty.outcome_queued" && l.fields["resolutionId"] === fourth.id)?.fields).toMatchObject({ weightBps: 0, code: "DAMPED" });
     // The damped outcome still finalizes: the registry records it with no weight (not into the engine).
-    expect(w.chain.status(recent[3]!.id)).toBe("passed");
+    expect(w.chain.status(fourth.id)).toBe("passed");
   });
 
   it("counts toward the damper an outcome exactly 30 days old, and not one a second older", async () => {
@@ -717,6 +751,36 @@ describe("registry refusals", () => {
     expect((await refused("withdraw", "NoCredit", [idOf("x")])).action).toMatchObject({ state: "abandoned", lastCode: "NO_CREDIT" });
     expect((await refused("withdraw", "InvalidClaim")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_CLAIM", payload: { schemaVersion: "1" } });
     expect((await refused("withdraw", "InvalidRecipient")).action).toMatchObject({ state: "abandoned", lastCode: "INVALID_RECIPIENT" });
+  });
+
+  it("activates in hourly batches: every activation of an hour is due at the same whole hour", async () => {
+    const w = await warrantyWorld();
+    const hour = 3600_000;
+    const start = w.clock.now.getTime();
+    const nextHour = Math.ceil((start + 1) / hour) * hour;
+    // Two purchases minutes apart, in the same hour: neither goes out before the hour, and both go out together at it.
+    w.clock.now = new Date(nextHour - 50 * 60_000);
+    w.chain.advance((w.clock.now.getTime() - start) / 1000);
+    const first = await w.buy();
+    const activator = new WarrantyActivator({ ...common(w), jitterSeconds: 300, batchSeconds: 3600 });
+    expect(await activator.runOnce()).toMatchObject({ queued: 1, sent: 0 });
+    w.clock.now = new Date(nextHour - 10 * 60_000);
+    w.chain.advance(40 * 60);
+    const second = await w.buy(OTHER_BUYER);
+    expect(await activator.runOnce()).toMatchObject({ queued: 1, sent: 0 });
+    for (const b of [first, second]) expect((await w.store.getWarrantyAction(b.id, "activate"))?.nextAttemptAt.getTime()).toBe(nextHour);
+    w.clock.now = new Date(nextHour);
+    w.chain.advance(10 * 60);
+    // The batch goes out in resolution id order, not purchase order, so its transaction order cannot be paired with the settlements.
+    const due = await w.store.dueWarrantyActions("activate", w.clock.now, 10);
+    expect(due.map((a) => a.resolutionId)).toEqual([first.id, second.id].sort());
+    expect(await activator.runOnce()).toMatchObject({ sent: 2, done: 2 });
+    // A purchase on the hour itself is due at once; the jitter is not used while batches are on.
+    const never = vi.fn(() => 0);
+    expect(activationDueAt(new Date(nextHour), 3600, 300, never).getTime()).toBe(nextHour);
+    expect(activationDueAt(new Date(nextHour + 1), 3600, 300, never).getTime()).toBe(nextHour + hour);
+    expect(never).not.toHaveBeenCalled();
+    expect(activationDueAt(new Date(nextHour), 0, 300, (max) => max).getTime()).toBe(nextHour + 300_000);
   });
 
   it("backs off with jitter, doubling from 30 seconds up to an hour", async () => {

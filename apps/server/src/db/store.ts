@@ -436,7 +436,9 @@ export class PgStore implements LemmaStore {
       .select()
       .from(a)
       .where(and(eq(a.kind, kind), inArray(a.state, ["queued", "sent"]), lte(a.nextAttemptAt, now)))
-      .orderBy(asc(a.nextAttemptAt))
+      // An activation batch (one due time) goes out by resolution id, never by insertion order, so purchase order does not show in the send order.
+      // Other kinds keep their queue order: the evaluator's damper weighs outcomes in the order they were queued.
+      .orderBy(...(kind === "activate" ? [asc(a.nextAttemptAt), asc(a.resolutionId)] : [asc(a.nextAttemptAt)]))
       .limit(limit);
     return rows.map(toAction);
   }

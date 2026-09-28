@@ -136,7 +136,7 @@ describe("acceptance", () => {
   });
 
   it("builds a receipt that parses, with a stable digest", async () => {
-    const run = { started: true, notStarted: null, exitCode: 0, timedOut: false, durationMs: 1234, outputDigest: fileDigest("ok"), truncated: false };
+    const run = { started: true, notStarted: null, exitCode: 0, timedOut: false, durationMs: 1234, outputDigest: fileDigest("ok"), truncated: false, confined: false };
     const a = receiptFor(ID, run, NOW);
     expect(AdoptionReceipt.parse(a)).toEqual(a);
     expect(adoptionReceiptDigest(a)).toBe(adoptionReceiptDigest(receiptFor(ID, run, NOW)));

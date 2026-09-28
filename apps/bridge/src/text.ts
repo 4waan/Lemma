@@ -169,7 +169,10 @@ function commandText(command: { manager: string; script: string }): string {
   return /^test(:[a-z0-9]{1,12})?$/.test(command.script) ? `${command.manager} run ${command.script}` : `${command.manager} run of the release's acceptance script`;
 }
 
-export function notStartedText(command: { manager: string; script: string }, reason: "command-not-found" | "manager-unusable" | "offline-unavailable" | "script-missing" | null): string {
+export function notStartedText(command: { manager: string; script: string }, reason: "command-not-found" | "manager-unusable" | "offline-unavailable" | "confinement-failed" | "script-missing" | null): string {
+  if (reason === "confinement-failed") {
+    return "Lemma: the sandbox acceptance tests run in (Linux user, mount and PID namespaces that hide the Lemma state and signer) could not be set up for this run, so no test ran and nothing was recorded. Try again; LEMMA_ACCEPTANCE_CONFINE=0 runs tests without it.";
+  }
   if (reason === "offline-unavailable") {
     return "Lemma: offline acceptance (LEMMA_ACCEPTANCE_OFFLINE=1) needs Linux with unprivileged network namespaces and the ip tool, which are not available here, so no test ran and nothing was recorded. Unset it, or run where it works.";
   }

@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import {
   type Address,
   type Hex32,
@@ -138,6 +140,13 @@ export interface WarrantyChain {
    * (`registryRevertOf`). Sends from one sender go out one at a time.
    */
   send(call: RegistryCall, options: RegistrySendOptions): Promise<Hex32>;
+  /**
+   * Runs `task` while holding the sender's send queue: no other send from that
+   * sender starts until it ends. A `send` from the same sender inside it goes
+   * straight through. A resend reads its nonce, checks the registry and sends
+   * inside one, so another job's first send cannot take the nonce in between.
+   */
+  exclusive<T>(sender: WarrantySender, task: () => Promise<T>): Promise<T>;
   /** A transaction's receipt without waiting: success, reverted, or unknown (not mined, or unknown to the node). */
   receiptStatus(txHash: Hex32): Promise<TxStatus>;
   /** Waits a bounded time for a transaction's receipt. */
@@ -150,6 +159,25 @@ export interface WarrantyChain {
    * EIP-712 domain and layout give the digest core computes) on this token.
    */
   registryIdentity(voucher: WarrantyVoucher): Promise<{ readonly usdc: Address; readonly voucherDigest: Hex32 }>;
+}
+
+/**
+ * One queue per sender: a task runs after every task queued before it for
+ * that sender has ended. A task queued from inside a running task of the
+ * same sender (a `send` inside `exclusive`) runs at once instead of waiting
+ * for itself.
+ */
+export function senderQueues(): <T>(sender: WarrantySender, task: () => Promise<T>) => Promise<T> {
+  const queues: Record<WarrantySender, Promise<unknown>> = { provider: Promise.resolve(), evaluator: Promise.resolve() };
+  const holding = new AsyncLocalStorage<ReadonlySet<WarrantySender>>();
+  return <T>(sender: WarrantySender, task: () => Promise<T>): Promise<T> => {
+    const held = holding.getStore() ?? new Set<WarrantySender>();
+    if (held.has(sender)) return task();
+    const inside = () => holding.run(new Set([...held, sender]), task);
+    const run = queues[sender].then(inside, inside);
+    queues[sender] = run.catch(() => undefined);
+    return run;
+  };
 }
 
 /** A registry revert, by its custom error: a code for logs and the outbox, the error's name, and its arguments. */
@@ -295,12 +323,7 @@ export function viemWarrantyChain(options: ViemWarrantyChainOptions): WarrantyCh
   };
 
   // One send at a time per sender: a resend's explicit nonce and the nonce manager never race within this process.
-  const queues: Record<WarrantySender, Promise<unknown>> = { provider: Promise.resolve(), evaluator: Promise.resolve() };
-  const serially = <T>(sender: WarrantySender, task: () => Promise<T>): Promise<T> => {
-    const run = queues[sender].then(task, task);
-    queues[sender] = run.catch(() => undefined);
-    return run;
-  };
+  const serially = senderQueues();
 
   const callData = (call: RegistryCall) => {
     switch (call.fn) {
@@ -429,6 +452,8 @@ export function viemWarrantyChain(options: ViemWarrantyChainOptions): WarrantyCh
         }
       });
     },
+
+    exclusive: serially,
 
     async receiptStatus(txHash) {
       await onChain();

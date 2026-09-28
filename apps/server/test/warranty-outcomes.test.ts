@@ -183,6 +183,40 @@ describe("RegistryOutcomeSource", () => {
 });
 
 describe("distinct buyers", () => {
+  it("publishes the counts from a daily snapshot: a new outcome moves no count before the next day", async () => {
+    const w = await warrantyWorld({ failures: "auto" });
+    w.chain.setEngine(ENGINE_A);
+    const day = 86_400_000;
+    const snapshot = new RegistrySnapshot({ store: w.store, index: w.index, logger: silentLogger, clock: () => w.clock.now, buyersRefreshMs: day });
+    const source = new RegistryOutcomeSource(snapshot);
+    const feed = new RegistryOutcomeFeed(snapshot, { store: w.store, index: w.index, registry: { chainId: 421614, address: REGISTRY }, logger: silentLogger });
+    const finalize = async (payer: string) => {
+      const b = await w.activeWarranty(payer);
+      await w.receipt(b, "passed");
+      await w.jobs.evaluator.runOnce();
+      await w.jobs.indexer.runOnce();
+      await snapshot.refresh();
+    };
+    const digest = w.entry.releaseDigest;
+    const capability = w.entry.release.capability;
+    await finalize(BUYER);
+    await finalize(OTHER_BUYER);
+    const counts = () => [source.outcomesFor(digest, 0).length, source.buyersFor(digest, 0), feed.buyersFor(capability)];
+    expect(counts()).toEqual([2, 2, 2]);
+    // Later the same day: a repeat buyer and a new one. The outcomes show at once; the buyer counts hold.
+    await finalize(BUYER);
+    await finalize(THIRD_BUYER);
+    expect(counts()).toEqual([4, 2, 2]);
+    // The next day, the counts catch up.
+    w.clock.now = new Date((Math.floor(w.clock.now.getTime() / day) + 1) * day);
+    expect(counts()).toEqual([4, 3, 3]);
+    // A new engine starts empty: the held count never exceeds the outcomes it is published with.
+    w.chain.setEngine(ENGINE_B);
+    await w.jobs.indexer.runOnce();
+    await snapshot.refresh();
+    expect(counts()).toEqual([0, 0, 3]);
+  });
+
   it("counts the payers behind the recorded outcomes per release and profile, and behind the fed ones per capability", async () => {
     const w = await warrantyWorld({ failures: "auto" });
     w.chain.setEngine(ENGINE_A);

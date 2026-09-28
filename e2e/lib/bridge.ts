@@ -69,8 +69,8 @@ export async function startBridge(options: {
   readonly signer: LocalSigner;
   readonly provider: Address;
   readonly variant: "pass" | "fail";
-  /** LEMMA_REFUND_TO: where a warranty credit goes; the buyer's own address when unset. */
-  readonly refundTo?: Address;
+  /** LEMMA_REFUND_TO: where a warranty credit goes; purchases need it. */
+  readonly refundTo: Address;
   readonly dir: string;
 }): Promise<Bridge> {
   const workspace = writeWorkspace(mkdtempSync(join(options.dir, "workspace-")), options.variant);
@@ -82,7 +82,7 @@ export async function startBridge(options: {
   const scanner = new ScanCache();
   const clock = () => new Date();
   const runningNodeMajor = Number(process.versions.node.split(".")[0]);
-  const env = { ...policyEnv(options.provider), ...(options.refundTo === undefined ? {} : { LEMMA_REFUND_TO: options.refundTo }) };
+  const env = { ...policyEnv(options.provider), LEMMA_REFUND_TO: options.refundTo };
   const payments = await paymentsFromEnv(env, { stateDir, root: workspace, clock, signerFor: (socket) => (socket === defaultSignerSocket(stateDir) ? options.signer : unreachable()) });
   if (payments.registerPaidTools === undefined) throw new Error(`purchases are off: ${payments.note ?? "no reason given"}`);
   const server = createBridgeServer({

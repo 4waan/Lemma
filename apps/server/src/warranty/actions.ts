@@ -215,32 +215,37 @@ export class ActionSender {
     const sender = SENDER_OF[this.rules.fn];
     let expected: WarrantyActionExpectation = { attempts: action.attempts, state: action.state };
     try {
-      let nonce: number | undefined;
-      if (action.attempts > 0) {
-        // A transaction may be out. Its receipt answers first.
-        if (action.txHash !== null && (await chain.receiptStatus(action.txHash)) === "success") return await this.close(action, expected, "done", null);
-        // A resend's nonce is read before the registry is: see the class comment.
-        const counts = await chain.nonces(sender);
-        if (counts.pending > counts.mined) return await this.wait(action, expected, new Date(ctx.now.getTime() + (this.deps.pendingWaitMs ?? 15_000)), PENDING_TX);
-        nonce = counts.mined;
-      }
-      const decision = await this.rules.prepare(action, await chain.resolution(action.resolutionId), ctx);
-      if (decision.kind !== "send") return await this.apply(action, expected, decision);
+      // A transaction may be out. Its receipt answers first.
+      if (action.attempts > 0 && action.txHash !== null && (await chain.receiptStatus(action.txHash)) === "success") return await this.close(action, expected, "done", null);
+      // The nonce read, the registry check and the send run inside the sender's queue, so no other job's send takes the nonce in between.
+      const sent = await chain.exclusive(sender, async (): Promise<{ readonly txHash: Hex32; readonly attempts: number } | Exclude<keyof ActionReport, "sent">> => {
+        let nonce: number | undefined;
+        if (action.attempts > 0) {
+          // A resend's nonce is read before the registry is: see the class comment.
+          const counts = await chain.nonces(sender);
+          if (counts.pending > counts.mined) return await this.wait(action, expected, new Date(ctx.now.getTime() + (this.deps.pendingWaitMs ?? 15_000)), PENDING_TX);
+          nonce = counts.mined;
+        }
+        const decision = await this.rules.prepare(action, await chain.resolution(action.resolutionId), ctx);
+        if (decision.kind !== "send") return await this.apply(action, expected, decision);
 
-      const attempts = action.attempts + 1;
-      const claimedAt = clock().getTime();
-      const lease = new Date(claimedAt + Math.max(this.delayAfter(attempts), ATTEMPT_LEASE_MS));
-      const claim: WarrantyActionChange = {
-        state: "sent",
-        attempts,
-        nextAttemptAt: lease,
-        lastCode: null,
-        ...(decision.payload === undefined ? {} : { payload: decision.payload }),
-        ...(decision.signature === undefined ? {} : { signature: decision.signature }),
-      };
-      if (!(await store.updateWarrantyAction(action.resolutionId, this.rules.kind, expected, claim, clock()))) return "waiting";
-      expected = { attempts, state: "sent" };
-      const txHash = await chain.send(decision.call, { notAfter: new Date(claimedAt + SEND_DEADLINE_MS), clock, nonce });
+        const attempts = action.attempts + 1;
+        const claimedAt = clock().getTime();
+        const lease = new Date(claimedAt + Math.max(this.delayAfter(attempts), ATTEMPT_LEASE_MS));
+        const claim: WarrantyActionChange = {
+          state: "sent",
+          attempts,
+          nextAttemptAt: lease,
+          lastCode: null,
+          ...(decision.payload === undefined ? {} : { payload: decision.payload }),
+          ...(decision.signature === undefined ? {} : { signature: decision.signature }),
+        };
+        if (!(await store.updateWarrantyAction(action.resolutionId, this.rules.kind, expected, claim, clock()))) return "waiting";
+        expected = { attempts, state: "sent" };
+        return { txHash: await chain.send(decision.call, { notAfter: new Date(claimedAt + SEND_DEADLINE_MS), clock, nonce }), attempts };
+      });
+      if (typeof sent === "string") return sent;
+      const { txHash, attempts } = sent;
       report.sent++;
       await store.updateWarrantyAction(action.resolutionId, this.rules.kind, expected, { txHash, sentAt: clock() }, clock());
       this.deps.logger.log("info", "warranty.sent", { kind: this.rules.kind, resolutionId: action.resolutionId, attempt: attempts, txHash });

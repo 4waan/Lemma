@@ -14,7 +14,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 - On the demo machine: `lemma-signer serve` with the buyer's key file and the bridge with its spending policy (see [Buyer setup](deployment.md#buyer-setup)). The buyer holds testnet USDC and no ETH.
 - Three fixture repositories: one the release fits whose tests pass with it, one it fits whose tests fail, and one it does not fit.
 - The dashboard open on the Catalog page, and an Arbiscan tab.
-- A short activation delay keeps the wait short: `WARRANTY_ACTIVATION_JITTER_SECONDS=30`. The default (up to 300 s at random) keeps an activation from being timed with the settlement that paid for it, though at testnet volume its amount usually still matches that settlement; say so if asked.
+- A short activation delay keeps the wait short: `WARRANTY_ACTIVATION_BATCH_SECONDS=60` (or `0` with `WARRANTY_ACTIVATION_JITTER_SECONDS=30`). The default sends activations together once an hour, so one activation cannot be paired with the one settlement just before it; with a one-minute batch on a quiet testnet, a batch often holds a single activation, so say so if asked.
 - If Arbitrum Sepolia is unreachable, show the same flow on a local chain with `npm run e2e` instead (about a minute; see below).
 
 ## Three-minute sequence
@@ -44,7 +44,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 - Spending policy is enforced by local code outside the model.
 - Unsupported and unbenchmarked profiles remain free.
 - Eligible failure costs the provider's bond, and the buyer collects it without holding ETH.
-- Every warranty, outcome, and refund is a public record on Arbitrum Sepolia. No warranty or outcome record names the buyer; a refund shows only the refund address the buyer chose, which `LEMMA_REFUND_TO` keeps apart from the paying wallet.
+- Every warranty, outcome, and refund is a public record on Arbitrum Sepolia. No warranty or outcome record names the buyer; a refund shows only the refund address the buyer chose, which `LEMMA_REFUND_TO` must keep apart from the paying wallet before the bridge will buy.
 - One buyer cannot inflate a release's record: after three weighted outcomes on a profile in 30 days, its next ones weigh nothing.
 - The paired benchmark measures all-in cost-to-green against the same acceptance standard.
 

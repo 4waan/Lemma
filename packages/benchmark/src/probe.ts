@@ -22,19 +22,26 @@ const MEASURED: ReadonlySet<Attempt["status"]> = new Set(["finished", "timeout"]
 export const isProbeMeasurement = (a: Attempt): boolean => !a.startupFailure && MEASURED.has(a.status);
 const byStart = (a: Attempt, b: Attempt) => (a.startedAt === b.startedAt ? (a.runId < b.runId ? -1 : 1) : a.startedAt < b.startedAt ? -1 : 1);
 
+/** How many more of an arm's runs that measure nothing the probe may replace: negative once it has replaced more than PROBE_EXTRA_ATTEMPTS. */
+export function probeReplacementsLeft(attempts: readonly Attempt[], taskId: string, arm: Attempt["arm"]): number {
+  return PROBE_EXTRA_ATTEMPTS - attempts.filter((a) => a.taskId === taskId && a.arm === arm && !isProbeMeasurement(a)).length;
+}
+
 /**
  * The next probe run, or null when the probe has its three measured controls
  * and one measured treatment. `benchmark probe` resumes from the attempt log
- * with this, so running it again only fills what is missing. It gives up after
- * PROBE_EXTRA_ATTEMPTS replacements per arm rather than keep spending.
+ * with this, so running it again only fills what is missing. It gives up as
+ * soon as an arm has more runs that measured nothing than it may replace
+ * (PROBE_EXTRA_ATTEMPTS), because the arm can no longer be completed, rather
+ * than keep spending.
  */
 export function nextProbeSlot(attempts: readonly Attempt[], taskId: string): Slot | null {
   for (const [arm, needed] of [["control", PROBE_CONTROL_RUNS], ["treatment", PROBE_TREATMENT_RUNS]] as const) {
     const mine = attempts.filter((a) => a.taskId === taskId && a.arm === arm);
     const usable = mine.filter(isProbeMeasurement).length;
     if (usable >= needed) continue;
-    if (mine.length >= needed + PROBE_EXTRA_ATTEMPTS) {
-      throw new BenchmarkError(`probe ${taskId}: ${mine.length} ${arm} attempts and only ${usable} measured; giving up rather than spending more`);
+    if (probeReplacementsLeft(attempts, taskId, arm) < 0) {
+      throw new BenchmarkError(`probe ${taskId}: ${mine.length - usable} ${arm} runs measured nothing, more than the ${PROBE_EXTRA_ATTEMPTS} it may replace; giving up rather than spending more`);
     }
     return { taskId, arm, repetition: mine.length + 1 };
   }

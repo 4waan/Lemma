@@ -13,7 +13,7 @@ import { CursorAdapter } from "./cursor.js";
 import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
 import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
-import { isProbeMeasurement, nextProbeSlot, probeVerdict } from "./probe.js";
+import { isProbeMeasurement, nextProbeSlot, probeReplacementsLeft, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
 import { RunLog } from "./records.js";
@@ -315,7 +315,15 @@ async function probeRuns(v: string, taskId: string, fixture: LoadedBenchmarkFixt
     announce(taskId, slot.arm, slot.repetition, fixture);
     const attempt = await runSlot(slot, 1, { ...base, preApply: slot.arm === "treatment" ? bundle : null });
     log.appendAttempt(attempt);
-    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    const startup = attempt.startupFailure ? ` (startup failure: ${attempt.startupReason})` : "";
+    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}${startup}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    // The replacement waits for the next invocation: what failed this run (a plan's usage limit, a
+    // lost login, credit that ran out) would fail the replacements too and use them all up at once.
+    // With none left, nextProbeSlot gives up instead.
+    const left = probeReplacementsLeft(log.attempts(), taskId, slot.arm);
+    if (!isProbeMeasurement(attempt) && left >= 0) {
+      throw new Error(`${taskId} ${slot.arm} #${slot.repetition} measured nothing, so the probe stopped rather than replace it straight away (${left} ${left === 1 ? "replacement" : "replacements"} left for the ${slot.arm} runs). Once its cause is fixed or has passed, run the same command again: it continues where it stopped.`);
+    }
   }
   // Only the runs the verdict can use are waited for: one that measured nothing (an interrupted run
   // has no meter record) may never settle, and the verdict does not read it.

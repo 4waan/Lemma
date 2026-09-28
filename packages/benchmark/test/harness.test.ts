@@ -40,6 +40,7 @@ import {
   prepareRunBase,
   prepareWorkspace,
   removeTree,
+  probeReplacementsLeft,
   probeVerdict,
   readTrace,
   reconcile,
@@ -580,6 +581,18 @@ describe("probe verdict", () => {
     const failing = [1, 2, 3].map((i) => attemptOf({ arm: "treatment", repetition: i, status: "error" }));
     expect(nextProbeSlot([...three, ...failing.slice(0, 2)], "add-greeting")).toEqual({ taskId: "add-greeting", arm: "treatment", repetition: 3 });
     expect(() => nextProbeSlot([...three, ...failing], "add-greeting")).toThrow(/giving up/);
+  });
+
+  it("gives up on an arm as soon as it can no longer be completed, not after its last allowed attempt", () => {
+    const failed = [1, 2, 3].map((i) => attemptOf({ repetition: i, status: "error" }));
+    expect(probeReplacementsLeft(failed.slice(0, 2), "add-greeting", "control")).toBe(0);
+    // Two replaced controls leave three attempts for three measurements.
+    expect(nextProbeSlot(failed.slice(0, 2), "add-greeting")).toEqual({ taskId: "add-greeting", arm: "control", repetition: 3 });
+    // A third leaves two attempts, which cannot make three measured controls.
+    expect(probeReplacementsLeft(failed, "add-greeting", "control")).toBe(-1);
+    expect(() => nextProbeSlot(failed, "add-greeting")).toThrow(/3 control runs measured nothing, more than the 2 it may replace; giving up/);
+    expect(probeReplacementsLeft(failed, "add-greeting", "treatment")).toBe(2);
+    expect(probeReplacementsLeft(failed, "other-task", "control")).toBe(2);
   });
 
   it("measures only runs that started and finished or timed out, which are the only ones the probe waits on", () => {

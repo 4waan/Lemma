@@ -10,7 +10,7 @@ import type { Slot } from "./matrix.js";
 import { childEnv, killByHome, runCommand, trackHome } from "./process.js";
 import { Attempt, type RunLog } from "./records.js";
 import { type ReportedUsage, UsageError, toRunTokens } from "./tokens.js";
-import { type RunWorkspace, filesChanged, prepareWorkspace, readTrace, snapshot } from "./workspace.js";
+import { RULE_FILES, type RunWorkspace, filesChanged, prepareWorkspace, readTrace, snapshot } from "./workspace.js";
 
 /** What the treatment paid, read from the payment work's local spend ledger after a run. */
 export interface PaymentSource {
@@ -75,6 +75,7 @@ export async function runSlot(slot: Slot, attempt: 1 | 2, ctx: SlotContext): Pro
     fixtureDir: dir,
     repositoryRoot: ctx.repositoryRoot,
     rulePath: treatment && ctx.bridge !== null ? ctx.rulePath : null,
+    ruleFile: RULE_FILES[ctx.adapter.kind],
   });
   const untrackHome = trackHome(workspace.home);
   const base = {

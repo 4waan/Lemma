@@ -16,7 +16,7 @@ export interface ReconcileResult {
  * the attempt pending for the next reconcile; it is never estimated. A lookup
  * that fails leaves that attempt pending and the rest are still read.
  */
-export async function reconcile(log: RunLog, adapter: AgentAdapter, clock: () => Date = () => new Date()): Promise<ReconcileResult> {
+export async function reconcile(log: RunLog, adapter: Pick<AgentAdapter, "usage">, clock: () => Date = () => new Date()): Promise<ReconcileResult> {
   let reconciled = 0;
   let pending = 0;
   const errors: Array<{ agentId: string; error: string }> = [];

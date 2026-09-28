@@ -9,15 +9,31 @@ import { listFiles } from "./files.js";
 const Slug = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 
 /**
+ * The agent every run of a version uses, at one release. Claude Code's cost is
+ * metered and priced from `prices/anthropic.json`, so the table's digest is
+ * part of the setup; Cursor's cost is billed, so it has none.
+ */
+export const AgentSetup = z
+  .strictObject({
+    name: z.enum(["cursor", "claude-code"]),
+    version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
+    pricesDigest: Hex32.nullable(),
+  })
+  .refine((a) => (a.name === "claude-code") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code runs name their price table; Cursor runs do not" });
+
+export type AgentSetup = z.infer<typeof AgentSetup>;
+
+/**
  * What is frozen before measured runs (benchmark-protocol.md "Integrity
- * rules"): the benchmark version, the model and its parameters, the tasks and
- * repetitions, and digests of the fixtures and the Lemma rule. `run` refuses to
- * start when a digest no longer matches.
+ * rules"): the benchmark version, the agent and its release, the model and its
+ * parameters, the tasks and repetitions, and digests of the fixtures and the
+ * Lemma rule. `run` refuses to start when any of them no longer matches.
  */
 export const ExperimentConfig = z
   .strictObject({
     schemaVersion: z.literal("1"),
     benchmarkVersion: Slug,
+    agent: AgentSetup,
     model: z.strictObject({
       id: z.string().min(1).max(64).regex(/^[A-Za-z0-9._:/-]+$/),
       params: z.array(z.strictObject({ id: z.string().min(1).max(64), value: z.string().max(64) })).max(16),

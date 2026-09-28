@@ -217,7 +217,7 @@ describe("workspace isolation", () => {
   it("refuses every file the SDK loads from ancestors, and an enclosing repository", () => {
     const root = makeFixture(temp("lemma-fx-"));
     const fixtureDir = join(root, "fixtures", "add-greeting");
-    for (const name of ["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".cursorrules", ".git"]) {
+    for (const name of ["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".claude", ".cursorrules", ".git"]) {
       const above = temp("lemma-above-");
       writeFileSync(join(above, name), "x\n");
       expect(() => prepareWorkspace({ base: join(above, "a", "runs"), runId: newRunId(), fixtureDir, repositoryRoot: REPO_ROOT, rulePath: null })).toThrow(WorkspaceError);

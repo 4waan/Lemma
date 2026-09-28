@@ -42,7 +42,9 @@ node packages/benchmark/dist/cli.js <freeze|run|reconcile|probe|report> <version
 | `probe` | Runs the stage-four economic kill test against a draft bundle and reports the maximum viable price. |
 | `report` | Produces scrubbed task verdicts and profile evidence once every attempt has a settled result. |
 
-The Cursor API key is read from a pipe on standard input. It is never accepted from an environment variable or command argument. `LEMMA_BENCHMARK_MODEL` selects the frozen model. `LEMMA_BENCH_DIR` can move run data outside the operating-system temporary directory.
+The agent is Cursor unless `LEMMA_BENCHMARK_AGENT=claude-code` selects Claude Code when a version is frozen or its probe starts; later commands use the agent the version recorded and refuse a different release. The agent's API key (Cursor's, or Anthropic's for Claude Code) is read from a pipe on standard input. It is never accepted from an environment variable or command argument. `LEMMA_BENCHMARK_MODEL` selects the frozen model. `LEMMA_CLAUDE_COMMAND` is the absolute path of `claude` when the first one on `PATH` is not the one to use. `LEMMA_BENCH_DIR` can move run data outside the operating-system temporary directory.
+
+Claude Code runs have their cost metered by the harness at the dated list prices in `prices/anthropic.json`; see [Claude Code cost](../../docs/benchmark-protocol.md#claude-code-cost). They need an Anthropic API key (a Claude subscription login cannot be metered at API prices), and the harness must run as a normal user, because Claude Code refuses to skip its permission prompts as root. Reconciling them reads their meter records and needs no key.
 
 ## Evidence derivation
 
@@ -55,7 +57,7 @@ Every evidence object cites the digest of the exact run set and the base release
 ## Isolation and records
 
 - Each run gets a fresh fixture copy and empty home outside the repository.
-- The agent process receives a small allowlisted environment and the API key only through standard input.
+- The agent process receives a small allowlisted environment. Cursor receives the API key only through standard input; Claude Code never receives it, only a per-run token for the harness's metering proxy.
 - Dependency lifecycle scripts are disabled.
 - The harness owns the deadline and kills the process tree it can identify.
 - Attempts are logged before agent startup, so crashes and billed failures remain visible.
@@ -78,7 +80,16 @@ The first probe measures `mcp-server-payment-gating@0.1.0` on `weather-mcp-paid-
   --bundle packages/catalog/releases/mcp-server-payment-gating/0.1.0/bundle.json
 ```
 
-It runs three controls and one treatment with the bundle pre-applied, billed to the key's Cursor account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
+Or with Claude Code installed, as a normal user:
+
+```bash
+<command that prints your Anthropic API key> | LEMMA_BENCHMARK_AGENT=claude-code LEMMA_BENCHMARK_MODEL=claude-sonnet-5 \
+  npm run benchmark -- probe probe-1 \
+  --task weather-mcp-paid-forecast \
+  --bundle packages/catalog/releases/mcp-server-payment-gating/0.1.0/bundle.json
+```
+
+It runs three controls and one treatment with the bundle pre-applied, billed to the key's account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
 
 ## Development
 

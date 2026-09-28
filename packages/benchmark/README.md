@@ -42,9 +42,11 @@ node packages/benchmark/dist/cli.js <freeze|run|reconcile|probe|report> <version
 | `probe` | Runs the stage-four economic kill test against a draft bundle and reports the maximum viable price. |
 | `report` | Produces scrubbed task verdicts and profile evidence once every attempt has a settled result. |
 
-The agent is Cursor unless `LEMMA_BENCHMARK_AGENT=claude-code` selects Claude Code when a version is frozen or its probe starts; later commands use the agent the version recorded and refuse a different release. The agent's API key (Cursor's, or Anthropic's for Claude Code) is read from a pipe on standard input. It is never accepted from an environment variable or command argument. `LEMMA_BENCHMARK_MODEL` selects the frozen model. `LEMMA_CLAUDE_COMMAND` is the absolute path of `claude` when the first one on `PATH` is not the one to use. `LEMMA_BENCH_DIR` can move run data outside the operating-system temporary directory.
+The agent is Cursor unless `LEMMA_BENCHMARK_AGENT=claude-code` selects Claude Code or `LEMMA_BENCHMARK_AGENT=codex` selects Codex when a version is frozen or its probe starts; later commands use the agent the version recorded and refuse a different release. The agent's API key (Cursor's, Anthropic's for Claude Code, or OpenAI's for Codex) is read from a pipe on standard input. It is never accepted from an environment variable or command argument. `LEMMA_BENCHMARK_MODEL` selects the frozen model. `LEMMA_CLAUDE_COMMAND` and `LEMMA_CODEX_COMMAND` are the absolute paths of `claude` and `codex` when the first one on `PATH` is not the one to use. `LEMMA_BENCH_DIR` can move run data outside the operating-system temporary directory.
 
 Claude Code runs have their cost metered by the harness at the dated list prices in `prices/anthropic.json`; see [Claude Code cost](../../docs/benchmark-protocol.md#claude-code-cost). They need an Anthropic API key (a Claude subscription login cannot be metered at API prices), and the harness must run as a normal user, because Claude Code refuses to skip its permission prompts as root. Reconciling them reads their meter records and needs no key.
+
+Codex runs are metered the same way at the dated list prices in `prices/openai.json`; see [Codex cost](../../docs/benchmark-protocol.md#codex-cost). They need an OpenAI API key with API credit, from platform.openai.com: a ChatGPT sign-in cannot be used. The table prices `gpt-5.5`; add a model only with its published prices, which makes a new table digest.
 
 ## Evidence derivation
 
@@ -57,7 +59,7 @@ Every evidence object cites the digest of the exact run set and the base release
 ## Isolation and records
 
 - Each run gets a fresh fixture copy and empty home outside the repository.
-- The agent process receives a small allowlisted environment. Cursor receives the API key only through standard input; Claude Code never receives it, only a per-run token for the harness's metering proxy.
+- The agent process receives a small allowlisted environment. Cursor receives the API key only through standard input; Claude Code and Codex never receive it, only a per-run token for the harness's metering proxy.
 - Dependency lifecycle scripts are disabled.
 - The harness owns the deadline and kills the process tree it can identify.
 - Attempts are logged before agent startup, so crashes and billed failures remain visible.
@@ -89,7 +91,16 @@ Or with Claude Code installed, as a normal user:
   --bundle packages/catalog/releases/mcp-server-payment-gating/0.1.0/bundle.json
 ```
 
-It runs three controls and one treatment with the bundle pre-applied, billed to the key's account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). Before the version is bound or any run starts, it checks the key and the model; for Claude Code that is one request for one output token (a small fraction of a cent, in no run's cost), so a refused key, a model the key cannot use, or an organization with no API credit fails at once with the reason, and the same command works once that is fixed. Each run prints a line when it starts and one when it ends, and nothing in between; a run can take up to the task's 30-minute limit. A run that measured nothing (an agent error, or a run cut short by stopping the harness) is replaced, up to two extra attempts per arm, and the probe does not wait for its cost. If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
+Or with the OpenAI Codex CLI installed:
+
+```bash
+<command that prints your OpenAI API key> | LEMMA_BENCHMARK_AGENT=codex LEMMA_BENCHMARK_MODEL=gpt-5.5 \
+  npm run benchmark -- probe probe-codex-1 \
+  --task weather-mcp-paid-forecast \
+  --bundle packages/catalog/releases/mcp-server-payment-gating/0.1.0/bundle.json
+```
+
+It runs three controls and one treatment with the bundle pre-applied, billed to the key's account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). Before the version is bound or any run starts, it checks the key and the model; for Claude Code that is one request for one output token, and for Codex one reply of at most 16 tokens (a small fraction of a cent, in no run's cost), so a refused key, a model the key cannot use, or an organization with no API credit fails at once with the reason, and the same command works once that is fixed. Each run prints a line when it starts and one when it ends, and nothing in between; a run can take up to the task's 30-minute limit. A run that measured nothing (an agent error, or a run cut short by stopping the harness) is replaced, up to two extra attempts per arm, and the probe does not wait for its cost. If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
 
 ## Development
 

@@ -12,6 +12,7 @@ import {
   ClaudeCodeAdapter,
   MeterRecord,
   MeteringProxy,
+  anthropicApi,
   RULE_FILES,
   type ResponseUsage,
   UsageStreamReader,
@@ -222,7 +223,7 @@ const REAL = ["sk", "ant", "api03", "fake", "harness"].join("-");
 
 describe("MeteringProxy", { timeout: 20_000 }, () => {
   const open = async (upstream: string, drainMs = 5000) => {
-    const proxy = new MeteringProxy({ apiKey: REAL, prices, upstream, drainMs });
+    const proxy = new MeteringProxy({ apiKey: REAL, api: anthropicApi(prices, upstream), drainMs });
     const url = await proxy.open();
     return { proxy, url };
   };

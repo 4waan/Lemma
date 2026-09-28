@@ -56,12 +56,13 @@ export interface UsageReport {
 }
 
 /** The agents the harness can run. */
-export type AgentKind = "cursor" | "claude-code";
+export type AgentKind = "cursor" | "claude-code" | "codex";
 
 /**
  * The seam between the harness and an agent. `CursorAdapter` implements it
- * for `@cursor/sdk`, `ClaudeCodeAdapter` for headless Claude Code, and
- * `FakeAdapter` scripts outcomes for tests.
+ * for `@cursor/sdk`, `ClaudeCodeAdapter` for headless Claude Code,
+ * `CodexAdapter` for headless Codex, and `FakeAdapter` scripts outcomes for
+ * tests.
  */
 export interface AgentAdapter {
   /** Which agent runs, which decides where the treatment's Lemma rule goes (`RULE_FILES`). */

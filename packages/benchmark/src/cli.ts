@@ -9,10 +9,12 @@ import { type Hex32, PatchBundle, bundleDigest, fileDigest } from "@lemma/core";
 import type { AgentAdapter, AgentKind, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
 import { loadAnthropicPrices, pricesDigest } from "./anthropic-usage.js";
 import { ClaudeCodeAdapter, claudeCodeVersion, findClaudeCode, readMeteredUsage } from "./claude-code.js";
+import { CodexAdapter, codexVersion, findCodex, readCodexMeteredUsage } from "./codex.js";
 import { CursorAdapter } from "./cursor.js";
 import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
 import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
+import { loadOpenAiPrices, openAiPricesDigest } from "./openai-usage.js";
 import { isProbeMeasurement, nextProbeSlot, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
@@ -30,19 +32,20 @@ import { prepareRunBase, removeTree } from "./workspace.js";
  *   benchmark probe <probe-version> --task <taskId> --bundle <bundle.json>
  *   benchmark report <version>
  *
- * The agent's API key (Cursor's, or Anthropic's for Claude Code) is read from
- * standard input, which must be a pipe (for example `op read … | npm run
+ * The agent's API key (Cursor's, Anthropic's for Claude Code, or OpenAI's for
+ * Codex) is read from standard input, which must be a pipe (for example `op read … | npm run
  * benchmark -- run v1`). Agents run unsandboxed as this user and can read the
  * environment this process and its parents started with, so the key is never
  * taken from the environment, and commands that run agents refuse to start
  * while this process's environment, or the one any ancestor started with,
- * holds anything that looks like a credential. Reconciling Claude Code runs
- * reads their meter records and needs no key.
+ * holds anything that looks like a credential. Reconciling Claude Code and
+ * Codex runs reads their meter records and needs no key.
  *
- * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default, or
- * `claude-code`; later commands take the agent the version was started with);
- * LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND (the absolute
- * path of `claude`, default: the first on PATH); LEMMA_BENCH_DIR for run
+ * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default,
+ * `claude-code` or `codex`; later commands take the agent the version was
+ * started with); LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND
+ * and LEMMA_CODEX_COMMAND (the absolute path of `claude` or `codex`, default:
+ * the first on PATH); LEMMA_BENCH_DIR for run
  * directories (default: the OS temp directory, outside the repository);
  * LEMMA_BRIDGE_COMMAND and LEMMA_API_URL for the treatment's bridge.
  */
@@ -61,7 +64,7 @@ const newRunId = (): Hex32 => `0x${randomBytes(32).toString("hex")}`;
 const runBase = () => process.env["LEMMA_BENCH_DIR"] ?? join(tmpdir(), "lemma-bench");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key" };
+const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key", codex: "OpenAI API key" };
 
 /** The agent's API key, from a pipe on standard input: never the environment, a terminal, or a file whose path stays visible. */
 async function readKey(agent: AgentKind): Promise<string> {
@@ -73,8 +76,14 @@ async function readKey(agent: AgentKind): Promise<string> {
   for await (const chunk of process.stdin) key += String(chunk);
   key = key.trim();
   if (key === "") throw new Error(`standard input carried no ${KEY_NAME[agent]}`);
-  // Cursor is the default agent, so an Anthropic key here usually means LEMMA_BENCHMARK_AGENT was left unset.
-  if (agent === "cursor" && key.startsWith("sk-ant-")) throw new Error("that is an Anthropic API key, and this version runs Cursor: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code");
+  // Another provider's key usually means LEMMA_BENCHMARK_AGENT was left unset or mistyped (Cursor is the default).
+  const anthropic = key.startsWith("sk-ant-");
+  const openai = !anthropic && key.startsWith("sk-");
+  if (anthropic && agent !== "claude-code") throw new Error(`that is an Anthropic API key, and this version runs ${agent}: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code`);
+  // Cursor's key format is not documented, so only Claude Code is told about an OpenAI key.
+  if (openai && agent === "claude-code") throw new Error(`that looks like an OpenAI API key, and this version runs Claude Code: start a Codex version with LEMMA_BENCHMARK_AGENT=codex`);
+  // A ChatGPT sign-in (Codex's auth.json, or its access token) is not an API key: Codex would need it where the agent can read it, and it reaches a private ChatGPT backend, not the API the meter serves.
+  if (agent === "codex" && !openai) throw new Error("Codex runs need an OpenAI API key (it starts with sk-), from platform.openai.com; a ChatGPT sign-in cannot be used");
   return key;
 }
 
@@ -96,12 +105,15 @@ function assertCleanEnvironment(): void {
 /** The agent `freeze` and `probe` start a version with: LEMMA_BENCHMARK_AGENT, Cursor unless set. */
 function chosenAgent(): AgentKind {
   const name = process.env["LEMMA_BENCHMARK_AGENT"] ?? "cursor";
-  if (name !== "cursor" && name !== "claude-code") throw new Error(`LEMMA_BENCHMARK_AGENT must be cursor or claude-code, not ${name}`);
+  if (name !== "cursor" && name !== "claude-code" && name !== "codex") throw new Error(`LEMMA_BENCHMARK_AGENT must be cursor, claude-code or codex, not ${name}`);
   return name;
 }
 
-/** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version`, with Claude Code's price table. */
+/** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version` or `codex --version` with the agent's price table. */
 function agentSetup(name: AgentKind): AgentSetup {
+  if (name === "codex") {
+    return AgentSetup.parse({ name, version: codexVersion(findCodex()), pricesDigest: openAiPricesDigest(loadOpenAiPrices()) });
+  }
   if (name === "claude-code") {
     return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()) });
   }
@@ -114,17 +126,17 @@ function agentSetup(name: AgentKind): AgentSetup {
 function assertSameAgent(bound: AgentSetup): void {
   const now = agentSetup(bound.name);
   if (now.version !== bound.version) throw new Error(`${bound.name} is at ${now.version} now and this version ran ${bound.version}; use a new version`);
-  if (now.pricesDigest !== bound.pricesDigest) throw new Error("prices/anthropic.json changed since this version started; use a new version");
+  if (now.pricesDigest !== bound.pricesDigest) throw new Error(`prices/${bound.name === "codex" ? "openai" : "anthropic"}.json changed since this version started; use a new version`);
 }
 
 interface OpenAgent {
   readonly adapter: AgentAdapter;
-  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request). */
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code and Codex: with one tiny request). */
   checkModel(model: string): Promise<void>;
   close(): Promise<void>;
 }
 
-/** Reads the key and starts the agent; Claude Code keeps each run's meter record under `meterDir`. */
+/** Reads the key and starts the agent; Claude Code and Codex keep each run's meter record under `meterDir`. */
 async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent> {
   if (setup.name === "cursor") {
     const cursor = new CursorAdapter(await readKey("cursor"));
@@ -136,14 +148,19 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
       close: async () => undefined,
     };
   }
+  if (setup.name === "codex") {
+    const codex = new CodexAdapter(await readKey("codex"), { command: findCodex(), meterDir, prices: loadOpenAiPrices() });
+    return { adapter: codex, checkModel: (model) => codex.checkModel(model), close: () => codex.close() };
+  }
   if (process.getuid?.() === 0) throw new Error("Claude Code will not run with permission checks off as root, and a benchmark run cannot stop for prompts: run the harness as a normal user");
   const claude = new ClaudeCodeAdapter(await readKey("claude-code"), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices() });
   return { adapter: claude, checkModel: (model) => claude.checkModel(model), close: () => claude.close() };
 }
 
-/** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's meter records (without one). */
+/** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's or Codex's meter records (without one). */
 async function usageSource(setup: AgentSetup, meterDir: string): Promise<Pick<AgentAdapter, "usage">> {
   if (setup.name === "cursor") return new CursorAdapter(await readKey("cursor"));
+  if (setup.name === "codex") return { usage: async (agentId) => readCodexMeteredUsage(meterDir, agentId, setup.pricesDigest ?? "") };
   return { usage: async (agentId) => readMeteredUsage(meterDir, agentId, setup.pricesDigest ?? "") };
 }
 
@@ -298,7 +315,7 @@ async function probe(v: string): Promise<void> {
   try {
     // Checked before the version is bound and before the first run, so a wrong agent, key or model
     // leaves nothing behind and the corrected command can reuse the version.
-    if (setup.agent.name === "claude-code") await agent.checkModel(model.id);
+    if (setup.agent.name !== "cursor") await agent.checkModel(model.id);
     log.lock();
     log.bind("probe.json", setup, "probe task, fixture, bundle, agent release or model");
     await probeRuns(v, taskId, fixture, bundle, model, agent.adapter, log);

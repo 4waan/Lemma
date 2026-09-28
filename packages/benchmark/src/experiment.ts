@@ -9,17 +9,18 @@ import { listFiles } from "./files.js";
 const Slug = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 
 /**
- * The agent every run of a version uses, at one release. Claude Code's cost is
- * metered and priced from `prices/anthropic.json`, so the table's digest is
+ * The agent every run of a version uses, at one release. Claude Code's and
+ * Codex's cost is metered and priced from a dated table
+ * (`prices/anthropic.json`, `prices/openai.json`), so the table's digest is
  * part of the setup; Cursor's cost is billed, so it has none.
  */
 export const AgentSetup = z
   .strictObject({
-    name: z.enum(["cursor", "claude-code"]),
+    name: z.enum(["cursor", "claude-code", "codex"]),
     version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
     pricesDigest: Hex32.nullable(),
   })
-  .refine((a) => (a.name === "claude-code") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code runs name their price table; Cursor runs do not" });
+  .refine((a) => (a.name !== "cursor") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code and Codex runs name their price table; Cursor runs do not" });
 
 export type AgentSetup = z.infer<typeof AgentSetup>;
 

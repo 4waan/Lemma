@@ -342,7 +342,8 @@ export type DemandKey = z.infer<typeof DemandKey>;
 export const DemandView = z.strictObject({
   /** Buckets with fewer distinct repositories, or fewer distinct client addresses, are never published. */
   minProfiles: z.int().min(1),
-  buckets: z.array(z.strictObject({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), profiles: z.int().min(0), sources: z.int().min(0), key: DemandKey })),
+  /** `buyers`: distinct bridges with a buyer pass (one that has bought before), at most `sources` apart from a bridge moving address. */
+  buckets: z.array(z.strictObject({ day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), profiles: z.int().min(0), sources: z.int().min(0), buyers: z.int().min(0), key: DemandKey })),
 });
 
 export type DemandView = z.infer<typeof DemandView>;
@@ -351,31 +352,38 @@ export interface UnmetDemand {
   readonly capability: CapabilityId;
   readonly decision: DemandKey["decision"];
   readonly reasons: readonly string[];
-  /** Distinct repositories per day, summed over days: a repository asking on two days counts twice. */
+  /** Distinct bridges that have bought before, per day, summed over days: the ranking. */
+  readonly buyerDays: number;
+  /** Distinct repositories per day, summed over days: a repository asking on two days counts twice. Published beside the ranking, never used to order it. */
   readonly profileDays: number;
   readonly days: number;
 }
 
 /**
  * Previews Lemma could not sell, grouped by capability, decision and reasons
- * and ranked by how many repositories asked: the "what to build next" list
- * (docs/economic-gates.md, roadmap). A reuse without an offer counts too,
- * because its blocker (for example missing evidence) is work Lemma can do.
+ * and ranked by how many bridges that have bought before asked: the "what to
+ * build next" list (docs/economic-gates.md, roadmap). Groups with as many
+ * buyer-days keep a fixed order (capability, decision, reasons), so previews
+ * from addresses that never bought cannot move the ranking at all; their
+ * repository-days are published beside it, never used to order it. A reuse
+ * without an offer counts too, because its blocker (for example missing
+ * evidence) is work Lemma can do.
  */
 export function rankUnmetDemand(view: DemandView): UnmetDemand[] {
-  const groups = new Map<string, { capability: CapabilityId; decision: DemandKey["decision"]; reasons: string[]; profileDays: number; days: Set<string> }>();
-  for (const { day, profiles, key } of view.buckets) {
+  const groups = new Map<string, { id: string; capability: CapabilityId; decision: DemandKey["decision"]; reasons: string[]; buyerDays: number; profileDays: number; days: Set<string> }>();
+  for (const { day, profiles, buyers, key } of view.buckets) {
     if (key.offer) continue;
     const reasons = [...key.reasons].sort();
     const id = JSON.stringify([key.capability, key.decision, reasons]);
-    const group = groups.get(id) ?? { capability: key.capability, decision: key.decision, reasons, profileDays: 0, days: new Set<string>() };
+    const group = groups.get(id) ?? { id, capability: key.capability, decision: key.decision, reasons, buyerDays: 0, profileDays: 0, days: new Set<string>() };
+    group.buyerDays += buyers;
     group.profileDays += profiles;
     group.days.add(day);
     groups.set(id, group);
   }
   return [...groups.values()]
-    .map((g) => ({ capability: g.capability, decision: g.decision, reasons: g.reasons, profileDays: g.profileDays, days: g.days.size }))
-    .sort((a, b) => b.profileDays - a.profileDays || (a.capability < b.capability ? -1 : a.capability > b.capability ? 1 : 0) || (a.reasons.join() < b.reasons.join() ? -1 : 1));
+    .sort((a, b) => b.buyerDays - a.buyerDays || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((g) => ({ capability: g.capability, decision: g.decision, reasons: g.reasons, buyerDays: g.buyerDays, profileDays: g.profileDays, days: g.days.size }));
 }
 
 /**

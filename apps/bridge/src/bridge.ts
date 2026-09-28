@@ -1,8 +1,9 @@
-import { CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
+import { type BuyerPass, CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import { BuyerPassKeeper } from "./buyer-pass.js";
 import { driftCheck } from "./drift.js";
 import { type PackageRef, type ResolutionInbox, packageRef } from "./inbox.js";
 import { recoverPending } from "./recovery.js";
@@ -87,6 +88,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
   const server = new McpServer({ name: "lemma-bridge", version: "0.1.0" }, { instructions: BRIDGE_INSTRUCTIONS });
   const cache = new Map<CapabilityId, PreviewCacheEntry>();
   const wallClock = deps.wallClock ?? Date.now;
+  const passes = new BuyerPassKeeper(deps.inbox, deps.remote, deps.monotonic);
   // Reuse and adapt offers alike are checked for drift and for an earlier purchase.
   const block = (preview: Preview, here: PackageRef) => ("release" in preview ? deps.inbox.offerBlock(preview.release.releaseDigest, preview.profileDigest, here) : undefined);
   /** Per capability, the latest preview started: an earlier one that finishes later never replaces its answer. */
@@ -135,7 +137,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         if (cwd === undefined) {
           return { isError: true, content: [{ type: "text", text: `Lemma: ${pkg} is not a package directory in this workspace (it needs its own package.json, reached without links). Check the path and ask again; nothing is charged.` }] };
         }
-        const { preview, reputation, packageDir, incomplete } = await previewFor(deps, capability, cwd);
+        const { preview, reputation, packageDir, incomplete } = await previewFor(deps, capability, cwd, passes.current());
         const receivedMono = deps.monotonic();
         const receivedWall = wallClock();
         const ttlMs = "offer" in preview && preview.offer !== null ? Date.parse(preview.offer.validUntil) - Date.parse(preview.createdAt) : 0;
@@ -194,20 +196,22 @@ function toolName(params: unknown): string {
 }
 
 /**
- * Scans with the current interest set and asks for a preview. If the answer
- * comes from a different catalog than the interest set, the interest set is
- * revalidated and the preview asked once more, so a dependency the new catalog
- * matches on is not missing from the profile.
+ * Scans with the current interest set and asks for a preview, with this
+ * bridge's buyer pass if it has one. If the answer comes from a different
+ * catalog than the interest set, the interest set is revalidated and the
+ * preview asked once more, so a dependency the new catalog matches on is not
+ * missing from the profile.
  */
 async function previewFor(
   deps: BridgeDeps,
   capability: CapabilityId,
   cwd: string,
+  buyerPass: BuyerPass | undefined,
 ): Promise<{ preview: Preview; reputation: ReleaseReputation | null; packageDir: string; incomplete: boolean }> {
   let interest = await deps.remote.interest();
   for (let attempt = 0; ; attempt++) {
     const { profile, notes } = deps.scanner.scan({ root: deps.root, cwd, interest: interest.capabilities[capability] ?? [], runningNodeMajor: deps.runningNodeMajor });
-    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile });
+    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile, ...(buyerPass === undefined ? {} : { buyerPass }) });
     if (preview.catalogDigest === interest.catalogDigest || attempt > 0) {
       return { preview, reputation, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
     }

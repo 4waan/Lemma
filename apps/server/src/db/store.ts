@@ -19,6 +19,7 @@ import {
   DAMPER_ACTION_STATES,
   type DamperQuery,
   type DemandBucket,
+  type DemandBuyer,
   type LemmaStore,
   type NewReputationPost,
   type NewWarrantyAction,
@@ -270,7 +271,7 @@ export class PgStore implements LemmaStore {
     return updated.length === 1;
   }
 
-  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string): Promise<void> {
+  async recordDemand(day: string, bucket: string, profileDigest: Hex32, source: string, buyer?: DemandBuyer): Promise<void> {
     await this.db.transaction(async (tx) => {
       // Shared per-day lock: a close of this day waits for in-flight writes, and a
       // write that starts after a close sees the day closed, so nothing is counted
@@ -282,7 +283,18 @@ export class PgStore implements LemmaStore {
         insert into demand_seen (day, bucket, salted_digest, salted_source)
         values (${day}, ${bucket}, ${saltedDigest(salt, profileDigest)}, ${saltedDigest(salt, `source:${source}`)})
         on conflict do nothing`);
+      // The pass is checked in the same statement: an unissued one inserts nothing.
+      if (buyer !== undefined)
+        await tx.execute(sql`
+          insert into demand_buyers_seen (day, bucket, salted_buyer)
+          select ${day}, ${bucket}, ${saltedDigest(salt, `buyer:${buyer.keyed}`)}
+          where exists (select 1 from buyer_passes where pass_digest = ${buyer.passDigest})
+          on conflict do nothing`);
     });
+  }
+
+  async addBuyerPass(passDigest: Hex32): Promise<void> {
+    await this.db.insert(t.buyerPasses).values({ passDigest }).onConflictDoNothing();
   }
 
   async closeDemandDaysBefore(today: string): Promise<number> {
@@ -297,9 +309,12 @@ export class PgStore implements LemmaStore {
           await tx.execute(sql`set local statement_timeout = '5min'`);
           await tx.execute(sql`select pg_advisory_xact_lock(${DEMAND_LOCK}, hashtext(${day}))`);
           await tx.execute(sql`
-            with closed as (delete from demand_seen where day = ${day} returning bucket, salted_digest, salted_source)
-            insert into demand_daily (day, bucket, profiles, sources)
-            select ${day}, bucket, count(distinct salted_digest)::int, count(distinct salted_source)::int from closed group by bucket
+            with closed as (delete from demand_seen where day = ${day} returning bucket, salted_digest, salted_source),
+            buyers as (delete from demand_buyers_seen where day = ${day} returning bucket, salted_buyer),
+            counted as (select bucket, count(distinct salted_buyer)::int as n from buyers group by bucket)
+            insert into demand_daily (day, bucket, profiles, sources, buyers)
+            select ${day}, c.bucket, count(distinct c.salted_digest)::int, count(distinct c.salted_source)::int, coalesce(max(b.n), 0)
+            from closed c left join counted b on b.bucket = c.bucket group by c.bucket
             on conflict (day, bucket) do nothing`);
           await tx.delete(t.demandSalts).where(eq(t.demandSalts.day, day));
         });
@@ -314,7 +329,7 @@ export class PgStore implements LemmaStore {
 
   async demandBuckets(minProfiles: number): Promise<DemandBucket[]> {
     return this.db
-      .select({ day: t.demandDaily.day, bucket: t.demandDaily.bucket, profiles: t.demandDaily.profiles, sources: t.demandDaily.sources })
+      .select({ day: t.demandDaily.day, bucket: t.demandDaily.bucket, profiles: t.demandDaily.profiles, sources: t.demandDaily.sources, buyers: t.demandDaily.buyers })
       .from(t.demandDaily)
       .where(and(gte(t.demandDaily.profiles, minProfiles), gte(t.demandDaily.sources, minProfiles)))
       .orderBy(asc(t.demandDaily.day), asc(t.demandDaily.bucket));

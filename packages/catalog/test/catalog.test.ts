@@ -1,4 +1,5 @@
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { CAPABILITY_IDS, type CapabilityRelease, bundleDigest, catalogDigestOf, releaseDigest } from "@lemma/core";
@@ -231,7 +232,8 @@ describe("integrity", () => {
     expect(found.filter((p) => p.includes("has no releases"))).toEqual([]);
   });
 
-  it("names each entry whose name is not valid UTF-8", () => {
+  // Some filesystems (APFS on macOS) refuse such names outright, so there is nothing for the check to find there.
+  it.skipIf(!bytesNamesAllowed())("names each entry whose name is not valid UTF-8", () => {
     const root = catalogCopy();
     const dir = Buffer.from(join(root, "fixtures", "mcp-server.add-payment-gating") + "/");
     writeFileSync(Buffer.concat([dir, Buffer.from([0x61, 0xff]), Buffer.from(".json")]), "{}");
@@ -465,3 +467,16 @@ describe("fixtures", () => {
     expect(found).toContainEqual("fixtures/unknown.capability: not a capability id");
   });
 });
+
+/** Whether this machine's temporary filesystem accepts a file name that is not valid UTF-8. */
+function bytesNamesAllowed(): boolean {
+  const dir = mkdtempSync(join(tmpdir(), "lemma-names-"));
+  try {
+    writeFileSync(Buffer.concat([Buffer.from(dir + "/"), Buffer.from([0x61, 0xff])]), "");
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}

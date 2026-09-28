@@ -92,7 +92,7 @@ describe("the evaluator command over a database", () => {
 
   it("runs as a script that reads DATABASE_URL, never prints it, and fails with exit code 1", () => {
     const run = (env: Record<string, string>, args: string[] = ["list"]) =>
-      spawnSync(join(ROOT, "node_modules", ".bin", "tsx"), [join(ROOT, "apps/server/src/scripts/evaluator.ts"), ...args], { cwd: ROOT, env: { PATH: process.env["PATH"] ?? "", ...env }, encoding: "utf8", timeout: 60_000 });
+      spawnSync(process.execPath, ["--conditions=source", "--import", "tsx", join(ROOT, "apps/server/src/scripts/evaluator.ts"), ...args], { cwd: ROOT, env: { PATH: process.env["PATH"] ?? "", ...env }, encoding: "utf8", timeout: 60_000 });
     const usage = run({}, ["decide"]);
     expect([usage.status, usage.stderr.trim()]).toEqual([1, `evaluator: ${EVALUATOR_USAGE}`]);
     const unset = run({});

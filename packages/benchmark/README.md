@@ -62,7 +62,7 @@ Every evidence object cites the digest of the exact run set and the base release
 - Provider cost is treated as eventually consistent and must stabilize before reconciliation.
 - Raw prompts, agent output, and command output are not placed in public run records.
 
-The harness is not a security sandbox. The agent runs as the operator's user, so final experiments must run in a disposable environment that holds no unrelated credentials or valuable files. Linux `/proc` support is required for the full process and credential checks.
+The harness is not a security sandbox. The agent runs as the operator's user, so final experiments must run in a disposable environment that holds no unrelated credentials or valuable files. Linux `/proc` support is required for the full process and credential checks: without it (macOS, for example), a process the agent detached into a session of its own outlives its run, and the check for credentials in an ancestor's environment has nothing to read. Measured runs therefore use Linux.
 
 ## Economic probe
 
@@ -76,4 +76,4 @@ A failed probe means the team should choose a larger or more failure-prone integ
 npm run test -w @lemma/benchmark
 ```
 
-The process-isolation tests rely on Linux behavior for `/proc`, namespaces, and process-group cleanup. Run the final harness and its full test suite on the same Linux class used for measured runs.
+The process-isolation tests rely on Linux behavior for `/proc`, namespaces, and process-group cleanup. Elsewhere, the tests that need them skip with the reason; CI runs all of them on Linux and the rest on macOS too. Run the final harness and its full test suite on the same Linux class used for measured runs.

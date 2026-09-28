@@ -238,7 +238,7 @@ describe("read models", () => {
     await store.closeDemandDaysBefore("2026-10-01");
     const service = new ResolutionService(store, () => NOW, silentLogger);
     const view = DemandView.parse(await (await app({ store, service }).request("/api/v1/demand")).json());
-    expect(view.buckets).toEqual([{ day: "2026-09-30", profiles: 5, sources: 5, key: expect.objectContaining({ decision: "build", reasons: ["MISSING_DEPENDENCY"] }) }]);
+    expect(view.buckets).toEqual([{ day: "2026-09-30", profiles: 5, sources: 5, buyers: 0, key: expect.objectContaining({ decision: "build", reasons: ["MISSING_DEPENDENCY"] }) }]);
   });
 });
 

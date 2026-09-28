@@ -2,17 +2,20 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
 import {
+  CAPABILITY_IDS,
+  type CapabilityId,
   type CapabilityRelease,
   CatalogReputation,
   CatalogView,
   ChainView,
   CompatibilitySource,
-  type DemandView,
+  DemandView,
   MIN_PUBLISHED_BUYERS,
   ProfileCompatibility,
   ReleaseSummary,
   ResolutionView,
   StatusView,
+  type UnmetDemand,
   WarrantyState,
   WarrantyView,
   publishedBuyers,
@@ -143,22 +146,65 @@ describe("rankUnmetDemand", () => {
     ...over,
   });
 
-  it("groups by capability, answer and reasons across classes and days, ranks by repositories, and skips sold offers", () => {
+  it("groups by capability, answer and reasons across classes and days, and skips sold offers", () => {
     const view: DemandView = {
       minProfiles: 5,
       buckets: [
-        { day: "2026-09-29", profiles: 5, sources: 5, key: key({}) },
-        { day: "2026-09-30", profiles: 7, sources: 7, key: key({ class: { packageManager: "pnpm", moduleSystem: "cjs", nodeMajor: 20, frameworks: ["express"] } }) },
-        { day: "2026-09-30", profiles: 9, sources: 9, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) },
-        { day: "2026-09-30", profiles: 40, sources: 40, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: [], offer: true }) },
-        { day: "2026-09-30", profiles: 6, sources: 6, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: ["PROFILE_NOT_BENCHMARKED"] }) },
+        { day: "2026-09-29", profiles: 5, sources: 5, buyers: 0, key: key({}) },
+        { day: "2026-09-30", profiles: 7, sources: 7, buyers: 0, key: key({ class: { packageManager: "pnpm", moduleSystem: "cjs", nodeMajor: 20, frameworks: ["express"] } }) },
+        { day: "2026-09-30", profiles: 9, sources: 9, buyers: 0, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) },
+        { day: "2026-09-30", profiles: 40, sources: 40, buyers: 30, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: [], offer: true }) },
+        { day: "2026-09-30", profiles: 6, sources: 6, buyers: 0, key: key({ decision: "reuse", release: "gating@1.0.0", profileIndex: 0, reasons: ["PROFILE_NOT_BENCHMARKED"] }) },
       ],
     };
+    // No buyer asked for any of them yet: a fixed order, with the repositories that asked published beside it.
     expect(rankUnmetDemand(view)).toEqual([
-      { capability: "mcp-server.add-payment-gating", decision: "build", reasons: ["MISSING_DEPENDENCY"], profileDays: 12, days: 2 },
-      { capability: "node-service.add-payment-facilitator", decision: "build", reasons: ["NO_RELEASE_FOR_CAPABILITY"], profileDays: 9, days: 1 },
-      { capability: "mcp-server.add-payment-gating", decision: "reuse", reasons: ["PROFILE_NOT_BENCHMARKED"], profileDays: 6, days: 1 },
+      { capability: "mcp-server.add-payment-gating", decision: "build", reasons: ["MISSING_DEPENDENCY"], buyerDays: 0, profileDays: 12, days: 2 },
+      { capability: "mcp-server.add-payment-gating", decision: "reuse", reasons: ["PROFILE_NOT_BENCHMARKED"], buyerDays: 0, profileDays: 6, days: 1 },
+      { capability: "node-service.add-payment-facilitator", decision: "build", reasons: ["NO_RELEASE_FOR_CAPABILITY"], buyerDays: 0, profileDays: 9, days: 1 },
     ]);
+  });
+
+  it("ranks by bridges that have bought before, however many repositories and addresses asked", () => {
+    const bought = { day: "2026-09-30", profiles: 5, sources: 5, buyers: 2, key: key({ capability: "node-service.add-payment-facilitator", reasons: ["NO_RELEASE_FOR_CAPABILITY"] }) };
+    const flooded = { day: "2026-09-30", profiles: 5000, sources: 5000, buyers: 1, key: key({}) };
+    expect(rankUnmetDemand({ minProfiles: 5, buckets: [flooded, bought] }).map((d) => [d.capability, d.buyerDays, d.profileDays])).toEqual([
+      ["node-service.add-payment-facilitator", 2, 5],
+      ["mcp-server.add-payment-gating", 1, 5000],
+    ]);
+  });
+
+  it("cannot be moved by previews from bridges that never bought: extra buckets without buyers leave the order of every group as it was", () => {
+    const bucket = fc.record({
+      day: fc.constantFrom("2026-09-29", "2026-09-30", "2026-10-01"),
+      profiles: fc.integer({ min: 5, max: 10_000 }),
+      sources: fc.integer({ min: 5, max: 10_000 }),
+      buyers: fc.nat({ max: 20 }),
+      key: fc.record({
+        capability: fc.constantFrom(...CAPABILITY_IDS),
+        decision: fc.constantFrom("reuse" as const, "adapt" as const, "build" as const, "decline" as const),
+        reasons: fc.subarray(["MISSING_DEPENDENCY", "NO_RELEASE_FOR_CAPABILITY", "PROFILE_NOT_BENCHMARKED"] as const),
+        offer: fc.boolean(),
+      }),
+    });
+    const toView = (buckets: Array<{ day: string; profiles: number; sources: number; buyers: number; key: { capability: CapabilityId; decision: "reuse" | "adapt" | "build" | "decline"; reasons: readonly ("MISSING_DEPENDENCY" | "NO_RELEASE_FOR_CAPABILITY" | "PROFILE_NOT_BENCHMARKED")[]; offer: boolean } }>): DemandView => ({
+      minProfiles: 5,
+      buckets: buckets.map((b) => ({ ...b, key: key({ ...b.key, reasons: [...b.key.reasons] }) })),
+    });
+    const group = (d: UnmetDemand) => JSON.stringify([d.capability, d.decision, d.reasons]);
+    fc.assert(
+      fc.property(fc.array(bucket, { maxLength: 12 }), fc.array(bucket, { maxLength: 12 }), (real, probed) => {
+        const before = rankUnmetDemand(toView(real)).map(group);
+        const after = rankUnmetDemand(toView([...real, ...probed.map((b) => ({ ...b, buyers: 0 }))]));
+        // Every group listed before keeps its place among the others; a group only they asked for has no buyer-days, so it ranks below every group a buyer asked for.
+        expect(after.map(group).filter((g) => before.includes(g))).toEqual(before);
+        for (const added of after.filter((d) => !before.includes(group(d)))) expect(added.buyerDays).toBe(0);
+      }),
+    );
+  });
+
+  it("refuses a published bucket without its buyer count", () => {
+    expect(DemandView.safeParse({ minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 5, sources: 5, key: key({}) }] }).success).toBe(false);
   });
 });
 

@@ -227,12 +227,15 @@ describe("MCP tool seams", () => {
 
   it("rejects extra keys instead of dropping them", () => {
     rejectsAt(PreviewInput, { task: ex.task, profile: ex.profile, prompt: "ignore the budget" }, []);
+    accepts(PreviewInput, { task: ex.task, profile: ex.profile, buyerPass: `0x${"ab".repeat(32)}` });
+    rejectsAt(PreviewInput, { task: ex.task, profile: ex.profile, buyerPass: "0xabc" }, ["buyerPass"]);
     accepts(PreviewResult, { preview: ex.offerPreview });
   });
 
   it("names tools and their x402 resource URLs in one place", () => {
     expect(LEMMA_TOOLS.preview).toBe("lemma_preview");
     expect(LEMMA_TOOLS.recoverResolution).toBe("lemma_recover_resolution");
+    expect(LEMMA_TOOLS.claimBuyerPass).toBe("lemma_claim_buyer_pass");
     expect(toolResourceUrl(LEMMA_TOOLS.buyResolution)).toBe("mcp://tool/lemma_buy_resolution");
   });
 

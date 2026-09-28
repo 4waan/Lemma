@@ -318,7 +318,7 @@ export function createApp(deps: AppDeps): Hono {
     for (const b of await deps.store.demandBuckets(DEMAND_MIN_PROFILES)) {
       // A bucket key this build cannot read (written by another version) is left out rather than guessed at.
       const key = DemandKey.safeParse(safeJson(b.bucket));
-      if (key.success) buckets.push({ day: b.day, profiles: b.profiles, sources: b.sources, key: key.data });
+      if (key.success) buckets.push({ day: b.day, profiles: b.profiles, sources: b.sources, buyers: b.buyers, key: key.data });
     }
     const view: DemandView = { minProfiles: DEMAND_MIN_PROFILES, buckets };
     // Set only once the answer exists, so a failure is never cached.

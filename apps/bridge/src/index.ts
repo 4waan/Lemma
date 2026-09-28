@@ -3,6 +3,7 @@ export * from "./confine.js";
 export * from "./adoption.js";
 export * from "./apply.js";
 export * from "./bridge.js";
+export * from "./buyer-pass.js";
 export * from "./buy.js";
 export * from "./drift.js";
 export * from "./inbox.js";

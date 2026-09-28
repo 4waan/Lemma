@@ -125,8 +125,11 @@ describe("views render only from read models", () => {
     expect(evidence).toContain("provisional-1");
     expect(evidence).toContain("Their saving is optimistic");
     expect(evidence).toContain("compatibility confidence 26.98 % (provisional probe prior, no outcomes yet)");
-    const demand: DemandView = { minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 7, sources: 6, key: { capability: "node-service.add-payment-facilitator", decision: "build", release: null, profileIndex: null, reasons: ["NO_RELEASE_FOR_CAPABILITY"], offer: false, class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] } } }] };
-    expect(renderToStaticMarkup(<Demand view={demand} />)).toContain("no release exists for this capability yet");
+    const demand: DemandView = { minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 7, sources: 6, buyers: 3, key: { capability: "node-service.add-payment-facilitator", decision: "build", release: null, profileIndex: null, reasons: ["NO_RELEASE_FOR_CAPABILITY"], offer: false, class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] } } }] };
+    const demandHtml = renderToStaticMarkup(<Demand view={demand} />);
+    expect(demandHtml).toContain("no release exists for this capability yet");
+    expect(demandHtml).toContain("Buyer-days");
+    expect(demandHtml).toContain('<td class="num">3</td>');
     const status = StatusView.parse({ schemaVersion: "1", status: "ok", network: "eip155:421614", catalogDigest: hex("88"), releases: 2, paidTools: false, provisionalEvidence: true, store: "memory", economics: "placeholder", chain: { explorer: "https://sepolia.arbiscan.io", usdc: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", registry: null, engine: null, identityRegistry: null, reputationRegistry: null, providerAgentId: null } });
     const statusHtml = renderToStaticMarkup(<Status view={status} />);
     expect(statusHtml).toContain("Arbitrum Sepolia (testnet)");

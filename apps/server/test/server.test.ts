@@ -65,7 +65,7 @@ describe("MCP over stateless Streamable HTTP", () => {
   it("lists the free tools through a real MCP client", async () => {
     const client = await mcpClient(app());
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual([LEMMA_TOOLS.preview, LEMMA_TOOLS.recoverResolution].sort());
+    expect(tools.map((t) => t.name).sort()).toEqual([LEMMA_TOOLS.preview, LEMMA_TOOLS.recoverResolution, LEMMA_TOOLS.claimBuyerPass].sort());
     await client.close();
   });
 

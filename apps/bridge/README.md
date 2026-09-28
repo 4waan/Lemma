@@ -29,7 +29,7 @@ This writes `rules/lemma.mdc` under the repository's `.cursor/rules` directory w
 
 ### `lemma_preview`
 
-Scans allowlisted package metadata and asks the server for a free compatibility decision. The bridge checks the selected release's base probe locally before it presents an offer. File contents and internal dependency names are not uploaded.
+Scans allowlisted package metadata and asks the server for a free compatibility decision. The bridge checks the selected release's base probe locally before it presents an offer. File contents and internal dependency names are not uploaded. After the first settled purchase, the next preview starts a claim for a buyer pass (`lemma_claim_buyer_pass`) in the background and answers without waiting for it; the bridge keeps the pass in the state directory and sends it with every later preview, so demand counts this bridge as one that has bought. A failed claim is tried again no sooner than a minute later. The pass names no wallet or resolution, but it is the same on every preview, so the server can tell your previews come from one buyer.
 
 Input:
 

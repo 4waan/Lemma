@@ -27,6 +27,7 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Benchmark Protocol](benchmark-protocol.md): frozen control and treatment experiment and its success criteria.
 - [Economic Gates and Iterations](economic-gates.md): build order, go-or-iterate decisions, unit economics, and scale requirements.
 - [Warranty Registry Review](warranty-registry-review.md): tests, static analysis, checklists, and dated gas figures for the unaudited registry contract.
+- [Profitability analysis](profitability-analysis.md): where the unit economics break, which business models fix them, who would pay for what, and what to test before spending more (also as a [PDF](profitability-analysis.pdf); the model is `profitability-analysis/model.mjs`).
 
 ## Component guides
 

@@ -12,6 +12,7 @@ import {
   ClaudeCodeAdapter,
   MeterRecord,
   MeteringProxy,
+  OAUTH_BETA,
   RULE_FILES,
   type ResponseUsage,
   UsageStreamReader,
@@ -219,6 +220,8 @@ const streamed = (res: ServerResponse, events: ReadonlyArray<Record<string, unkn
 };
 // The harness's own Anthropic credential in these tests, built from pieces so scanners stay quiet.
 const REAL = ["sk", "ant", "api03", "fake", "harness"].join("-");
+// A Claude plan's token (`claude setup-token`), built the same way.
+const PLAN = ["sk", "ant", "oat01", "fake", "plan"].join("-");
 
 describe("MeteringProxy", { timeout: 20_000 }, () => {
   const open = async (upstream: string, drainMs = 5000) => {
@@ -242,6 +245,23 @@ describe("MeteringProxy", { timeout: 20_000 }, () => {
     const reading = await proxy.end("run-token-1");
     expect(reading).toMatchObject({ responses: 1, incomplete: 0, unpriced: [], models: ["claude-sonnet-5"], costMicroUsd: "5270" });
     expect(reading.usage).toEqual({ inputTokens: 100, outputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 2000, totalTokens: 2107, reasoningTokens: 3 });
+    await proxy.close();
+  });
+
+  it("passes a run's request on with a Claude plan's token as a bearer token and the OAuth beta, and meters it the same way", async () => {
+    const api = await standIn((_req, res) => streamed(res, STREAM));
+    const proxy = new MeteringProxy({ apiKey: PLAN, plan: true, prices, upstream: api.url, drainMs: 5000 });
+    const url = await proxy.open();
+    proxy.begin("run-token-plan");
+    const reply = await post(url, "run-token-plan", "/v1/messages?beta=true", { headers: { "x-api-key": "run-token-plan", "content-type": "application/json", "anthropic-beta": "interleaved-thinking-2025-05-14, oauth-2025-04-20" } });
+    expect(await reply.text()).toBe(sse(STREAM));
+    expect(api.seen[0]?.headers["authorization"]).toBe(`Bearer ${PLAN}`);
+    expect(api.seen[0]?.headers["x-api-key"]).toBeUndefined();
+    expect(api.seen[0]?.headers["anthropic-beta"]).toBe(`interleaved-thinking-2025-05-14,${OAUTH_BETA}`);
+    await post(url, "run-token-plan");
+    expect(api.seen[1]?.headers["anthropic-beta"]).toBe(OAUTH_BETA);
+    expect(JSON.stringify(api.seen)).not.toContain("run-token-plan");
+    expect(await proxy.end("run-token-plan")).toMatchObject({ responses: 2, incomplete: 0, unpriced: [], costMicroUsd: "10540" });
     await proxy.close();
   });
 
@@ -350,7 +370,11 @@ if (mode === "hang") setInterval(() => {}, 1000);
 else if (mode === "no-credit") out({ type: "result", subtype: "success", is_error: true, api_error_status: 400, result: "Credit balance is too low", session_id: session, modelUsage: {} });
 else {
   const reply = await fetch(process.env.ANTHROPIC_BASE_URL + "/v1/messages?beta=true", { method: "POST", headers: { "x-api-key": process.env.ANTHROPIC_API_KEY, "content-type": "application/json" }, body: "{}" });
-  await reply.text();
+  const text = await reply.text();
+  if (!reply.ok) {
+    out({ type: "result", subtype: "success", is_error: true, api_error_status: reply.status, result: "API Error: " + text, session_id: session, modelUsage: {} });
+    process.exit(0);
+  }
   out({ type: "assistant", session_id: session, message: { content: [{ type: "text", text: "on it" }, { type: "tool_use", id: "toolu_1", name: "Bash", input: {} }, { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: {} }, { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: [] }] } });
   out({ type: "user", session_id: session, message: { content: [{ type: "tool_result", tool_use_id: "toolu_1", is_error: mode === "tool-error" }] } });
   const tokens = { inputTokens: mode === "bypass" ? 5000 : 100, outputTokens: 7, cacheReadInputTokens: 0, cacheCreationInputTokens: 2000 };
@@ -497,6 +521,43 @@ describe("ClaudeCodeAdapter", { timeout: 20_000 }, () => {
     await adapter.close();
   });
 
+  it("checks a Claude plan with one short real run through the meter, keeping no meter record", async () => {
+    const plan = async (handler: Parameters<typeof standIn>[0]) => {
+      const api = await standIn(handler);
+      const dir = temp("lemma-plan-");
+      const meterDir = join(dir, "meter");
+      const adapter = new ClaudeCodeAdapter(PLAN, { command: fakeClaude(dir), meterDir, prices, upstream: api.url, plan: true, graceMs: { stop: 300, exit: 300 }, drainMs: 5000 });
+      return { api, adapter, check: join(dir, "check"), meterDir };
+    };
+    const ok = await plan((_req, res) => streamed(res, STREAM));
+    await ok.adapter.checkPlan("claude-sonnet-5", ok.check);
+    expect(ok.api.seen).toHaveLength(1);
+    expect(ok.api.seen[0]?.headers["authorization"]).toBe(`Bearer ${PLAN}`);
+    const { env } = JSON.parse(readFileSync(join(ok.check, "work", "seen.json"), "utf8")) as { env: Record<string, string> };
+    expect(Object.values(env)).not.toContain(PLAN);
+    expect(existsSync(ok.meterDir)).toBe(false);
+    await ok.adapter.close();
+
+    const error = (type: string, message: string) => JSON.stringify({ type: "error", error: { type, message } });
+    const cases: Array<[number, string, RegExp]> = [
+      [401, error("authentication_error", "OAuth token has expired"), /refused the Claude plan token .*setup-token/],
+      [429, error("rate_limit_error", "usage limit reached"), /at a usage limit/],
+      [404, error("not_found_error", "model: claude-sonnet-5"), /not available on this Claude plan/],
+      [500, error("api_error", "boom"), /did not finish: error: API Error/],
+    ];
+    for (const [status, body, message] of cases) {
+      const failing = await plan((_req, res) => void res.writeHead(status, { "content-type": "application/json" }).end(body));
+      await expect(failing.adapter.checkPlan("claude-sonnet-5", failing.check)).rejects.toThrow(message);
+      await failing.adapter.close();
+    }
+
+    // A reply the table cannot price would leave every run's cost unknown, so the check stops there.
+    const priority = STREAM.map((e) => (e.type === "message_start" ? start("claude-sonnet-5", { input_tokens: 100, output_tokens: 1, service_tier: "priority" }) : e));
+    const unpriced = await plan((_req, res) => streamed(res, priority));
+    await expect(unpriced.adapter.checkPlan("claude-sonnet-5", unpriced.check)).rejects.toThrow(/could not price the Claude plan's replies: service tier priority/);
+    await unpriced.adapter.close();
+  });
+
   it("refuses a model the table does not price before asking the API", async () => {
     const { api, adapter } = await setup();
     await expect(adapter.checkModel("claude-nonexistent-9")).rejects.toThrow(/not in prices/);
@@ -559,5 +620,8 @@ describe("the Claude Code treatment", () => {
     expect(AgentSetup.safeParse({ name: "claude-code", version: "2.1.283", pricesDigest: null }).success).toBe(false);
     expect(AgentSetup.safeParse({ name: "cursor", version: "1.0.32", pricesDigest: null }).success).toBe(true);
     expect(AgentSetup.safeParse({ name: "cursor", version: "1.0.32", pricesDigest: pricesDigest(prices) }).success).toBe(false);
+    // Only Claude Code can run on a Claude plan.
+    expect(AgentSetup.safeParse({ name: "claude-code", version: "2.1.283", pricesDigest: pricesDigest(prices), login: "claude-plan" }).success).toBe(true);
+    expect(AgentSetup.safeParse({ name: "cursor", version: "1.0.32", pricesDigest: null, login: "claude-plan" }).success).toBe(false);
   });
 });

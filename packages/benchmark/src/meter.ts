@@ -117,6 +117,8 @@ class RunMeter {
 export const DRAIN_MS = 10 * 60_000;
 /** Largest request body passed on: well above a full 1M-token context. */
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
+/** The beta Claude Code sends with a Claude plan's token; the API refuses that token without it. */
+export const OAUTH_BETA = "oauth-2025-04-20";
 /** Request headers that stay between the agent and the meter. */
 const DROP_REQUEST = new Set(["host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "content-length", "x-api-key", "authorization", "cookie", "accept-encoding"]);
 /** Response headers the meter does not pass back: hop-by-hop ones, and the encoding and length of a body `fetch` has already decoded. */
@@ -124,7 +126,8 @@ const DROP_RESPONSE = new Set(["connection", "keep-alive", "transfer-encoding", 
 
 /**
  * A local HTTP endpoint that Claude Code uses as its Anthropic API: it holds
- * the real key, passes each run's requests on with it, and reads the usage of
+ * the real credential (an API key, or a Claude plan's token), passes each
+ * run's requests on with it, and reads the usage of
  * every Messages API response as it streams back. The agent's process only
  * ever sees a per-run token, which stops working when the run ends.
  *
@@ -144,14 +147,21 @@ export class MeteringProxy {
 
   constructor(
     private readonly options: {
+      /** An API key, or with `plan` the token `claude setup-token` made for a Claude plan. */
       readonly apiKey: string;
+      /**
+       * The credential is a Claude plan's token: it goes on as a bearer token
+       * with the OAuth beta Claude Code itself sends on a plan, and the
+       * meter still reads every response's usage the same way.
+       */
+      readonly plan?: boolean;
       readonly prices: AnthropicPrices;
       readonly upstream?: string;
       /** How long to keep reading a response the agent abandoned (default DRAIN_MS). */
       readonly drainMs?: number;
     },
   ) {
-    if (options.apiKey === "") throw new Error("an Anthropic API key is required");
+    if (options.apiKey === "") throw new Error(options.plan === true ? "a Claude plan token is required" : "an Anthropic API key is required");
   }
 
   private get upstream(): string {
@@ -239,7 +249,11 @@ export class MeteringProxy {
         if (value === undefined || DROP_REQUEST.has(name)) continue;
         headers.set(name, Array.isArray(value) ? value.join(", ") : value);
       }
-      headers.set("x-api-key", this.options.apiKey);
+      if (this.options.plan === true) {
+        headers.set("authorization", `Bearer ${this.options.apiKey}`);
+        const betas = (headers.get("anthropic-beta") ?? "").split(",").map((b) => b.trim()).filter((b) => b !== "");
+        headers.set("anthropic-beta", [...new Set([...betas, OAUTH_BETA])].join(","));
+      } else headers.set("x-api-key", this.options.apiKey);
       headers.set("accept-encoding", "identity");
       const abort = new AbortController();
       let upstream: Response;

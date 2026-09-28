@@ -37,12 +37,15 @@ import { prepareRunBase, removeTree } from "./workspace.js";
  * taken from the environment, and commands that run agents refuse to start
  * while this process's environment, or the one any ancestor started with,
  * holds anything that looks like a credential. Reconciling Claude Code runs
- * reads their meter records and needs no key.
+ * reads their meter records and needs no key. A Claude Code probe can instead
+ * take a Claude plan's token (from `claude setup-token`) the same way.
  *
  * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default, or
  * `claude-code`; later commands take the agent the version was started with);
  * LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND (the absolute
- * path of `claude`, default: the first on PATH); LEMMA_BENCH_DIR for run
+ * path of `claude`, default: the first on PATH); LEMMA_CLAUDE_LOGIN=plan
+ * (probe only: Claude Code on a Claude Pro or Max plan's token instead of an
+ * API key, still metered at list price); LEMMA_BENCH_DIR for run
  * directories (default: the OS temp directory, outside the repository);
  * LEMMA_BRIDGE_COMMAND and LEMMA_API_URL for the treatment's bridge.
  */
@@ -62,17 +65,22 @@ const runBase = () => process.env["LEMMA_BENCH_DIR"] ?? join(tmpdir(), "lemma-be
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key" };
+/** How a Claude plan's token from `claude setup-token` starts; API keys start `sk-ant-api`. */
+const PLAN_TOKEN_PREFIX = "sk-ant-oat";
 
 /** The agent's API key, from a pipe on standard input: never the environment, a terminal, or a file whose path stays visible. */
-async function readKey(agent: AgentKind): Promise<string> {
+async function readKey(agent: AgentKind, plan = false): Promise<string> {
+  const name = plan ? "Claude plan token" : KEY_NAME[agent];
   const stdin = fstatSync(0);
   if (!stdin.isFIFO() && !stdin.isSocket()) {
-    throw new Error(`pipe the ${KEY_NAME[agent]} on standard input, for example \`op read op://vault/${agent}/key | npm run benchmark -- run v1\``);
+    throw new Error(`pipe the ${name} on standard input, for example \`op read op://vault/${agent}/key | npm run benchmark -- run v1\``);
   }
   let key = "";
   for await (const chunk of process.stdin) key += String(chunk);
   key = key.trim();
-  if (key === "") throw new Error(`standard input carried no ${KEY_NAME[agent]}`);
+  if (key === "") throw new Error(`standard input carried no ${name}`);
+  if (plan && !key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error(`LEMMA_CLAUDE_LOGIN=plan takes the token \`claude setup-token\` prints (it starts ${PLAN_TOKEN_PREFIX}), not an API key; for an API key, leave LEMMA_CLAUDE_LOGIN unset`);
+  if (!plan && key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error("that is a Claude plan token, not an API key: a probe runs on a plan with LEMMA_CLAUDE_LOGIN=plan, and a benchmark needs an API key");
   // Cursor is the default agent, so an Anthropic key here usually means LEMMA_BENCHMARK_AGENT was left unset.
   if (agent === "cursor" && key.startsWith("sk-ant-")) throw new Error("that is an Anthropic API key, and this version runs Cursor: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code");
   return key;
@@ -100,10 +108,18 @@ function chosenAgent(): AgentKind {
   return name;
 }
 
+/** Whether Claude Code runs on a Claude plan's token (LEMMA_CLAUDE_LOGIN=plan) instead of an API key. */
+function claudePlan(): boolean {
+  const value = process.env["LEMMA_CLAUDE_LOGIN"] ?? "";
+  if (value !== "" && value !== "plan") throw new Error(`LEMMA_CLAUDE_LOGIN must be plan or unset, not ${value}`);
+  if (value === "plan" && chosenAgent() !== "claude-code") throw new Error("LEMMA_CLAUDE_LOGIN=plan needs LEMMA_BENCHMARK_AGENT=claude-code");
+  return value === "plan";
+}
+
 /** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version`, with Claude Code's price table. */
-function agentSetup(name: AgentKind): AgentSetup {
+function agentSetup(name: AgentKind, plan = false): AgentSetup {
   if (name === "claude-code") {
-    return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()) });
+    return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()), ...(plan ? { login: "claude-plan" } : {}) });
   }
   const manifest = join(REPOSITORY_ROOT, "node_modules", "@cursor", "sdk", "package.json");
   if (!existsSync(manifest)) throw new Error("@cursor/sdk is not installed; run npm install");
@@ -112,14 +128,14 @@ function agentSetup(name: AgentKind): AgentSetup {
 
 /** Refuses when the installed agent is not the one a version was started with: every run of a version uses one release. */
 function assertSameAgent(bound: AgentSetup): void {
-  const now = agentSetup(bound.name);
+  const now = agentSetup(bound.name, bound.login !== undefined);
   if (now.version !== bound.version) throw new Error(`${bound.name} is at ${now.version} now and this version ran ${bound.version}; use a new version`);
   if (now.pricesDigest !== bound.pricesDigest) throw new Error("prices/anthropic.json changed since this version started; use a new version");
 }
 
 interface OpenAgent {
   readonly adapter: AgentAdapter;
-  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request). */
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request; a Claude plan: with one short run). */
   checkModel(model: string): Promise<void>;
   close(): Promise<void>;
 }
@@ -137,8 +153,29 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
     };
   }
   if (process.getuid?.() === 0) throw new Error("Claude Code will not run with permission checks off as root, and a benchmark run cannot stop for prompts: run the harness as a normal user");
+  if (setup.login !== undefined) {
+    const claude = new ClaudeCodeAdapter(await readKey("claude-code", true), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices(), plan: true });
+    return { adapter: claude, checkModel: (model) => inScratch((dir) => claude.checkPlan(model, dir)), close: () => claude.close() };
+  }
   const claude = new ClaudeCodeAdapter(await readKey("claude-code"), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices() });
   return { adapter: claude, checkModel: (model) => claude.checkModel(model), close: () => claude.close() };
+}
+
+/**
+ * Runs a check that starts an agent in a fresh directory under the run base,
+ * which is outside the repository and below no ambient settings, then kills
+ * whatever the agent left running and removes the directory.
+ */
+async function inScratch(check: (dir: string) => Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(prepareRunBase(runBase(), REPOSITORY_ROOT), "check-"));
+  const untrack = trackHome(join(dir, "home"));
+  try {
+    await check(dir);
+  } finally {
+    killByHome(join(dir, "home"));
+    untrack();
+    removeTree(dir);
+  }
 }
 
 /** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's meter records (without one). */
@@ -176,6 +213,7 @@ async function freeze(v: string): Promise<void> {
     if (listedNoMatch !== (f.fixture.kind === "no-match")) throw new Error(`${f.fixture.taskId} is a ${f.fixture.kind} fixture; list it under ${listedNoMatch ? "--tasks" : "--no-match"}`);
   }
   if (!existsSync(RULE_PATH)) throw new Error(`the Lemma rule ${RULE_PATH} is missing; the treatment cannot run without it`);
+  if (claudePlan()) throw new Error("LEMMA_CLAUDE_LOGIN=plan is for probes only: a benchmark is paid for with an API key, so freeze with one");
   const agent = agentSetup(chosenAgent());
   // Everything that can be checked for free is checked before the paid smoke run.
   const config = ExperimentConfig.parse({
@@ -293,7 +331,7 @@ async function probe(v: string): Promise<void> {
   const log = RunLog.forVersion(RUNS_DIR, v);
 
   // A probe version is one experiment: the same task, fixture, bundle, agent release and model on every invocation.
-  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent()), model: model.id };
+  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent(), claudePlan()), model: model.id };
   const agent = await openAgent(setup.agent, join(log.dir, "meter"));
   try {
     // Checked before the version is bound and before the first run, so a wrong agent, key or model

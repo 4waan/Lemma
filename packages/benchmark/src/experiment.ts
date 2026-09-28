@@ -18,8 +18,15 @@ export const AgentSetup = z
     name: z.enum(["cursor", "claude-code"]),
     version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
     pricesDigest: Hex32.nullable(),
+    /**
+     * Claude Code ran on a Claude plan's token instead of an API key. It is
+     * still metered at list price, but the plan, not an API account, paid, so
+     * only a probe may use it (`freeze` refuses it).
+     */
+    login: z.literal("claude-plan").optional(),
   })
-  .refine((a) => (a.name === "claude-code") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code runs name their price table; Cursor runs do not" });
+  .refine((a) => (a.name === "claude-code") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code runs name their price table; Cursor runs do not" })
+  .refine((a) => a.login === undefined || a.name === "claude-code", { path: ["login"], message: "only Claude Code runs can use a Claude plan" });
 
 export type AgentSetup = z.infer<typeof AgentSetup>;
 

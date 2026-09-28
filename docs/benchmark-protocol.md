@@ -44,6 +44,8 @@ The metered cost is the list price of the tokens at the standard service tier. I
 
 Before a Claude Code version is bound, `freeze` and `probe` send the model one request for one output token with the real key. A key without API credit can still list models, so only a request that costs something shows that the runs could be paid for. A key that is refused, a model the key cannot use, or no credit left then stops the command before any run, with the reason. That request is not metered and is in no run's cost.
 
+A probe, and only a probe, can instead run Claude Code on a Claude Pro or Max plan (`LEMMA_CLAUDE_LOGIN=plan`), so a helper with a plan spends nothing beyond it. The helper pipes in the long-lived token `claude setup-token` prints, where the key would go. The meter holds it the way it holds a key: it sends each run's requests on with the token as a bearer token and the OAuth beta Claude Code itself sends on a plan, and the agent still sees only its per-run token. So the cost stays metered, not self-reported, and priced at list price as above; it is what the runs would cost on an API key, not what the plan charged. Because a plan's token is meant for Claude Code only, the check before the version is bound is not a bare request but one short real run on the model, made the way every run is: a refused token, a model the plan cannot use, a usage limit already reached, or a reply the meter cannot price stops the probe before any run. `freeze` refuses a plan, and the version records the plan login.
+
 ## Success criteria
 
 - Both arms pass the same acceptance tests.

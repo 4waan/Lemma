@@ -24,7 +24,7 @@ Each arrow is a typed, deterministic function over `@lemma/core` schemas. No ste
 | `C` | control raw model cost to reach green | `ProfileEvidence.controlMedianCostUsdc` |
 | `S` | conservative raw model-cost saving | `ProfileEvidence.expectedRawSavingUsdc` (lower quartile of paired savings) |
 | `P` | resolution price | `Offer.terms.amount` |
-| `g` | chain cost per resolution (settlement, warranty activation, outcome, expiry) | chain receipts, `RunRecord.payment.gasCostMicroUsd` |
+| `g` | chain cost per resolution (settlement, warranty activation, outcome, feedback, and a refund's withdrawal or an expiry) | [measured gas](#chain-cost-g) at a dated gas price and ETH/USD; later chain receipts, `RunRecord.payment.gasCostMicroUsd` |
 | `q` | eligible failure rate within the claim window | adoption receipts and evaluator outcomes |
 | `K` | cost of producing evidence for one release profile (benchmark runs, curation) | benchmark run records |
 | `N` | resolutions sold for that profile before its evidence goes stale | server records |
@@ -33,7 +33,7 @@ The sale rule is `P <= 0.3 S` (`isSellable`). From it:
 
 - **Buyer net saving** is `S - P - g_buyer`, at least `0.7 S - g_buyer`, before counting time and interventions.
 - **Buyer all-in reduction** is `(S - P - g) / C` (`allInReductionBps`). **The sale rule does not imply the benchmark target.** At the 30% price cap, the all-in reduction is `0.7 S / C`, which meets the 25% target only when `S >= 0.357 C`. A release that saves 25 to 35% of the control cost can pass the sale rule yet leave the buyer short of the promised reduction. Both numbers must be shown, and the frozen benchmark (`evaluateBenchmark`) is what licenses the claim.
-- **Price bound.** `maxPriceFor(S, C, g)` (core) is the highest price that is sellable and still leaves the buyer the 25% target after chain cost: `min(floor(0.3 S), S - g - ceil(0.25 C))`. `0` means preview-only. `catalog:check` refuses any evidenced price above it, or below the price floor, using the dated inputs in `packages/catalog/economics.json`. Until the protocol lane sets `g` and the floor there, no release may carry evidence.
+- **Price bound.** `maxPriceFor(S, C, g)` (core) is the highest price that is sellable and still leaves the buyer the 25% target after chain cost: `min(floor(0.3 S), S - g - ceil(0.25 C))`. `0` means preview-only. `catalog:check` refuses any evidenced price above it, or below the price floor, using the dated inputs in `packages/catalog/economics.json`. The price floor there is 0.50 USDC (testnet), set by the owner on 2026-09-27. Until `g` is measured there too (`status: "measured"`), no release may carry evidence.
 - **Provider margin per resolution** is `P (1 - q) - g_provider - K / N`. The warranty refunds `P` on an eligible failure.
 - **Break-even volume** is `N* = K / (P (1 - q) - g_provider)`.
 
@@ -52,6 +52,31 @@ Where the economics break:
 3. **Savings decay as models get cheaper.** `S` is measured with one model and price sheet. Evidence therefore records the model, the token saving and `staleAfter`, and a stale profile drops to preview-only (`EVIDENCE_STALE`).
 4. **Small samples are noisy.** With three pairs, pricing off the minimum paired saving (the lower quartile) keeps a single lucky run from setting the price.
 
+### Chain cost `g`
+
+`g` counts every on-chain action one paid resolution causes, whoever pays for it: the x402 settlement (the facilitator), the warranty's activation (the provider), its outcome (the evaluator, which also records into the compatibility engine) and the attester's ERC-8004 feedback, plus the credit withdrawal after a refund (the evaluator relays it). A warranty that gets no receipt is expired by the provider instead, with no outcome or feedback.
+
+`npm run e2e` measures each step's gas on anvil and prints it (CI's `e2e` job shows it on every run). The run on 2026-09-28, with the contracts of main at `fa7a0aa`:
+
+| Step | Gas (min to max over the run's transactions) | Calldata, bytes (max) |
+| --- | --- | --- |
+| settlement (`transferWithAuthorization`) | 78,481 to 95,593 | 292 |
+| activation | 209,938 to 209,962 | 388 |
+| outcome | 63,534 to 185,328 | 324 |
+| feedback | 112,696 to 214,452 | 580 |
+| withdrawal | 73,119 | 100 |
+| expiry | 51,591 | 36 |
+
+Summing each step's largest figure gives 705,335 gas for a passed resolution, 778,454 for a refunded one and 357,146 for an expired one. `g` uses the refunded figure, the largest, so it bounds every ending. It becomes atomic USDC with `gasCostAtomic(gas, gasPriceWei, ethUsdMicro)` (core), which rounds up. For example, at an assumed 0.1 gwei and 2,500 USD per ETH, 778,454 gas is 194,614 atomic units (0.19 USDC); at 0.01 gwei it is 19,462 (0.02 USDC). Those two inputs are assumptions here: `economics.json` becomes `measured` once both come from a dated source.
+
+What these figures leave out:
+
+- **Arbitrum's L1 data fee.** Arbitrum also charges for posting a transaction's data to Ethereum, which grows with its calldata (the table's last column). anvil charges nothing for it. On Arbitrum Sepolia a receipt's `gasUsedForL1` shows it.
+- **The Stylus engine.** anvil cannot run Stylus, so the outcome's engine record runs on a Solidity stand-in. The Stylus engine's own cost may differ.
+- **Cold storage.** The first write to a new slot costs more than later ones: the outcome's and the feedback's ranges come from that. The largest figure is used.
+
+The receipts of the runbook's step 10 on Arbitrum Sepolia ([deployment](deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation)) include all three, and replace these figures once they exist.
+
 ## 3. Critical-stage iterations
 
 Each stage names its gate: the evidence that must exist before the next stage starts. The "iterate if" column says what to change instead of pushing forward. The owner column follows the lane split: **P** is the protocol and payments teammate, and **N** is the non-chain lane.
@@ -67,7 +92,7 @@ Each stage names its gate: the evidence that must exist before the next stage st
 | 7 | Pilot on a public repository | One external attempt completes and produces an Adoption Receipt without manual intervention, or the intervention is recorded. | The buyer needed help the product should provide. | N and P |
 | 8 | Scale readiness | See section 4. | Any item that would force a code release per new provider or capability. | N and P |
 
-Stage 4 is the cheapest place to learn that a release family can't pay for itself. Run it before finishing stages 5 and 6: `<key source> | npm run benchmark -- probe probe-<n> --task <taskId> --bundle <draft bundle.json>` prints the verdict and the price to pre-register. Only runs that finished or timed out count, and the treatment must have finished on its own for a `go`.
+Stage 4 is the cheapest place to learn that a release family can't pay for itself. Run it before finishing stages 5 and 6: `<key source> | npm run benchmark -- probe probe-<n> --task <taskId> --bundle <draft bundle.json>` prints the verdict and the price to pre-register. Only runs that finished or timed out count, and the treatment must have finished on its own for a `go`. The first candidate is `mcp-server-payment-gating@0.1.0` on the task `weather-mcp-paid-forecast` ([benchmark README](../packages/benchmark/README.md#economic-probe)).
 
 Stages 5 and 6 need something to buy before frozen evidence exists. The testnet-only overlay `packages/catalog/releases.provisional/` provides it.
 - It holds `X+provisional-N` versions that differ from `X` only in version, evidence, price and dates.

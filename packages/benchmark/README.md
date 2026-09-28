@@ -2,7 +2,7 @@
 
 `@lemma/benchmark` tests Lemma's central claim: a paid Compatibility Resolution should reduce all-in cost-to-green without reducing correctness.
 
-The harness, run records, evidence derivation, economic probe, and report generator are implemented. The final x402 task fixtures and the measured experiment remain pending.
+The harness, run records, evidence derivation, economic probe, and report generator are implemented. The first task, `weather-mcp-paid-forecast`, is committed ([fixtures/README.md](fixtures/README.md)); the other tasks and the measured experiment remain pending.
 
 ## Experiment design
 
@@ -69,6 +69,16 @@ The harness is not a security sandbox. The agent runs as the operator's user, so
 Run the probe before completing the paid path for a release family. It uses three controls and one pre-applied treatment to estimate whether any price can satisfy the sale rule, chain cost, price floor, and 25 percent buyer reduction at once.
 
 A failed probe means the team should choose a larger or more failure-prone integration task instead of completing payment infrastructure for an uneconomic release. See [Economic Gates and Iterations](../../docs/economic-gates.md).
+
+The first probe measures `mcp-server-payment-gating@0.1.0` on `weather-mcp-paid-forecast`. On a Linux machine whose environment holds no credentials, after `npm ci && npm run build`:
+
+```bash
+<command that prints your Cursor API key> | LEMMA_BENCHMARK_MODEL=<model id> npm run benchmark -- probe probe-1 \
+  --task weather-mcp-paid-forecast \
+  --bundle packages/catalog/releases/mcp-server-payment-gating/0.1.0/bundle.json
+```
+
+It runs three controls and one treatment with the bundle pre-applied, billed to the key's Cursor account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
 
 ## Development
 

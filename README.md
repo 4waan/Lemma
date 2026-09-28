@@ -59,7 +59,7 @@ Lemma is an active MVP build. The compatibility path, the testnet purchase path,
 | Area | Status |
 | --- | --- |
 | Shared schemas, canonical digests, pricing, spending policy, and read models | Implemented and tested |
-| Catalog loader, integrity checks, fixtures, and deterministic resolver | Implemented with two preview-only skeleton releases |
+| Catalog loader, integrity checks, fixtures, and deterministic resolver | Implemented; the server release has a real payload, the client release is a skeleton, and neither is sellable yet |
 | Free MCP preview and resolution recovery | Implemented |
 | Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
 | Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
@@ -137,7 +137,7 @@ Each workspace README explains how to develop that component. Start with the [do
 
 The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
 
-1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
+1. Run the economic probe on the first real release (`mcp-server-payment-gating@0.1.0`, see [the benchmark README](packages/benchmark/README.md)), and replace the client skeleton with a reviewed release.
 2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase, and a lost response recovered without a second payment.
 3. Run the [Arbitrum Sepolia runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation): deploy the registry and the compatibility engine, and demonstrate one pass and one refunded failure.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.

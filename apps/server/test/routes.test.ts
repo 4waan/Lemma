@@ -165,7 +165,7 @@ describe("demand", () => {
     expect(body.buckets[0]?.key).toEqual({
       capability: "mcp-server.add-payment-gating",
       decision: "reuse",
-      release: "mcp-server-payment-gating@0.1.0-skeleton",
+      release: "mcp-server-payment-gating@0.1.0",
       profileIndex: 0,
       reasons: ["PROFILE_NOT_BENCHMARKED"],
       offer: false,

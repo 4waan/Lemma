@@ -86,3 +86,18 @@ export function maxPriceFor(
 function ceilDiv(numerator: bigint, denominator: bigint): bigint {
   return (numerator + denominator - 1n) / denominator;
 }
+
+/** Wei per ETH. */
+const WEI_PER_ETH = 10n ** 18n;
+
+/**
+ * What `gasUnits` of gas cost in atomic USDC (micro-USD), at `gasPriceWei` per
+ * unit and ETH at `ethUsdMicro` micro-USD: `ceil(gas * price * ethUsd / 10^18)`.
+ * This is how a measured gas figure becomes the chain cost `g` in
+ * economics.json. It rounds up, so a chain cost is never understated, and a
+ * nonzero cost is at least one atomic unit.
+ */
+export function gasCostAtomic(gasUnits: bigint, gasPriceWei: bigint, ethUsdMicro: bigint): bigint {
+  if (gasUnits < 0n || gasPriceWei < 0n || ethUsdMicro < 0n) throw new RangeError("gas, gas price and ETH price must not be negative");
+  return ceilDiv(gasUnits * gasPriceWei * ethUsdMicro, WEI_PER_ETH);
+}

@@ -11,7 +11,7 @@ Core is deterministic and environment-independent. It performs no network, files
 | Identity | `primitives`, `canonical` | Schema version, addresses, timestamps, safe text, canonical JSON, typed digests. |
 | Matching | `task`, `profile`, `reasons`, `preview` | Capability requests, repository profiles, decisions, and offers. |
 | Releases | `release`, `bundle` | Supported profiles, evidence, provenance, acceptance recipes, patches, and drift planning. |
-| Money | `amounts`, `payment`, `pricing`, `policy` | Atomic USDC, x402 terms, sellability, price bounds, and local spend checks. |
+| Money | `amounts`, `payment`, `pricing`, `policy` | Atomic USDC, x402 terms, sellability, price bounds, gas cost in USDC, and local spend checks. |
 | Purchase | `purchase`, `signing` | Payment nonce, x402 requirements, paid-tool input, warranty claim commitment, and receipt typed data. |
 | Outcomes | `receipt`, `run` | Resolutions, adoption receipts, benchmark run records, and derived identifiers. |
 | Reputation | `reputation` | ERC-8004 agent ids, adoption evidence, and the public feedback files and their hash. |

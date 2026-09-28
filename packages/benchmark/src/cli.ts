@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { CATALOG_ROOT, loadCatalog } from "@lemma/catalog";
 import { type Hex32, PatchBundle, bundleDigest, fileDigest } from "@lemma/core";
@@ -202,7 +202,8 @@ async function probe(v: string): Promise<void> {
   if (taskId === undefined || bundlePath === undefined) throw new Error("usage: benchmark probe <probe-version> --task <taskId> --bundle <bundle.json>");
   const fixture = loadBenchmarkFixtures().find((f) => f.fixture.taskId === taskId);
   if (fixture === undefined) throw new Error(`no fixture for ${taskId}`);
-  const bundle = PatchBundle.parse(JSON.parse(readFileSync(bundlePath, "utf8")));
+  // `npm run benchmark` runs in this workspace's directory; a relative path means the one npm was started from.
+  const bundle = PatchBundle.parse(JSON.parse(readFileSync(resolve(process.env["INIT_CWD"] ?? process.cwd(), bundlePath), "utf8")));
   const model: ModelSelection = { id: process.env["LEMMA_BENCHMARK_MODEL"] ?? "" };
   if (model.id === "") throw new Error("set LEMMA_BENCHMARK_MODEL");
   const log = RunLog.forVersion(RUNS_DIR, v);

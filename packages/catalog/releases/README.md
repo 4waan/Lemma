@@ -10,7 +10,7 @@ The first planned releases are:
 2. An x402-paying MCP client with local spending controls (`mcp-client-paying-client`).
 3. A single-network Arbitrum Sepolia facilitator for Node and Hono.
 
-The first two exist as `0.1.0-skeleton` versions with placeholder payloads, no evidence and a zero price.
+The first has a real payload as `mcp-server-payment-gating@0.1.0`, and the second is still a `0.1.0-skeleton` with a placeholder payload. Both have no evidence and a zero price.
 
 No release may become purchasable until its exact and negative fixtures pass and its measured savings evidence is frozen. The single exception is the testnet-only overlay in `../releases.provisional/`, which lets stage 5 (paid path) and stage 6 (frozen benchmark) buy a release at its pre-registered price before frozen evidence exists. The public service never loads it.
 

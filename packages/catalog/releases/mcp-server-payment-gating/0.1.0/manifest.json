@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1",
   "releaseId": "mcp-server-payment-gating",
-  "version": "0.1.0-skeleton",
+  "version": "0.1.0",
   "capability": "mcp-server.add-payment-gating",
-  "title": "Skeleton: x402 payment gating for a TypeScript MCP server",
+  "title": "x402 payment gating for a TypeScript MCP server (USDC on Arbitrum Sepolia)",
   "supportedProfiles": [
     {
       "languages": [
@@ -28,11 +28,11 @@
     }
   ],
   "provenance": {
-    "repository": "https://github.com/coinbase/x402",
-    "commit": "dd927a26cfefc98c24b3ec38b3a8f204dad0c60d",
+    "repository": "https://github.com/x402-foundation/x402",
+    "commit": "71eb9a55e081e7b81ba3046d0bd17c3eb9c7bf81",
     "spdxLicense": "Apache-2.0"
   },
-  "payloadDigest": "0xf694c95c392e5fb3003135b3366326cb754b5a0d065a5e9802f0cd3feca0bc25",
+  "payloadDigest": "0xa555a07be9d8a3940a9b0853f79ba5e3477beec42f66f48fdc8afac88586a3f2",
   "acceptanceRecipe": {
     "script": "test",
     "args": [],
@@ -49,6 +49,6 @@
   "warranty": {
     "claimWindowHours": 72
   },
-  "publishedAt": "2026-09-25T00:00:00.000Z",
+  "publishedAt": "2026-09-28T00:00:00.000Z",
   "expiresAt": "2027-03-31T00:00:00.000Z"
 }

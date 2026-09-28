@@ -2,8 +2,8 @@
   "schemaVersion": "1",
   "status": "placeholder",
   "chainCostAtomic": "0",
-  "priceFloorAtomic": "500000",
+  "priceFloorAtomic": "50000",
   "ethUsdMicro": "0",
   "measuredAt": "2026-09-28T00:00:00.000Z",
-  "source": "Price floor 0.50 USDC (testnet), set by the owner on 2026-09-27 (issue #26). Chain cost g and ETH/USD are not measured yet: g = gasCostAtomic(gas per resolution from npm run e2e, a dated Arbitrum Sepolia gas price, a dated ETH/USD). No release may carry evidence meanwhile."
+  "source": "Price floor 0.05 USDC (testnet), set by the owner on 2026-09-28 after the first probe (issue #26); it was 0.50 from 2026-09-27. Chain cost g and ETH/USD are not measured yet: g = gasCostAtomic(gas per resolution from npm run e2e, a dated Arbitrum Sepolia gas price, a dated ETH/USD). No release may carry evidence meanwhile."
 }

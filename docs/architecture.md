@@ -28,7 +28,7 @@ The server's attester posts each finalized outcome as ERC-8004 feedback on Arbit
 
 The catalog contains immutable release manifests, patch bundles, supported profiles, fixtures, provenance, acceptance recipes, evidence, prices, and expiry. Catalog validation runs in tests and before the server listens.
 
-The current releases are preview-only. `mcp-server-payment-gating@0.1.0` carries a real payload (x402 payment gating for a TypeScript MCP server) and `mcp-client-paying-client@0.1.0-skeleton` a placeholder. Neither has measured evidence, so neither is sold.
+The current releases are preview-only. `mcp-server-payment-gating@0.1.0` (x402 payment gating for a TypeScript MCP server) and `mcp-client-paying-client@0.1.0` (an x402-paying MCP client with spending limits) carry real payloads. Neither has measured evidence, so neither is sold.
 
 ### Dashboard
 

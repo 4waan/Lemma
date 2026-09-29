@@ -698,6 +698,10 @@ describe("workspaces and installs", () => {
     expect(installArgv("yarn", ["a@1"], true, "berry")).toEqual(["yarn", "add", "--mode=skip-build", "-D", "a@1"]);
     expect(installArgv("npm", ["a@1"], false)).toContain("--ignore-scripts");
     expect(installArgv("pnpm", ["a@1"], false)).toContain("--ignore-scripts");
+    // A runtime dependency the fixture has as a devDependency must move, as the bridge's install does.
+    expect(installArgv("npm", ["a@1"], false)).toContain("--save-prod");
+    expect(installArgv("pnpm", ["a@1"], false)).toContain("--save-prod");
+    expect(installArgv("pnpm", ["a@1"], true)).toContain("--save-dev");
     const env = { PATH: "/nonexistent" };
     const berry = temp("lemma-yarn-");
     writeFileSync(join(berry, ".yarnrc.yml"), "nodeLinker: node-modules\n");

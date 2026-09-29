@@ -20,8 +20,8 @@ function preview(capability: CapabilityId, profile: RepositoryProfile, now: stri
 }
 
 describe("committed benchmark tasks", () => {
-  it("include the first probe task", () => {
-    expect(fixtures.map((f) => f.fixture.taskId)).toContain("weather-mcp-paid-forecast");
+  it("include the probe tasks", () => {
+    expect(fixtures.map((f) => f.fixture.taskId)).toEqual(expect.arrayContaining(["weather-mcp-paid-forecast", "market-brief-paid-tools"]));
   });
 
   for (const { fixture, dir } of fixtures) {
@@ -50,28 +50,48 @@ describe("committed benchmark tasks", () => {
   }
 });
 
-describe("weather-mcp-paid-forecast", () => {
-  const task = fixtures.find((f) => f.fixture.taskId === "weather-mcp-paid-forecast");
-  const repo = join(task?.dir ?? "", "repo");
+// Each task, the release its treatment gets, and what that release's bundle does to the task's repository.
+const TASKS = [
+  {
+    taskId: "weather-mcp-paid-forecast",
+    tests: ["test/paid-forecast.test.ts", "test/weather.test.ts"],
+    release: ["mcp-server-payment-gating", "0.1.0"],
+    writes: ["src/x402-payment-gating.ts"],
+    dependencies: { "@x402/core": "~2.27.0", "@x402/evm": "~2.27.0", "@x402/mcp": "~2.27.0" },
+  },
+  {
+    taskId: "market-brief-paid-tools",
+    tests: ["test/brief.test.ts", "test/paying-agent.test.ts"],
+    release: ["mcp-client-paying-client", "0.1.0"],
+    writes: ["src/x402-paying-client.ts"],
+    dependencies: { "@x402/core": "~2.27.0", "@x402/evm": "~2.27.0", "@x402/mcp": "~2.27.0", viem: "^2.48.11" },
+  },
+] as const;
 
-  it("pins both of its test files", () => {
-    expect(task?.fixture.acceptance.argv.filter((arg) => /=[0-9a-f]{64}$/.test(arg)).map((arg) => arg.split("=")[0])).toEqual(["test/paid-forecast.test.ts", "test/weather.test.ts"]);
-  });
+for (const expected of TASKS) {
+  describe(expected.taskId, () => {
+    const task = fixtures.find((f) => f.fixture.taskId === expected.taskId);
+    const repo = join(task?.dir ?? "", "repo");
 
-  it("takes the 0.1.0 bundle without drift, as the probe's pre-apply does", () => {
-    const bundle = PatchBundle.parse(JSON.parse(readFileSync(join(CATALOG_ROOT, "releases", "mcp-server-payment-gating", "0.1.0", "bundle.json"), "utf8")));
-    const plan = planApply(bundle, (path) => {
-      const full = join(repo, path);
-      if (!existsSync(full)) return null;
-      return statSync(full).isDirectory() ? DIRECTORY : fileDigest(readFileSync(full));
+    it("pins all of its test files", () => {
+      expect(task?.fixture.acceptance.argv.filter((arg) => /=[0-9a-f]{64}$/.test(arg)).map((arg) => arg.split("=")[0])).toEqual(expected.tests);
     });
-    expect(plan.ok ? [] : plan.drift).toEqual([]);
-    if (!plan.ok) return;
-    expect(plan.writes.map((w) => w.path)).toEqual(["src/x402-payment-gating.ts"]);
-    expect(plan.deletes).toEqual([]);
-    expect(plan.dependencies).toEqual({ "@x402/core": "~2.27.0", "@x402/evm": "~2.27.0", "@x402/mcp": "~2.27.0" });
-    // The control arm starts without x402: the buyer's repository has none of it yet.
-    const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
-    expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((name) => name.startsWith("@x402/"))).toEqual([]);
+
+    it(`takes the ${expected.release.join("@")} bundle without drift, as the probe's pre-apply does`, () => {
+      const bundle = PatchBundle.parse(JSON.parse(readFileSync(join(CATALOG_ROOT, "releases", ...expected.release, "bundle.json"), "utf8")));
+      const plan = planApply(bundle, (path) => {
+        const full = join(repo, path);
+        if (!existsSync(full)) return null;
+        return statSync(full).isDirectory() ? DIRECTORY : fileDigest(readFileSync(full));
+      });
+      expect(plan.ok ? [] : plan.drift).toEqual([]);
+      if (!plan.ok) return;
+      expect(plan.writes.map((w) => w.path)).toEqual(expected.writes);
+      expect(plan.deletes).toEqual([]);
+      expect(plan.dependencies).toEqual(expected.dependencies);
+      // The control arm starts without x402: the buyer's repository has none of it yet.
+      const pkg = JSON.parse(readFileSync(join(repo, "package.json"), "utf8")) as { dependencies: Record<string, string>; devDependencies: Record<string, string> };
+      expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((name) => name.startsWith("@x402/"))).toEqual([]);
+    });
   });
-});
+}

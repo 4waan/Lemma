@@ -1,9 +1,9 @@
 {
   "schemaVersion": "1",
   "releaseId": "mcp-client-paying-client",
-  "version": "0.1.0-skeleton",
+  "version": "0.1.0",
   "capability": "mcp-client.add-paying-client",
-  "title": "Skeleton: x402-paying MCP client with spending limits",
+  "title": "x402-paying MCP client with spending limits (USDC on Arbitrum Sepolia)",
   "supportedProfiles": [
     {
       "languages": [
@@ -28,11 +28,11 @@
     }
   ],
   "provenance": {
-    "repository": "https://github.com/coinbase/x402",
-    "commit": "dd927a26cfefc98c24b3ec38b3a8f204dad0c60d",
+    "repository": "https://github.com/x402-foundation/x402",
+    "commit": "71eb9a55e081e7b81ba3046d0bd17c3eb9c7bf81",
     "spdxLicense": "Apache-2.0"
   },
-  "payloadDigest": "0xb3526adcca1339a22ca262c2cf0629cd6a8b43fa2263397345510f9e9d2cda6b",
+  "payloadDigest": "0x4e4e0d99fc398b243c6532d7b8f000498258a0d147806a44c1a749ac90dda49a",
   "acceptanceRecipe": {
     "script": "test",
     "args": [],
@@ -49,6 +49,6 @@
   "warranty": {
     "claimWindowHours": 72
   },
-  "publishedAt": "2026-09-25T00:00:00.000Z",
+  "publishedAt": "2026-09-28T00:00:00.000Z",
   "expiresAt": "2027-03-31T00:00:00.000Z"
 }

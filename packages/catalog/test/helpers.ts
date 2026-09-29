@@ -29,7 +29,7 @@ export function writeJsonFile(root: string, path: string, value: unknown): void 
 }
 
 export const SERVER = "releases/mcp-server-payment-gating/0.1.0";
-export const CLIENT = "releases/mcp-client-paying-client/0.1.0-skeleton";
+export const CLIENT = "releases/mcp-client-paying-client/0.1.0";
 
 export const EVIDENCE = {
   benchmarkVersion: "bench-1",

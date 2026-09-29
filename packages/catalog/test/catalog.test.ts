@@ -89,7 +89,7 @@ describe("integrity", () => {
     writeFileSync(join(root, SERVER, "payload/files/extra.ts"), "export {};\n");
     expect(problems(root)).toContainEqual(expect.stringContaining("not named in ops.json: extra.ts"));
     rmSync(join(root, CLIENT, "payload/files"), { recursive: true });
-    expect(problems(root)).toContainEqual(expect.stringContaining("payload/files: missing lemma/paying-client/README.md"));
+    expect(problems(root)).toContainEqual(expect.stringContaining("payload/files: missing src/x402-paying-client.ts"));
   });
 
   it("refuses symbolic links anywhere in a release", () => {
@@ -122,7 +122,7 @@ describe("integrity", () => {
     const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
     manifest.supportedProfiles[0]!.dependencies = { "@modelcontextprotocol/sdk": ">=1.30.0" };
     writeJsonFile(root, `${SERVER}/manifest.json`, manifest);
-    writeJsonFile(root, `${CLIENT}/payload/ops.json`, { dependencies: { "@x402/mcp": "latest" }, devDependencies: { vitest: "*" }, files: [{ path: "lemma/paying-client/README.md", op: "add" }] });
+    writeJsonFile(root, `${CLIENT}/payload/ops.json`, { dependencies: { "@x402/mcp": "latest" }, devDependencies: { vitest: "*" }, files: [{ path: "src/x402-paying-client.ts", op: "add" }] });
     const bundle = packPayload(root, CLIENT);
     writeFileSync(join(root, CLIENT, "bundle.json"), formatBundle(bundle));
     const client = readJsonFile<CapabilityRelease>(root, `${CLIENT}/manifest.json`);

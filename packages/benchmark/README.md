@@ -2,7 +2,7 @@
 
 `@lemma/benchmark` tests Lemma's central claim: a paid Compatibility Resolution should reduce all-in cost-to-green without reducing correctness.
 
-The harness, run records, evidence derivation, economic probe, and report generator are implemented. The first task, `weather-mcp-paid-forecast`, is committed ([fixtures/README.md](fixtures/README.md)); the other tasks and the measured experiment remain pending.
+The harness, run records, evidence derivation, economic probe, and report generator are implemented. Two tasks, `weather-mcp-paid-forecast` and `market-brief-paid-tools`, are committed ([fixtures/README.md](fixtures/README.md)); the other tasks and the measured experiment remain pending.
 
 ## Experiment design
 
@@ -92,6 +92,8 @@ Or with Claude Code installed, as a normal user:
 ```
 
 It runs three controls and one treatment with the bundle pre-applied, billed to the key's account, then prints the verdict and writes it to `packages/benchmark/runs/probe-1/probe-weather-mcp-paid-forecast.json` (git-ignored). Before the version is bound or any run starts, it checks the key and the model; for Claude Code that is one request for one output token (a small fraction of a cent, in no run's cost), so a refused key, a model the key cannot use, or an organization with no API credit fails at once with the reason, and the same command works once that is fixed. Each run prints a line when it starts and one when it ends, and nothing in between; a run can take up to the task's 30-minute limit. A run that measured nothing (an agent error, or a run cut short by stopping the harness) is replaced, up to two per arm, and the probe does not wait for its cost. After such a run the probe stops, because its cause (a plan's usage limit, a lost login, no credit left) would usually fail the replacement too; the same command then replaces it. If billing has not settled, running the same command again later only settles and decides. The verdict uses the price floor and chain cost in `packages/catalog/economics.json`: while `g` is still a placeholder of 0, a `go` is optimistic by one resolution's gas.
+
+The second probe measures `mcp-client-paying-client@0.1.0` the same way, with `--task market-brief-paid-tools --bundle packages/catalog/releases/mcp-client-paying-client/0.1.0/bundle.json` and a new probe name.
 
 ## Development
 

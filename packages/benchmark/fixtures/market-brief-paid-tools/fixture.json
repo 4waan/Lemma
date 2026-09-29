@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1",
+  "taskId": "market-brief-paid-tools",
+  "kind": "match",
+  "capability": "mcp-client.add-paying-client",
+  "catalogCase": "mcp-client.add-paying-client/exact-npm-node22",
+  "profile": {
+    "schemaVersion": "1",
+    "language": "typescript",
+    "runtime": {
+      "name": "node",
+      "major": 22
+    },
+    "packageManager": {
+      "name": "npm",
+      "lockfile": "package-lock.json"
+    },
+    "moduleSystem": "esm",
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "1.30.1"
+    },
+    "frameworks": []
+  },
+  "initialCommit": null,
+  "prompt": "Some of this agent's MCP tools now charge with x402. Make the agent pay for them, within limits.\n\n- Payment: x402 protocol version 2 over MCP (a priced tool answers an unpaid call with an error result carrying the payment requirements; the paid call carries the payment in _meta[\"x402/payment\"] and gets the settlement in _meta[\"x402/payment-response\"]), the exact scheme, only in Circle's USDC on Arbitrum Sepolia (eip155:421614), whatever else a tool offers.\n- BriefAgent.connect reads PAYER_PRIVATE_KEY (0x and 64 hex digits), MAX_PRICE_PER_CALL and BUDGET (decimal USDC amounts, such as \"0.10\" and \"1.00\"). With none of the three set, the agent pays for nothing. With some but not all, or any malformed, connect rejects.\n- A call never pays more than MAX_PRICE_PER_CALL, and all calls of one agent together, across servers and including calls made at the same time, never spend more than BUDGET. A call pays at most once, even when the tool asks for payment again. Only a settled payment counts as spent: a tool that fails after its payment is verified, or a settlement that fails, spends nothing and gives the budget back. A call the agent does not or cannot pay for comes back as ok: false, as a failed call does today.\n- A paid call's output also carries payment: { amount, transaction } (atomic USDC, as a string of an integer). agent.spending() returns { budget, spent, remaining, payments }, with atomic USDC amounts and each payment as { server, tool, amount, transaction }.\n- A brief whose tools cost anything ends with the line \"Paid <amount> USDC for <n> tool calls.\" (for example \"Paid 0.07 USDC for 2 tool calls.\").\n\ntest/paying-agent.test.ts checks all of this against local stand-in servers. Make npm test pass. Do not change the tests or the test script.",
+  "network": "open",
+  "setup": {
+    "argv": [
+      "npm",
+      "ci",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund"
+    ],
+    "timeoutSec": 600
+  },
+  "acceptance": {
+    "argv": [
+      "node",
+      "-e",
+      "for(const a of process.argv.slice(1)){const[f,d]=a.split(\"=\");if(require(\"crypto\").hash(\"sha256\",require(\"fs\").readFileSync(f))!=d)throw f+\" changed\"}process.exit(require(\"child_process\").spawnSync(\"npm\",[\"test\"],{stdio:\"inherit\"}).status??1)",
+      "test/brief.test.ts=8a682dde05ab2c44711ad5cf22b414d454e9731a49f1440916cbe1f4c716c707",
+      "test/paying-agent.test.ts=8b57851724c5394fc5ca7cdad29379bff5f949949bb56850805492b8da16577e"
+    ],
+    "timeoutSec": 300
+  },
+  "expected": {
+    "passed": true
+  },
+  "maxDurationSec": 1800,
+  "notes": "Acceptance checks that both test files are unchanged (sha256), then runs npm test: a typecheck and node's test runner. The stand-in servers check each payment's EIP-3009 signature the way a facilitator would, so no network or funds are used."
+}

@@ -249,7 +249,7 @@ export function yarnFlavor(cwd: string, env: Record<string, string>): "classic" 
  * `YARN_ENABLE_SCRIPTS=false` that preApply sets.
  */
 export function installArgv(packageManager: "npm" | "pnpm" | "yarn", specs: readonly string[], dev: boolean, yarn: "classic" | "berry" = "classic"): string[] {
-  if (packageManager === "npm") return ["npm", "install", "--ignore-scripts", ...(dev ? ["--save-dev"] : ["--save"]), ...specs];
-  if (packageManager === "pnpm") return ["pnpm", "add", "--ignore-scripts", ...(dev ? ["-D"] : []), ...specs];
+  if (packageManager === "npm") return ["npm", "install", "--ignore-scripts", dev ? "--save-dev" : "--save-prod", ...specs];
+  if (packageManager === "pnpm") return ["pnpm", "add", "--ignore-scripts", dev ? "--save-dev" : "--save-prod", ...specs];
   return ["yarn", "add", yarn === "berry" ? "--mode=skip-build" : "--ignore-scripts", ...(dev ? ["-D"] : []), ...specs];
 }

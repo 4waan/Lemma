@@ -36,8 +36,10 @@ export function isYarnBerry(lockDir: string): boolean {
  * `--mode=skip-build` plus `YARN_ENABLE_SCRIPTS=false` for yarn berry, which
  * has no such flag. pnpm also skips `.pnpmfile.cjs`, which runs code. An exact
  * version (`1.2.3`, `=1.2.3`, `v1.2.3`) is saved exactly on npm too
- * (`--save-exact`), as pnpm and yarn already do. In a monorepo the change lands in the package's own
- * package.json.
+ * (`--save-exact`), as pnpm and yarn already do. On npm and pnpm a runtime
+ * dependency the package already has as a devDependency moves to
+ * `dependencies` (`--save-prod`), so a production install still has it. In a
+ * monorepo the change lands in the package's own package.json.
  */
 export function installCommands(target: InstallTarget, dependencies: Readonly<Record<string, string>>, devDependencies: Readonly<Record<string, string>>): InstallCommand[] {
   const rel = relative(target.lockDir, target.packageDir).split(sep).join("/");
@@ -52,11 +54,11 @@ export function installCommands(target: InstallTarget, dependencies: Readonly<Re
       const ranged = specs.filter((spec) => !exact.includes(spec));
       for (const [group, pin] of [[ranged, false], [exact, true]] as const) {
         if (group.length === 0) continue;
-        commands.push({ cwd: target.lockDir, argv: ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", dev ? "--save-dev" : "--save", ...(pin ? ["--save-exact"] : []), ...(rel === "" ? [] : ["--workspace", rel]), ...group] });
+        commands.push({ cwd: target.lockDir, argv: ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", dev ? "--save-dev" : "--save-prod", ...(pin ? ["--save-exact"] : []), ...(rel === "" ? [] : ["--workspace", rel]), ...group] });
       }
     } else if (target.packageManager === "pnpm") {
       const workspaceRoot = existsSync(join(target.packageDir, "pnpm-workspace.yaml"));
-      commands.push({ cwd: target.packageDir, argv: ["pnpm", "add", "--ignore-scripts", "--ignore-pnpmfile", ...(dev ? ["--save-dev"] : []), ...(workspaceRoot ? ["--workspace-root"] : []), ...specs] });
+      commands.push({ cwd: target.packageDir, argv: ["pnpm", "add", "--ignore-scripts", "--ignore-pnpmfile", dev ? "--save-dev" : "--save-prod", ...(workspaceRoot ? ["--workspace-root"] : []), ...specs] });
     } else if (isYarnBerry(target.lockDir)) {
       commands.push({ cwd: target.packageDir, argv: ["yarn", "add", "--mode=skip-build", ...(dev ? ["--dev"] : []), ...specs] });
     } else {

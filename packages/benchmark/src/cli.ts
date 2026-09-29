@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { CATALOG_ROOT, loadCatalog } from "@lemma/catalog";
@@ -9,10 +9,12 @@ import { type Hex32, PatchBundle, bundleDigest, fileDigest } from "@lemma/core";
 import type { AgentAdapter, AgentKind, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
 import { loadAnthropicPrices, pricesDigest } from "./anthropic-usage.js";
 import { ClaudeCodeAdapter, claudeCodeVersion, findClaudeCode, readMeteredUsage } from "./claude-code.js";
+import { CodexAdapter, codexVersion, findCodex, readCodexMeteredUsage } from "./codex.js";
 import { CursorAdapter } from "./cursor.js";
 import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
 import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
+import { loadOpenAiPrices, openAiPricesDigest } from "./openai-usage.js";
 import { isProbeMeasurement, nextProbeSlot, probeReplacementsLeft, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
@@ -30,22 +32,24 @@ import { prepareRunBase, removeTree } from "./workspace.js";
  *   benchmark probe <probe-version> --task <taskId> --bundle <bundle.json>
  *   benchmark report <version>
  *
- * The agent's API key (Cursor's, or Anthropic's for Claude Code) is read from
- * standard input, which must be a pipe (for example `op read … | npm run
+ * The agent's API key (Cursor's, Anthropic's for Claude Code, or OpenAI's for
+ * Codex) is read from standard input, which must be a pipe (for example `op read … | npm run
  * benchmark -- run v1`). Agents run unsandboxed as this user and can read the
  * environment this process and its parents started with, so the key is never
  * taken from the environment, and commands that run agents refuse to start
  * while this process's environment, or the one any ancestor started with,
- * holds anything that looks like a credential. Reconciling Claude Code runs
- * reads their meter records and needs no key. A Claude Code probe can instead
- * take a Claude plan's token (from `claude setup-token`) the same way.
+ * holds anything that looks like a credential. Reconciling Claude Code and
+ * Codex runs reads their meter records and needs no key.
  *
- * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default, or
- * `claude-code`; later commands take the agent the version was started with);
- * LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND (the absolute
- * path of `claude`, default: the first on PATH); LEMMA_CLAUDE_LOGIN=plan
- * (probe only: Claude Code on a Claude Pro or Max plan's token instead of an
- * API key, still metered at list price); LEMMA_BENCH_DIR for run
+ * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default,
+ * `claude-code` or `codex`; later commands take the agent the version was
+ * started with); LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND
+ * and LEMMA_CODEX_COMMAND (the absolute path of `claude` or `codex`, default:
+ * the first on PATH); LEMMA_CODEX_LOGIN=chatgpt (probe only: Codex on the
+ * ChatGPT plan `codex login` signed this user in with, no key read, cost from
+ * Codex's own token counts); LEMMA_CLAUDE_LOGIN=plan (probe only: Claude
+ * Code on a Claude Pro or Max plan's token, piped in place of the key, still
+ * metered at list price); LEMMA_BENCH_DIR for run
  * directories (default: the OS temp directory, outside the repository);
  * LEMMA_BRIDGE_COMMAND and LEMMA_API_URL for the treatment's bridge.
  */
@@ -64,7 +68,7 @@ const newRunId = (): Hex32 => `0x${randomBytes(32).toString("hex")}`;
 const runBase = () => process.env["LEMMA_BENCH_DIR"] ?? join(tmpdir(), "lemma-bench");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key" };
+const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key", codex: "OpenAI API key" };
 /** How a Claude plan's token from `claude setup-token` starts; API keys start `sk-ant-api`. */
 const PLAN_TOKEN_PREFIX = "sk-ant-oat";
 
@@ -81,8 +85,14 @@ async function readKey(agent: AgentKind, plan = false): Promise<string> {
   if (key === "") throw new Error(`standard input carried no ${name}`);
   if (plan && !key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error(`LEMMA_CLAUDE_LOGIN=plan takes the token \`claude setup-token\` prints (it starts ${PLAN_TOKEN_PREFIX}), not an API key; for an API key, leave LEMMA_CLAUDE_LOGIN unset`);
   if (!plan && key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error("that is a Claude plan token, not an API key: a probe runs on a plan with LEMMA_CLAUDE_LOGIN=plan, and a benchmark needs an API key");
-  // Cursor is the default agent, so an Anthropic key here usually means LEMMA_BENCHMARK_AGENT was left unset.
-  if (agent === "cursor" && key.startsWith("sk-ant-")) throw new Error("that is an Anthropic API key, and this version runs Cursor: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code");
+  // Another provider's key usually means LEMMA_BENCHMARK_AGENT was left unset or mistyped (Cursor is the default).
+  const anthropic = key.startsWith("sk-ant-");
+  const openai = !anthropic && key.startsWith("sk-");
+  if (anthropic && agent !== "claude-code") throw new Error(`that is an Anthropic API key, and this version runs ${agent}: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code`);
+  // Cursor's key format is not documented, so only Claude Code is told about an OpenAI key.
+  if (openai && agent === "claude-code") throw new Error(`that looks like an OpenAI API key, and this version runs Claude Code: start a Codex version with LEMMA_BENCHMARK_AGENT=codex`);
+  // A pasted ChatGPT sign-in (Codex's auth.json, or its access token) is not an API key; a probe signs in through `codex login` instead.
+  if (agent === "codex" && !openai) throw new Error("Codex runs need an OpenAI API key (it starts with sk-), from platform.openai.com; to run a probe on a ChatGPT plan instead, sign in with `codex login --device-auth` and set LEMMA_CODEX_LOGIN=chatgpt, with nothing on standard input");
   return key;
 }
 
@@ -104,8 +114,16 @@ function assertCleanEnvironment(): void {
 /** The agent `freeze` and `probe` start a version with: LEMMA_BENCHMARK_AGENT, Cursor unless set. */
 function chosenAgent(): AgentKind {
   const name = process.env["LEMMA_BENCHMARK_AGENT"] ?? "cursor";
-  if (name !== "cursor" && name !== "claude-code") throw new Error(`LEMMA_BENCHMARK_AGENT must be cursor or claude-code, not ${name}`);
+  if (name !== "cursor" && name !== "claude-code" && name !== "codex") throw new Error(`LEMMA_BENCHMARK_AGENT must be cursor, claude-code or codex, not ${name}`);
   return name;
+}
+
+/** Whether Codex runs on a ChatGPT plan login (LEMMA_CODEX_LOGIN=chatgpt) instead of an API key. */
+function chatgptLogin(): boolean {
+  const value = process.env["LEMMA_CODEX_LOGIN"] ?? "";
+  if (value !== "" && value !== "chatgpt") throw new Error(`LEMMA_CODEX_LOGIN must be chatgpt or unset, not ${value}`);
+  if (value === "chatgpt" && chosenAgent() !== "codex") throw new Error("LEMMA_CODEX_LOGIN=chatgpt needs LEMMA_BENCHMARK_AGENT=codex");
+  return value === "chatgpt";
 }
 
 /** Whether Claude Code runs on a Claude plan's token (LEMMA_CLAUDE_LOGIN=plan) instead of an API key. */
@@ -116,10 +134,21 @@ function claudePlan(): boolean {
   return value === "plan";
 }
 
-/** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version`, with Claude Code's price table. */
-function agentSetup(name: AgentKind, plan = false): AgentSetup {
+/** Where `codex login` keeps this user's login: CODEX_HOME, else ~/.codex. */
+function codexLoginHome(): string {
+  const home = process.env["CODEX_HOME"];
+  if (home !== undefined && home !== "") return resolve(home);
+  return join(homedir(), ".codex");
+}
+
+/** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version` or `codex --version` with the agent's price table. */
+function agentSetup(name: AgentKind, login = false): AgentSetup {
+  // `login`: Codex on a ChatGPT plan, or Claude Code on a Claude plan.
+  if (name === "codex") {
+    return AgentSetup.parse({ name, version: codexVersion(findCodex()), pricesDigest: openAiPricesDigest(loadOpenAiPrices()), ...(login ? { login: "chatgpt" } : {}) });
+  }
   if (name === "claude-code") {
-    return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()), ...(plan ? { login: "claude-plan" } : {}) });
+    return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()), ...(login ? { login: "claude-plan" } : {}) });
   }
   const manifest = join(REPOSITORY_ROOT, "node_modules", "@cursor", "sdk", "package.json");
   if (!existsSync(manifest)) throw new Error("@cursor/sdk is not installed; run npm install");
@@ -130,17 +159,17 @@ function agentSetup(name: AgentKind, plan = false): AgentSetup {
 function assertSameAgent(bound: AgentSetup): void {
   const now = agentSetup(bound.name, bound.login !== undefined);
   if (now.version !== bound.version) throw new Error(`${bound.name} is at ${now.version} now and this version ran ${bound.version}; use a new version`);
-  if (now.pricesDigest !== bound.pricesDigest) throw new Error("prices/anthropic.json changed since this version started; use a new version");
+  if (now.pricesDigest !== bound.pricesDigest) throw new Error(`prices/${bound.name === "codex" ? "openai" : "anthropic"}.json changed since this version started; use a new version`);
 }
 
 interface OpenAgent {
   readonly adapter: AgentAdapter;
-  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request; a Claude plan: with one short run). */
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code and Codex: with one tiny request; a ChatGPT or Claude plan: with one short run). */
   checkModel(model: string): Promise<void>;
   close(): Promise<void>;
 }
 
-/** Reads the key and starts the agent; Claude Code keeps each run's meter record under `meterDir`. */
+/** Reads the key and starts the agent; Claude Code and Codex keep each run's meter record under `meterDir`. */
 async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent> {
   if (setup.name === "cursor") {
     const cursor = new CursorAdapter(await readKey("cursor"));
@@ -151,6 +180,14 @@ async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent
       },
       close: async () => undefined,
     };
+  }
+  if (setup.name === "codex" && setup.login !== undefined) {
+    const codex = new CodexAdapter(null, { command: findCodex(), meterDir, prices: loadOpenAiPrices(), chatgptLogin: codexLoginHome() });
+    return { adapter: codex, checkModel: (model) => inScratch((dir) => codex.checkLogin(model, dir)), close: () => codex.close() };
+  }
+  if (setup.name === "codex") {
+    const codex = new CodexAdapter(await readKey("codex"), { command: findCodex(), meterDir, prices: loadOpenAiPrices() });
+    return { adapter: codex, checkModel: (model) => codex.checkModel(model), close: () => codex.close() };
   }
   if (process.getuid?.() === 0) throw new Error("Claude Code will not run with permission checks off as root, and a benchmark run cannot stop for prompts: run the harness as a normal user");
   if (setup.login !== undefined) {
@@ -178,9 +215,10 @@ async function inScratch(check: (dir: string) => Promise<void>): Promise<void> {
   }
 }
 
-/** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's meter records (without one). */
+/** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's or Codex's meter records (without one). */
 async function usageSource(setup: AgentSetup, meterDir: string): Promise<Pick<AgentAdapter, "usage">> {
   if (setup.name === "cursor") return new CursorAdapter(await readKey("cursor"));
+  if (setup.name === "codex") return { usage: async (agentId) => readCodexMeteredUsage(meterDir, agentId, setup.pricesDigest ?? "") };
   return { usage: async (agentId) => readMeteredUsage(meterDir, agentId, setup.pricesDigest ?? "") };
 }
 
@@ -213,6 +251,7 @@ async function freeze(v: string): Promise<void> {
     if (listedNoMatch !== (f.fixture.kind === "no-match")) throw new Error(`${f.fixture.taskId} is a ${f.fixture.kind} fixture; list it under ${listedNoMatch ? "--tasks" : "--no-match"}`);
   }
   if (!existsSync(RULE_PATH)) throw new Error(`the Lemma rule ${RULE_PATH} is missing; the treatment cannot run without it`);
+  if (chatgptLogin()) throw new Error("LEMMA_CODEX_LOGIN=chatgpt is for probes only: a benchmark's cost must be metered, so freeze with an OpenAI API key");
   if (claudePlan()) throw new Error("LEMMA_CLAUDE_LOGIN=plan is for probes only: a benchmark is paid for with an API key, so freeze with one");
   const agent = agentSetup(chosenAgent());
   // Everything that can be checked for free is checked before the paid smoke run.
@@ -331,12 +370,12 @@ async function probe(v: string): Promise<void> {
   const log = RunLog.forVersion(RUNS_DIR, v);
 
   // A probe version is one experiment: the same task, fixture, bundle, agent release and model on every invocation.
-  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent(), claudePlan()), model: model.id };
+  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent(), chatgptLogin() || claudePlan()), model: model.id };
   const agent = await openAgent(setup.agent, join(log.dir, "meter"));
   try {
     // Checked before the version is bound and before the first run, so a wrong agent, key or model
     // leaves nothing behind and the corrected command can reuse the version.
-    if (setup.agent.name === "claude-code") await agent.checkModel(model.id);
+    if (setup.agent.name !== "cursor") await agent.checkModel(model.id);
     log.lock();
     log.bind("probe.json", setup, "probe task, fixture, bundle, agent release or model");
     await probeRuns(v, taskId, fixture, bundle, model, agent.adapter, log);

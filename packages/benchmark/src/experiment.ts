@@ -9,24 +9,28 @@ import { listFiles } from "./files.js";
 const Slug = z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/);
 
 /**
- * The agent every run of a version uses, at one release. Claude Code's cost is
- * metered and priced from `prices/anthropic.json`, so the table's digest is
+ * The agent every run of a version uses, at one release. Claude Code's and
+ * Codex's cost is metered and priced from a dated table
+ * (`prices/anthropic.json`, `prices/openai.json`), so the table's digest is
  * part of the setup; Cursor's cost is billed, so it has none.
  */
 export const AgentSetup = z
   .strictObject({
-    name: z.enum(["cursor", "claude-code"]),
+    name: z.enum(["cursor", "claude-code", "codex"]),
     version: z.string().regex(/^\d+\.\d+\.\d+([-+][0-9A-Za-z.-]{1,32})?$/),
     pricesDigest: Hex32.nullable(),
     /**
-     * Claude Code ran on a Claude plan's token instead of an API key. It is
-     * still metered at list price, but the plan, not an API account, paid, so
-     * only a probe may use it (`freeze` refuses it).
+     * The agent ran on a plan instead of an API key, so only a probe may use
+     * it (`freeze` refuses it). `chatgpt`: Codex signed in with a ChatGPT
+     * plan, its cost its own token counts at list price, not metered.
+     * `claude-plan`: Claude Code on a Claude plan's token, still metered at
+     * list price, but paid for by the plan, not an API account.
      */
-    login: z.literal("claude-plan").optional(),
+    login: z.enum(["chatgpt", "claude-plan"]).optional(),
   })
-  .refine((a) => (a.name === "claude-code") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code runs name their price table; Cursor runs do not" })
-  .refine((a) => a.login === undefined || a.name === "claude-code", { path: ["login"], message: "only Claude Code runs can use a Claude plan" });
+  .refine((a) => (a.name !== "cursor") === (a.pricesDigest !== null), { path: ["pricesDigest"], message: "Claude Code and Codex runs name their price table; Cursor runs do not" })
+  .refine((a) => a.login !== "chatgpt" || a.name === "codex", { path: ["login"], message: "only Codex runs can use a ChatGPT login" })
+  .refine((a) => a.login !== "claude-plan" || a.name === "claude-code", { path: ["login"], message: "only Claude Code runs can use a Claude plan" });
 
 export type AgentSetup = z.infer<typeof AgentSetup>;
 

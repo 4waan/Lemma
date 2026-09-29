@@ -1,22 +1,19 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { delimiter, isAbsolute, join } from "node:path";
 
 import type { AgentAdapter, AgentRunOutcome, AgentRunRequest, ToolCallSummary, UsageReport } from "./adapter.js";
-import { type AnthropicPrices, modelPrice, pricesDigest } from "./anthropic-usage.js";
-import { MeterRecord, type MeterReading, MeteringProxy } from "./meter.js";
-import { childEnv, killByHome, killGroup, killTree, secretVariables, trackGroup } from "./process.js";
+import { superviseAgent } from "./agent-process.js";
+import { type AnthropicPrices, type ResponseUsage, modelPrice, pricesDigest } from "./anthropic-usage.js";
+import { MeterRecord, type MeterReading, MeteringProxy, anthropicApi } from "./meter.js";
+import { childEnv, secretVariables } from "./process.js";
 import type { ReportedUsage } from "./tokens.js";
 
-/** Time after the deadline for Claude Code to stop on SIGTERM before it is killed. */
-export const STOP_GRACE_MS = 10_000;
-/** Time after its result for Claude Code to exit on its own. */
-export const EXIT_GRACE_MS = 30_000;
+export { EXIT_GRACE_MS, STOP_GRACE_MS } from "./agent-process.js";
+
 /** Limit for the short run that checks a Claude plan's token before a probe. */
 export const PLAN_CHECK_MS = 3 * 60_000;
-/** How much of Claude Code's stderr is kept to explain a run that never started. */
-const STDERR_TAIL = 2000;
 
 /** Session ids are UUIDs; anything else is refused before it names a file. */
 const AGENT_ID = /^[A-Za-z0-9-]{1,100}$/;
@@ -62,7 +59,7 @@ export interface ClaudeCodeOptions {
  */
 export class ClaudeCodeAdapter implements AgentAdapter {
   readonly kind = "claude-code" as const;
-  private readonly proxy: MeteringProxy;
+  private readonly proxy: MeteringProxy<ResponseUsage>;
   private readonly pricesDigest: string;
 
   constructor(
@@ -70,7 +67,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     private readonly options: ClaudeCodeOptions,
   ) {
     if (apiKey === "") throw new Error(options.plan === true ? "a Claude plan token is required" : "an Anthropic API key is required");
-    this.proxy = new MeteringProxy({ apiKey, prices: options.prices, ...(options.plan === true ? { plan: true } : {}), ...(options.upstream === undefined ? {} : { upstream: options.upstream }), ...(options.drainMs === undefined ? {} : { drainMs: options.drainMs }) });
+    this.proxy = new MeteringProxy({ apiKey, api: anthropicApi(options.prices, options.upstream, options.plan === true), ...(options.drainMs === undefined ? {} : { drainMs: options.drainMs }) });
     this.pricesDigest = pricesDigest(options.prices);
   }
 
@@ -171,27 +168,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     };
 
     const seen: RunSeen = { agentId: null, result: null, killedAtDeadline: false, spawnError: null, stderr: "", calls: new Map() };
-    await new Promise<void>((resolve) => {
-      const child = spawn(command, args, { cwd: request.cwd, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
-      const untrack = trackGroup(child.pid);
-      const timers: NodeJS.Timeout[] = [];
-      const reap = () => {
-        if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) killTree(child.pid);
-        killGroup(child.pid);
-      };
-      let settled = false;
-      const settle = () => {
-        if (settled) return;
-        settled = true;
-        for (const t of timers) clearTimeout(t);
-        reap();
-        killByHome(request.home);
-        untrack();
-        resolve();
-      };
-
-      let buffer = "";
-      const onLine = (line: string) => {
+    const ran = await superviseAgent({
+      command,
+      args,
+      cwd: request.cwd,
+      env,
+      home: request.home,
+      timeoutMs: request.timeoutMs,
+      ...(this.options.graceMs === undefined ? {} : { graceMs: this.options.graceMs }),
+      onLine: (line, ended) => {
         const event = parseLine(line);
         if (event === null) return;
         if (event.type === "system" && event.subtype === "init" && seen.agentId === null && typeof event.session_id === "string" && AGENT_ID.test(event.session_id)) {
@@ -201,41 +186,13 @@ export class ClaudeCodeAdapter implements AgentAdapter {
         trackTools(event, seen.calls);
         if (event.type === "result" && seen.result === null) {
           seen.result = event;
-          timers.push(setTimeout(reap, this.options.graceMs?.exit ?? EXIT_GRACE_MS));
+          ended();
         }
-      };
-      child.stdout?.on("data", (chunk: Buffer) => {
-        buffer += chunk.toString("utf8");
-        for (let i = buffer.indexOf("\n"); i !== -1; i = buffer.indexOf("\n")) {
-          onLine(buffer.slice(0, i));
-          buffer = buffer.slice(i + 1);
-        }
-      });
-      child.stdout?.on("end", () => {
-        if (buffer.trim() !== "") onLine(buffer);
-        buffer = "";
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        seen.stderr = (seen.stderr + chunk.toString("utf8")).slice(-STDERR_TAIL);
-      });
-
-      timers.push(
-        setTimeout(() => {
-          seen.killedAtDeadline = true;
-          try {
-            if (child.pid !== undefined) process.kill(-child.pid, "SIGTERM");
-          } catch {
-            // Already gone.
-          }
-          timers.push(setTimeout(reap, this.options.graceMs?.stop ?? STOP_GRACE_MS));
-        }, request.timeoutMs),
-      );
-      child.on("error", (error) => {
-        seen.spawnError = error.message;
-        settle();
-      });
-      child.on("close", settle);
+      },
     });
+    seen.killedAtDeadline = ran.killedAtDeadline;
+    seen.spawnError = ran.spawnError;
+    seen.stderr = ran.stderr;
 
     // Every response the run started is read to its end before the run counts as over.
     const reading = await this.proxy.end(token);

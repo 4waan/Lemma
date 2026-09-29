@@ -12,17 +12,20 @@ import { isInside } from "./files.js";
  * and `CLAUDE.local.md` from every ancestor of the working directory, and
  * `.cursorrules` from the enclosing git repository. Claude Code loads
  * `CLAUDE.md` and everything under `.claude` (`.claude/CLAUDE.md`,
- * `.claude/rules`) from every ancestor too. `.git` would also put the run
- * inside another repository, where the agent's git commands act on it.
+ * `.claude/rules`) from every ancestor too. Codex loads `AGENTS.md` and
+ * `.codex` project settings from the directories up to its project root.
+ * `.git` would also put the run inside another repository, where the agent's
+ * git commands act on it.
  */
-export const AMBIENT_SETTING_NAMES = [".cursor", ".cursorrules", ".claude", "AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".git"] as const;
+export const AMBIENT_SETTING_NAMES = [".cursor", ".cursorrules", ".claude", ".codex", "AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".git"] as const;
 
 /**
  * Where each agent reads the Lemma rule in the treatment copy: a Cursor
- * project rule, or a Claude Code project rule. The file is copied unchanged;
- * Claude Code reads the rule's body and leaves its Cursor front matter out.
+ * project rule, a Claude Code project rule, or Codex's project instructions.
+ * The file is copied unchanged; Claude Code reads the rule's body and leaves
+ * its Cursor front matter out, and Codex reads the front matter as text.
  */
-export const RULE_FILES: Readonly<Record<AgentKind, string>> = { cursor: ".cursor/rules/lemma.mdc", "claude-code": ".claude/rules/lemma.md" };
+export const RULE_FILES: Readonly<Record<AgentKind, string>> = { cursor: ".cursor/rules/lemma.mdc", "claude-code": ".claude/rules/lemma.md", codex: "AGENTS.md" };
 
 export class WorkspaceError extends Error {
   override name = "WorkspaceError";
@@ -68,6 +71,8 @@ export function prepareWorkspace(options: {
     cpSync(join(options.fixtureDir, "repo"), cwd, { recursive: true, errorOnExist: true, force: false });
     if (options.rulePath !== null) {
       const rule = join(cwd, options.ruleFile ?? RULE_FILES.cursor);
+      // A fixture's own file there would be replaced, and the arms would differ in more than the rule.
+      if (existsSync(rule)) throw new WorkspaceError(`the fixture already has ${options.ruleFile ?? RULE_FILES.cursor}, where the treatment's Lemma rule goes`);
       mkdirSync(dirname(rule), { recursive: true });
       cpSync(options.rulePath, rule);
     }
@@ -141,7 +146,7 @@ export function assertNoAmbientSettings(dir: string): void {
   }
 }
 
-const SKIP = new Set(["node_modules", ".git", ".cursor", ".claude"]);
+const SKIP = new Set(["node_modules", ".git", ".cursor", ".claude", "AGENTS.md"]);
 
 /** Digest of every file under `dir`, skipping dependencies, VCS data and the rule. */
 export function snapshot(dir: string): Map<string, string> {

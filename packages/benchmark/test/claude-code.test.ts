@@ -12,6 +12,7 @@ import {
   ClaudeCodeAdapter,
   MeterRecord,
   MeteringProxy,
+  anthropicApi,
   OAUTH_BETA,
   RULE_FILES,
   type ResponseUsage,
@@ -225,7 +226,7 @@ const PLAN = ["sk", "ant", "oat01", "fake", "plan"].join("-");
 
 describe("MeteringProxy", { timeout: 20_000 }, () => {
   const open = async (upstream: string, drainMs = 5000) => {
-    const proxy = new MeteringProxy({ apiKey: REAL, prices, upstream, drainMs });
+    const proxy = new MeteringProxy({ apiKey: REAL, api: anthropicApi(prices, upstream), drainMs });
     const url = await proxy.open();
     return { proxy, url };
   };
@@ -250,7 +251,7 @@ describe("MeteringProxy", { timeout: 20_000 }, () => {
 
   it("passes a run's request on with a Claude plan's token as a bearer token and the OAuth beta, and meters it the same way", async () => {
     const api = await standIn((_req, res) => streamed(res, STREAM));
-    const proxy = new MeteringProxy({ apiKey: PLAN, plan: true, prices, upstream: api.url, drainMs: 5000 });
+    const proxy = new MeteringProxy({ apiKey: PLAN, api: anthropicApi(prices, api.url, true), drainMs: 5000 });
     const url = await proxy.open();
     proxy.begin("run-token-plan");
     const reply = await post(url, "run-token-plan", "/v1/messages?beta=true", { headers: { "x-api-key": "run-token-plan", "content-type": "application/json", "anthropic-beta": "interleaved-thinking-2025-05-14, oauth-2025-04-20" } });

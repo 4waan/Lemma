@@ -142,10 +142,10 @@ export function unitsToMicroUsd(units: bigint): bigint {
  * so its final usage is unknown. `malformed` marks a usage or body that did
  * not parse, which the meter cannot price.
  */
-export interface ResponseRead {
+export interface ResponseRead<U = ResponseUsage> {
   readonly state: "complete" | "errored" | "cut";
   readonly model: string | null;
-  readonly usage: ResponseUsage | null;
+  readonly usage: U | null;
   readonly malformed: boolean;
 }
 

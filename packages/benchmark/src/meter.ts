@@ -4,21 +4,23 @@ import type { AddressInfo } from "node:net";
 import { Hex32, IsoTimestamp } from "@lemma/core";
 import { z } from "zod";
 
-import { type AnthropicPrices, type ResponseRead, UsageStreamReader, readJsonResponse, responseCost, unitsToMicroUsd } from "./anthropic-usage.js";
+import { type AnthropicPrices, type ResponseCost, type ResponseRead, type ResponseUsage, UsageStreamReader, readJsonResponse, responseCost, unitsToMicroUsd } from "./anthropic-usage.js";
+import { type OpenAiPrices, type OpenAiReply, ResponsesStreamReader, openAiResponseCost, readOpenAiJsonResponse } from "./openai-usage.js";
 
 const Count = z.int().min(0);
 
 /**
- * What one Claude Code run used, as the meter saw it: every Messages API
- * response, priced from the dated table. Written when the run ends and read by
- * `ClaudeCodeAdapter.usage` at reconcile time.
+ * What one metered run used, as the meter saw it: every model response (the
+ * Anthropic Messages API for Claude Code, the OpenAI Responses API for Codex),
+ * priced from the dated table. Written when the run ends and read by the
+ * adapter's `usage` at reconcile time.
  */
 export const MeterRecord = z.strictObject({
   schemaVersion: z.literal("1"),
   agentId: z.string().regex(/^[A-Za-z0-9-]{1,100}$/),
   pricesDigest: Hex32,
   meteredAt: IsoTimestamp,
-  /** Successful Messages API responses the meter read for usage; error responses are not billed and not counted. */
+  /** Successful model responses the meter read for usage; error responses are not billed and not counted. */
   responses: Count,
   /** Responses that stopped before their final usage: the run's cost is unknown while this is above zero. */
   incomplete: Count,
@@ -35,16 +37,110 @@ export const MeterRecord = z.strictObject({
   }),
   webSearches: Count,
   costMicroUsd: z.string().regex(/^(0|[1-9]\d*)$/),
-  /** The tokens Claude Code itself reported for the run, when it reported them: never more than the meter saw, unless traffic went around it. */
+  /** The tokens the agent itself reported for the run, when it reported them: never more than the meter saw, unless traffic went around it. */
   reportedTokens: Count.nullable(),
+  /**
+   * Where the usage came from: the meter (absent, the default), or the agent's
+   * own token counts, for a probe run on a subscription login that no meter
+   * can sit in front of (`CodexAdapter` with a ChatGPT login).
+   */
+  source: z.literal("agent").optional(),
 });
 
 export type MeterRecord = z.infer<typeof MeterRecord>;
 
 export type MeterReading = Omit<MeterRecord, "schemaVersion" | "agentId" | "pricesDigest" | "meteredAt" | "reportedTokens">;
 
+/**
+ * One model API as the meter serves it: how a run authenticates to the meter,
+ * which requests are passed on and which of those are metered, how the real
+ * key is added upstream, and how a reply is read and priced.
+ */
+export interface MeteredApi<U = unknown> {
+  /** Named in errors: "the Anthropic API". */
+  readonly name: string;
+  readonly upstream: string;
+  /** The run token a request presents, if any. */
+  runToken(headers: IncomingMessage["headers"]): string | undefined;
+  /** `metered` requests are read and priced, `passed` ones only passed on (free), others refused. */
+  route(method: string, path: string): "metered" | "passed" | null;
+  /** A request answered locally, without a run token (a reachability check). */
+  answersLocally(method: string, path: string): boolean;
+  /** Sets the real key on an upstream request's headers. */
+  authorize(headers: Headers, apiKey: string): void;
+  streamReader(): { feed(chunk: Uint8Array): void; end(): ResponseRead<U> };
+  readJson(body: string): ResponseRead<U>;
+  price(model: string, usage: U): ResponseCost;
+  /** An error reply in the API's own shape, so the agent reports it as it would the API's. */
+  errorBody(type: string, message: string): string;
+}
+
+/** The beta Claude Code sends with a Claude plan's token; the API refuses that token without it. */
+export const OAUTH_BETA = "oauth-2025-04-20";
+
+/**
+ * The Anthropic Messages API, as Claude Code uses it. With `plan`, the key is
+ * a Claude plan's token (`claude setup-token`): it goes on as a bearer token
+ * with the OAuth beta Claude Code itself sends on a plan, and every response
+ * is still read and priced the same way.
+ */
+export function anthropicApi(prices: AnthropicPrices, upstream = "https://api.anthropic.com", plan = false): MeteredApi<ResponseUsage> {
+  return {
+    name: "the Anthropic API",
+    upstream,
+    runToken: (headers) => (typeof headers["x-api-key"] === "string" ? headers["x-api-key"] : undefined),
+    route: (method, path) => {
+      if (method === "POST" && path === "/v1/messages") return "metered";
+      if ((method === "POST" && path === "/v1/messages/count_tokens") || (method === "GET" && (path === "/v1/models" || path.startsWith("/v1/models/")))) return "passed";
+      return null;
+    },
+    // Claude Code checks that its API is reachable before the first request.
+    answersLocally: (method, path) => (method === "HEAD" || method === "GET") && path === "/api/hello",
+    authorize: (headers, apiKey) => {
+      if (!plan) {
+        headers.set("x-api-key", apiKey);
+        return;
+      }
+      headers.set("authorization", `Bearer ${apiKey}`);
+      const betas = (headers.get("anthropic-beta") ?? "").split(",").map((b) => b.trim()).filter((b) => b !== "");
+      headers.set("anthropic-beta", [...new Set([...betas, OAUTH_BETA])].join(","));
+    },
+    streamReader: () => new UsageStreamReader(),
+    readJson: readJsonResponse,
+    price: (model, usage) => responseCost(prices, model, usage),
+    errorBody: (type, message) => JSON.stringify({ type: "error", error: { type, message } }),
+  };
+}
+
+/**
+ * The OpenAI Responses API, as Codex uses it through a custom model provider
+ * whose base URL is the meter's `/v1`. Only creating a response (metered) and
+ * the model list (free) are passed on.
+ */
+export function openAiApi(prices: OpenAiPrices, upstream = "https://api.openai.com"): MeteredApi<OpenAiReply> {
+  return {
+    name: "the OpenAI API",
+    upstream,
+    runToken: (headers) => {
+      const value = headers["authorization"];
+      return typeof value === "string" && value.startsWith("Bearer ") ? value.slice(7) : undefined;
+    },
+    route: (method, path) => {
+      if (method === "POST" && path === "/v1/responses") return "metered";
+      if (method === "GET" && (path === "/v1/models" || path.startsWith("/v1/models/"))) return "passed";
+      return null;
+    },
+    answersLocally: () => false,
+    authorize: (headers, apiKey) => headers.set("authorization", `Bearer ${apiKey}`),
+    streamReader: () => new ResponsesStreamReader(),
+    readJson: readOpenAiJsonResponse,
+    price: (model, reply) => openAiResponseCost(prices, model, reply),
+    errorBody: (type, message) => JSON.stringify({ error: { type, message, code: null, param: null } }),
+  };
+}
+
 /** One run's running totals. */
-class RunMeter {
+class RunMeter<U> {
   closed = false;
   inFlight = 0;
   private readonly idle: Array<() => void> = [];
@@ -56,9 +152,9 @@ class RunMeter {
   private webSearches = 0;
   private costUnits = 0n;
 
-  constructor(private readonly prices: AnthropicPrices) {}
+  constructor(private readonly price: (model: string, usage: U) => ResponseCost) {}
 
-  record(read: ResponseRead): void {
+  record(read: ResponseRead<U>): void {
     this.responses++;
     if (read.state === "cut") {
       this.incomplete++;
@@ -75,7 +171,7 @@ class RunMeter {
       return;
     }
     this.models.add(read.model);
-    const cost = responseCost(this.prices, read.model, read.usage);
+    const cost = this.price(read.model, read.usage);
     this.tokens.input += cost.tokens.input;
     this.tokens.output += cost.tokens.output;
     this.tokens.cacheRead += cost.tokens.cacheRead;
@@ -117,55 +213,49 @@ class RunMeter {
 export const DRAIN_MS = 10 * 60_000;
 /** Largest request body passed on: well above a full 1M-token context. */
 const MAX_REQUEST_BYTES = 64 * 1024 * 1024;
-/** The beta Claude Code sends with a Claude plan's token; the API refuses that token without it. */
-export const OAUTH_BETA = "oauth-2025-04-20";
-/** Request headers that stay between the agent and the meter. */
-const DROP_REQUEST = new Set(["host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "content-length", "x-api-key", "authorization", "cookie", "accept-encoding"]);
+/** Request headers that stay between the agent and the meter; `openai-organization` and `openai-project` would pick another billing target for the key. */
+const DROP_REQUEST = new Set(["host", "connection", "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "content-length", "x-api-key", "authorization", "cookie", "accept-encoding", "openai-organization", "openai-project"]);
 /** Response headers the meter does not pass back: hop-by-hop ones, and the encoding and length of a body `fetch` has already decoded. */
 const DROP_RESPONSE = new Set(["connection", "keep-alive", "transfer-encoding", "upgrade", "content-length", "content-encoding", "set-cookie"]);
 
 /**
- * A local HTTP endpoint that Claude Code uses as its Anthropic API: it holds
- * the real credential (an API key, or a Claude plan's token), passes each
- * run's requests on with it, and reads the usage of
- * every Messages API response as it streams back. The agent's process only
+ * A local HTTP endpoint that an agent uses as its model API (Claude Code as
+ * the Anthropic API, Codex as the OpenAI API; `MeteredApi` says which): it
+ * holds the real key, passes each run's requests on with it, and reads the
+ * usage of every model response as it streams back. The agent's process only
  * ever sees a per-run token, which stops working when the run ends.
  *
- * Only the Messages API (metered), token counting (free) and the model list
- * are passed on; everything else is refused, so a run cannot spend through an
- * API the meter does not read (batches, for one). When the agent goes away in
+ * Only the API's metered call and a few free ones are passed on; everything
+ * else is refused, so a run cannot spend through an API the meter does not
+ * read (batches, for one). When the agent goes away in
  * the middle of a response (its deadline passed and it was killed), the meter
  * keeps reading that response to its end, up to `drainMs`, because it is
  * billed either way: its final usage is then known. A response still cut off
  * is counted as incomplete, which leaves the run's cost unknown rather than
  * guessed.
  */
-export class MeteringProxy {
+export class MeteringProxy<U = unknown> {
   private server: Server | null = null;
   private baseUrl: string | null = null;
-  private readonly runs = new Map<string, RunMeter>();
+  private readonly runs = new Map<string, RunMeter<U>>();
 
   constructor(
     private readonly options: {
-      /** An API key, or with `plan` the token `claude setup-token` made for a Claude plan. */
       readonly apiKey: string;
-      /**
-       * The credential is a Claude plan's token: it goes on as a bearer token
-       * with the OAuth beta Claude Code itself sends on a plan, and the
-       * meter still reads every response's usage the same way.
-       */
-      readonly plan?: boolean;
-      readonly prices: AnthropicPrices;
-      readonly upstream?: string;
+      readonly api: MeteredApi<U>;
       /** How long to keep reading a response the agent abandoned (default DRAIN_MS). */
       readonly drainMs?: number;
     },
   ) {
-    if (options.apiKey === "") throw new Error(options.plan === true ? "a Claude plan token is required" : "an Anthropic API key is required");
+    if (options.apiKey === "") throw new Error("an API key is required");
   }
 
   private get upstream(): string {
-    return (this.options.upstream ?? "https://api.anthropic.com").replace(/\/+$/, "");
+    return this.options.api.upstream.replace(/\/+$/, "");
+  }
+
+  private error(res: ServerResponse, status: number, type: string, message: string): void {
+    res.writeHead(status, { "content-type": "application/json" }).end(this.options.api.errorBody(type, message));
   }
 
   /** Starts listening on a free loopback port; returns the base URL runs use. */
@@ -173,7 +263,7 @@ export class MeteringProxy {
     if (this.baseUrl !== null) return this.baseUrl;
     const server = createServer((req, res) => {
       this.handle(req, res).catch(() => {
-        if (!res.headersSent) sendError(res, 502, "api_error", "the meter could not reach the Anthropic API");
+        if (!res.headersSent) this.error(res, 502, "api_error", `the meter could not reach ${this.options.api.name}`);
         else res.destroy();
       });
     });
@@ -191,7 +281,8 @@ export class MeteringProxy {
   /** Starts metering a run whose agent authenticates with `token`. */
   begin(token: string): void {
     if (this.runs.has(token)) throw new Error("run token reused");
-    this.runs.set(token, new RunMeter(this.options.prices));
+    const api = this.options.api;
+    this.runs.set(token, new RunMeter<U>((model, usage) => api.price(model, usage)));
   }
 
   /**
@@ -217,31 +308,32 @@ export class MeteringProxy {
   }
 
   private async handle(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const api = this.options.api;
     const url = req.url ?? "/";
     const path = url.split("?")[0] ?? "/";
-    // Claude Code checks that its API is reachable before the first request.
-    if ((req.method === "HEAD" || req.method === "GET") && path === "/api/hello") {
+    const method = req.method ?? "GET";
+    if (api.answersLocally(method, path)) {
       res.writeHead(200).end();
       return;
     }
-    const token = req.headers["x-api-key"];
-    const run = typeof token === "string" ? this.runs.get(token) : undefined;
+    const token = api.runToken(req.headers);
+    const run = token === undefined ? undefined : this.runs.get(token);
     if (run === undefined || run.closed) {
-      sendError(res, 401, "authentication_error", "this key is not a live run's");
+      this.error(res, 401, "authentication_error", "this key is not a live run's");
       return;
     }
-    const metered = req.method === "POST" && path === "/v1/messages";
-    const passed = metered || (req.method === "POST" && path === "/v1/messages/count_tokens") || (req.method === "GET" && (path === "/v1/models" || path.startsWith("/v1/models/")));
-    if (!passed) {
-      sendError(res, 404, "not_found_error", `the benchmark meter does not pass on ${req.method ?? "?"} ${path}`);
+    const route = api.route(method, path);
+    if (route === null) {
+      this.error(res, 404, "not_found_error", `the benchmark meter does not pass on ${method} ${path}`);
       return;
     }
+    const metered = route === "metered";
 
     run.enter();
     try {
       const body = req.method === "POST" ? await readBody(req) : undefined;
       if (body === null) {
-        sendError(res, 413, "request_too_large", "request body too large");
+        this.error(res, 413, "request_too_large", "request body too large");
         return;
       }
       const headers = new Headers();
@@ -249,11 +341,7 @@ export class MeteringProxy {
         if (value === undefined || DROP_REQUEST.has(name)) continue;
         headers.set(name, Array.isArray(value) ? value.join(", ") : value);
       }
-      if (this.options.plan === true) {
-        headers.set("authorization", `Bearer ${this.options.apiKey}`);
-        const betas = (headers.get("anthropic-beta") ?? "").split(",").map((b) => b.trim()).filter((b) => b !== "");
-        headers.set("anthropic-beta", [...new Set([...betas, OAUTH_BETA])].join(","));
-      } else headers.set("x-api-key", this.options.apiKey);
+      api.authorize(headers, this.options.apiKey);
       headers.set("accept-encoding", "identity");
       const abort = new AbortController();
       let upstream: Response;
@@ -261,7 +349,7 @@ export class MeteringProxy {
         upstream = await fetch(`${this.upstream}${url}`, { method: req.method ?? "GET", headers, ...(body === undefined ? {} : { body }), redirect: "manual", signal: abort.signal });
       } catch {
         // No response came back, so none was read or billed as far as the meter can tell.
-        sendError(res, 502, "api_error", "the meter could not reach the Anthropic API");
+        this.error(res, 502, "api_error", `the meter could not reach ${api.name}`);
         return;
       }
       const outHeaders: Record<string, string> = {};
@@ -272,7 +360,7 @@ export class MeteringProxy {
 
       // Error responses are not billed; only a successful Messages API response is read for usage.
       const read = !metered || !upstream.ok ? "none" : (upstream.headers.get("content-type") ?? "").includes("text/event-stream") ? "stream" : "json";
-      const stream = new UsageStreamReader();
+      const stream = api.streamReader();
       const json: Uint8Array[] = [];
       let clientGone = false;
       let drainTimer: NodeJS.Timeout | undefined;
@@ -309,15 +397,11 @@ export class MeteringProxy {
       }
       // A stream that failed before `message_stop` or `error` reads as cut; a JSON body that failed is cut too.
       if (read === "stream") run.record(stream.end());
-      else if (read === "json") run.record(failed ? { state: "cut", model: null, usage: null, malformed: false } : readJsonResponse(Buffer.concat(json).toString("utf8")));
+      else if (read === "json") run.record(failed ? { state: "cut", model: null, usage: null, malformed: false } : api.readJson(Buffer.concat(json).toString("utf8")));
     } finally {
       run.leave();
     }
   }
-}
-
-function sendError(res: ServerResponse, status: number, type: string, message: string): void {
-  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type, message } }));
 }
 
 async function readBody(req: IncomingMessage): Promise<Buffer | null> {

@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { BENCHMARK_TARGET_BPS, allInReductionBps, checkPurchase, checkSpend, isSellable, maxPriceFor, saleBlocker } from "../src/index.js";
+import { BENCHMARK_TARGET_BPS, allInReductionBps, checkPurchase, checkSpend, gasCostAtomic, isSellable, maxPriceFor, saleBlocker } from "../src/index.js";
 import * as ex from "./examples.js";
 
 describe("isSellable (30 percent rule)", () => {
@@ -118,6 +118,39 @@ describe("maxPriceFor", () => {
         },
       ),
       { numRuns: 2000 },
+    );
+  });
+});
+
+describe("gasCostAtomic", () => {
+  it("converts gas at a gas price and an ETH price into atomic USDC", () => {
+    // 1,000,000 gas at 0.1 gwei is 0.0001 ETH; at 2,500 USD per ETH that is 0.25 USD.
+    expect(gasCostAtomic(1_000_000n, 100_000_000n, 2_500_000_000n)).toBe(250_000n);
+    expect(gasCostAtomic(0n, 100_000_000n, 2_500_000_000n)).toBe(0n);
+  });
+
+  it("rounds up, so a chain cost is never understated", () => {
+    // 21,000 gas at 0.01 gwei and 2,500 USD: 0.000525 USD, exactly 525 atomic units.
+    expect(gasCostAtomic(21_000n, 10_000_000n, 2_500_000_000n)).toBe(525n);
+    // One wei of cost is a millionth of a millionth of a cent, and still counts as one atomic unit.
+    expect(gasCostAtomic(1n, 1n, 1n)).toBe(1n);
+  });
+
+  it("refuses negative inputs", () => {
+    expect(() => gasCostAtomic(-1n, 1n, 1n)).toThrow(RangeError);
+    expect(() => gasCostAtomic(1n, -1n, 1n)).toThrow(RangeError);
+    expect(() => gasCostAtomic(1n, 1n, -1n)).toThrow(RangeError);
+  });
+
+  it("is the least whole number of atomic units covering the exact cost", () => {
+    const amount = fc.bigInt({ min: 0n, max: 10n ** 12n });
+    fc.assert(
+      fc.property(amount, amount, amount, (gas, price, ethUsd) => {
+        const exact = gas * price * ethUsd;
+        const g = gasCostAtomic(gas, price, ethUsd);
+        expect(g * 10n ** 18n >= exact).toBe(true);
+        expect(g === 0n || (g - 1n) * 10n ** 18n < exact).toBe(true);
+      }),
     );
   });
 });

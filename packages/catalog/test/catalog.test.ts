@@ -13,9 +13,9 @@ import { CLIENT, EVIDENCE, SERVER, catalogCopy, readJsonFile, writeJsonFile } fr
 
 const PROVIDER = "0x00000000000000000000000000000000000000a1";
 
-/** Turns the copy into a sellable setup: measured economics and a real provider on the base release. */
+/** Turns the copy into a sellable setup: measured economics (a floor below the test prices) and a real provider on the base release. */
 function measured(root: string): void {
-  writeJsonFile(root, "economics.json", { ...readJsonFile(root, "economics.json"), status: "measured", source: "test economics" });
+  writeJsonFile(root, "economics.json", { ...readJsonFile(root, "economics.json"), status: "measured", priceFloorAtomic: "100000", source: "test economics" });
   const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
   writeJsonFile(root, `${SERVER}/manifest.json`, { ...manifest, price: "250000", provider: { payTo: PROVIDER } });
 }
@@ -80,7 +80,7 @@ describe("integrity", () => {
 
   it("refuses a payload that no longer packs to the committed bundle", () => {
     const root = catalogCopy();
-    writeFileSync(join(root, SERVER, "payload/files/lemma/payment-gating/README.md"), "changed\n");
+    writeFileSync(join(root, SERVER, "payload/files/src/x402-payment-gating.ts"), "changed\n");
     expect(problems(root)).toContainEqual(expect.stringContaining("bundle.json is not what payload/ packs to"));
   });
 
@@ -89,7 +89,7 @@ describe("integrity", () => {
     writeFileSync(join(root, SERVER, "payload/files/extra.ts"), "export {};\n");
     expect(problems(root)).toContainEqual(expect.stringContaining("not named in ops.json: extra.ts"));
     rmSync(join(root, CLIENT, "payload/files"), { recursive: true });
-    expect(problems(root)).toContainEqual(expect.stringContaining("payload/files: missing lemma/paying-client/README.md"));
+    expect(problems(root)).toContainEqual(expect.stringContaining("payload/files: missing src/x402-paying-client.ts"));
   });
 
   it("refuses symbolic links anywhere in a release", () => {
@@ -105,7 +105,7 @@ describe("integrity", () => {
 
     const dup = catalogCopy();
     mkdirSync(join(dup, "releases.provisional/mcp-server-payment-gating"), { recursive: true });
-    cpSync(join(dup, SERVER), join(dup, "releases.provisional/mcp-server-payment-gating/0.1.0-skeleton"), { recursive: true });
+    cpSync(join(dup, SERVER), join(dup, "releases.provisional/mcp-server-payment-gating/0.1.0"), { recursive: true });
     expect(problems(dup)).toContainEqual(expect.stringContaining("is already defined in"));
   });
 
@@ -122,7 +122,7 @@ describe("integrity", () => {
     const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
     manifest.supportedProfiles[0]!.dependencies = { "@modelcontextprotocol/sdk": ">=1.30.0" };
     writeJsonFile(root, `${SERVER}/manifest.json`, manifest);
-    writeJsonFile(root, `${CLIENT}/payload/ops.json`, { dependencies: { "@x402/mcp": "latest" }, devDependencies: { vitest: "*" }, files: [{ path: "lemma/paying-client/README.md", op: "add" }] });
+    writeJsonFile(root, `${CLIENT}/payload/ops.json`, { dependencies: { "@x402/mcp": "latest" }, devDependencies: { vitest: "*" }, files: [{ path: "src/x402-paying-client.ts", op: "add" }] });
     const bundle = packPayload(root, CLIENT);
     writeFileSync(join(root, CLIENT, "bundle.json"), formatBundle(bundle));
     const client = readJsonFile<CapabilityRelease>(root, `${CLIENT}/manifest.json`);
@@ -198,11 +198,11 @@ describe("integrity", () => {
 
   it("reports each payload fault once, with its path from the catalog root", () => {
     const root = catalogCopy();
-    symlinkSync("/etc/hostname", join(root, SERVER, "payload/files/lemma/payment-gating/x.md"));
+    symlinkSync("/etc/hostname", join(root, SERVER, "payload/files/src/x.md"));
     symlinkSync("/etc", join(root, SERVER, "payload/notes"));
     const found = problems(root);
     // Before, the packer's copy of a fault named it from the release directory, so the two copies never merged.
-    for (const link of ["payment-gating/x.md", "payload/notes"]) {
+    for (const link of ["src/x.md", "payload/notes"]) {
       expect(found.filter((p) => p.includes(link)).length, link).toBeLessThanOrEqual(1);
     }
     expect(found).toContainEqual(expect.stringContaining(`${SERVER}/payload/notes`));
@@ -220,8 +220,8 @@ describe("integrity", () => {
     // The scan still judges payload files when the release itself fails to load.
     const broken = catalogCopy();
     writeFileSync(join(broken, SERVER, "manifest.json"), "{ not json");
-    writeFileSync(join(broken, SERVER, "payload/files/lemma/payment-gating/README.md"), Buffer.from([0xff]));
-    expect(problems(broken)).toContainEqual(`${SERVER}/payload/files/lemma/payment-gating/README.md: not valid UTF-8`);
+    writeFileSync(join(broken, SERVER, "payload/files/src/x402-payment-gating.ts"), Buffer.from([0xff]));
+    expect(problems(broken)).toContainEqual(`${SERVER}/payload/files/src/x402-payment-gating.ts: not valid UTF-8`);
   });
 
   it("does not flood fixtures with no-release problems while a release fails to load", () => {
@@ -245,7 +245,7 @@ describe("integrity", () => {
 
   it("keeps a byte-order mark, so the bundle carries exactly the reviewed bytes", () => {
     const root = catalogCopy();
-    const file = join(root, SERVER, "payload/files/lemma/payment-gating/README.md");
+    const file = join(root, SERVER, "payload/files/src/x402-payment-gating.ts");
     writeFileSync(file, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), readFileSync(file)]));
     expect(packPayload(root, SERVER).files[0]?.content?.startsWith("\ufeff")).toBe(true);
   });
@@ -298,17 +298,17 @@ describe("evidence and versions", () => {
   it("accepts a provisional overlay that differs from its base only in version and evidence", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1");
     expect(problems(root)).toEqual([]);
     const provisional = loadCatalog({ root, includeProvisional: true }).releases.filter((r) => r.source === "provisional");
-    expect(provisional.map((r) => r.release.version)).toEqual(["0.1.0-skeleton+provisional-1"]);
+    expect(provisional.map((r) => r.release.version)).toEqual(["0.1.0+provisional-1"]);
     expect(loadCatalog({ root, includeProvisional: false }).releases.every((r) => r.source === "public")).toBe(true);
   });
 
   it("lets a later version change only its price and dates", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1", {
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1", {
       price: "200000",
       publishedAt: "2026-10-02T00:00:00.000Z",
       expiresAt: "2027-06-30T00:00:00.000Z",
@@ -319,16 +319,16 @@ describe("evidence and versions", () => {
   it("refuses an overlay that changes anything but version, evidence, price and dates", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1", { title: "Something else" });
-    expect(problems(root)).toContainEqual(expect.stringContaining("differs from mcp-server-payment-gating@0.1.0-skeleton in more than build metadata, evidence, price and dates"));
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1", { title: "Something else" });
+    expect(problems(root)).toContainEqual(expect.stringContaining("differs from mcp-server-payment-gating@0.1.0 in more than build metadata, evidence, price and dates"));
   });
 
   it("keeps reserved evidence out of releases/ and only provisional versions in the overlay", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases", "0.1.0-skeleton+provisional-1", "provisional-1");
-    evidenced(root, "releases", "0.1.0-skeleton+probe-1", "probe-1");
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+bench-1", "bench-1");
+    evidenced(root, "releases", "0.1.0+provisional-1", "provisional-1");
+    evidenced(root, "releases", "0.1.0+probe-1", "probe-1");
+    evidenced(root, "releases.provisional", "0.1.0+bench-1", "bench-1");
     const found = problems(root);
     expect(found).toContainEqual(expect.stringContaining("provisional- evidence is never served from releases/"));
     expect(found).toContainEqual(expect.stringContaining("probe- evidence is never served from releases/"));
@@ -338,9 +338,9 @@ describe("evidence and versions", () => {
   it("refuses public evidence until a verified benchmark report backs it", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases", "0.1.0-skeleton+bench-1", "bench-1");
+    evidenced(root, "releases", "0.1.0+bench-1", "bench-1");
     const found = problems(root);
-    expect(found).toContainEqual("releases/mcp-server-payment-gating/0.1.0-skeleton+bench-1: no verified benchmark report backs evidence bench-1");
+    expect(found).toContainEqual("releases/mcp-server-payment-gating/0.1.0+bench-1: no verified benchmark report backs evidence bench-1");
     // The benchmarked version now wins the exact cases, so their frozen answers must change with it.
     expect(found).toContainEqual(expect.stringMatching(/^fixtures\/mcp-server\.add-payment-gating\/exact-npm-node22\.json: expected .* the resolver gives .*\+bench-1/));
   });
@@ -348,7 +348,7 @@ describe("evidence and versions", () => {
   it("requires evidence to name the version's build metadata", () => {
     const root = catalogCopy();
     measured(root);
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-2");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-2");
     expect(problems(root)).toContainEqual(expect.stringContaining("evidence provisional-2 must equal the version's build metadata (provisional-1)"));
   });
 });
@@ -358,7 +358,7 @@ describe("prices", () => {
     const root = catalogCopy();
     const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
     writeJsonFile(root, `${SERVER}/manifest.json`, { ...manifest, price: "250000", provider: { payTo: PROVIDER } });
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1");
     expect(problems(root)).toContainEqual(expect.stringContaining("economics.json is still a placeholder"));
   });
 
@@ -368,11 +368,11 @@ describe("prices", () => {
     writeJsonFile(root, "economics.json", { ...readJsonFile(root, "economics.json"), chainCostAtomic: "100000", priceFloorAtomic: "260000" });
     const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
     writeJsonFile(root, `${SERVER}/manifest.json`, { ...manifest, price: "280000" });
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1");
     // maxPriceFor: min(300000, 1000000 - 100000 - 625000) = 275000
     expect(problems(root)).toContainEqual(expect.stringContaining("price 280000 exceeds maxPriceFor 275000"));
     writeJsonFile(root, `${SERVER}/manifest.json`, { ...manifest, price: "250000" });
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1");
     expect(problems(root)).toContainEqual(expect.stringContaining("price 250000 is below the price floor 260000"));
   });
 
@@ -381,7 +381,7 @@ describe("prices", () => {
     measured(root);
     const manifest = readJsonFile<CapabilityRelease>(root, `${SERVER}/manifest.json`);
     writeJsonFile(root, `${SERVER}/manifest.json`, { ...manifest, provider: { payTo: `0x${"0".repeat(40)}` } });
-    evidenced(root, "releases.provisional", "0.1.0-skeleton+provisional-1", "provisional-1");
+    evidenced(root, "releases.provisional", "0.1.0+provisional-1", "provisional-1");
     expect(problems(root)).toContainEqual(expect.stringContaining("pays to the zero address"));
   });
 });

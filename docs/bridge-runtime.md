@@ -68,7 +68,7 @@ Rollback restores a file only when it still contains what Lemma wrote. A file ch
 
 ## Dependency installation
 
-Dependency changes are declarations, not edits to manifests or lockfiles in the bundle. The bridge saves exact versions and disables package lifecycle scripts for npm, pnpm, Yarn Classic, and Yarn Berry.
+Dependency changes are declarations, not edits to manifests or lockfiles in the bundle. The bridge saves exact versions and disables package lifecycle scripts for npm, pnpm, Yarn Classic, and Yarn Berry. On npm and pnpm a runtime dependency the package already lists under `devDependencies` moves to `dependencies` (`--save-prod`), so a production install keeps it.
 
 Wallet secrets, Lemma settings, Cursor credentials, and RPC variables are removed from the install environment. Registry credentials with unrelated names remain available because package managers may require them.
 

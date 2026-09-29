@@ -1,17 +1,19 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, fstatSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import { CATALOG_ROOT, loadCatalog } from "@lemma/catalog";
 import { type Hex32, PatchBundle, bundleDigest, fileDigest } from "@lemma/core";
 
-import type { AgentAdapter, McpStdioServer, ModelSelection } from "./adapter.js";
+import type { AgentAdapter, AgentKind, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
+import { loadAnthropicPrices, pricesDigest } from "./anthropic-usage.js";
+import { ClaudeCodeAdapter, claudeCodeVersion, findClaudeCode, readMeteredUsage } from "./claude-code.js";
 import { CursorAdapter } from "./cursor.js";
-import { ExperimentConfig, fixturesDigest } from "./experiment.js";
-import { BENCHMARK_ROOT, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
+import { AgentSetup, ExperimentConfig, fixturesDigest } from "./experiment.js";
+import { BENCHMARK_ROOT, type LoadedBenchmarkFixture, REPOSITORY_ROOT, loadBenchmarkFixtures } from "./fixture.js";
 import { nextAttempt, planMatrix } from "./matrix.js";
-import { nextProbeSlot, probeVerdict } from "./probe.js";
+import { isProbeMeasurement, nextProbeSlot, probeReplacementsLeft, probeVerdict } from "./probe.js";
 import { ancestorSecretVariables, killByHome, killRunGroups, secretVariables, trackHome } from "./process.js";
 import { type ReconcileResult, reconcile } from "./reconcile.js";
 import { RunLog } from "./records.js";
@@ -28,14 +30,22 @@ import { prepareRunBase, removeTree } from "./workspace.js";
  *   benchmark probe <probe-version> --task <taskId> --bundle <bundle.json>
  *   benchmark report <version>
  *
- * The Cursor API key is read from standard input, which must be a pipe (for
- * example `op read … | npm run benchmark -- run v1`). Agents run unsandboxed as
- * this user and can read the environment this process and its parents started
- * with, so the key is never taken from the environment, and commands that run
- * agents refuse to start while this process's environment, or the one any
- * ancestor started with, holds anything that looks like a credential.
+ * The agent's API key (Cursor's, or Anthropic's for Claude Code) is read from
+ * standard input, which must be a pipe (for example `op read … | npm run
+ * benchmark -- run v1`). Agents run unsandboxed as this user and can read the
+ * environment this process and its parents started with, so the key is never
+ * taken from the environment, and commands that run agents refuse to start
+ * while this process's environment, or the one any ancestor started with,
+ * holds anything that looks like a credential. Reconciling Claude Code runs
+ * reads their meter records and needs no key. A Claude Code probe can instead
+ * take a Claude plan's token (from `claude setup-token`) the same way.
  *
- * Environment: LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_BENCH_DIR for run
+ * Environment: LEMMA_BENCHMARK_AGENT (freeze, probe: `cursor`, the default, or
+ * `claude-code`; later commands take the agent the version was started with);
+ * LEMMA_BENCHMARK_MODEL (freeze, probe); LEMMA_CLAUDE_COMMAND (the absolute
+ * path of `claude`, default: the first on PATH); LEMMA_CLAUDE_LOGIN=plan
+ * (probe only: Claude Code on a Claude Pro or Max plan's token instead of an
+ * API key, still metered at list price); LEMMA_BENCH_DIR for run
  * directories (default: the OS temp directory, outside the repository);
  * LEMMA_BRIDGE_COMMAND and LEMMA_API_URL for the treatment's bridge.
  */
@@ -54,16 +64,25 @@ const newRunId = (): Hex32 => `0x${randomBytes(32).toString("hex")}`;
 const runBase = () => process.env["LEMMA_BENCH_DIR"] ?? join(tmpdir(), "lemma-bench");
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** The Cursor API key, from a pipe on standard input: never the environment, a terminal, or a file whose path stays visible. */
-async function readKey(): Promise<string> {
+const KEY_NAME: Readonly<Record<AgentKind, string>> = { cursor: "Cursor API key", "claude-code": "Anthropic API key" };
+/** How a Claude plan's token from `claude setup-token` starts; API keys start `sk-ant-api`. */
+const PLAN_TOKEN_PREFIX = "sk-ant-oat";
+
+/** The agent's API key, from a pipe on standard input: never the environment, a terminal, or a file whose path stays visible. */
+async function readKey(agent: AgentKind, plan = false): Promise<string> {
+  const name = plan ? "Claude plan token" : KEY_NAME[agent];
   const stdin = fstatSync(0);
   if (!stdin.isFIFO() && !stdin.isSocket()) {
-    throw new Error("pipe the Cursor API key on standard input, for example `op read op://vault/cursor/key | npm run benchmark -- run v1`");
+    throw new Error(`pipe the ${name} on standard input, for example \`op read op://vault/${agent}/key | npm run benchmark -- run v1\``);
   }
   let key = "";
   for await (const chunk of process.stdin) key += String(chunk);
   key = key.trim();
-  if (key === "") throw new Error("standard input carried no Cursor API key");
+  if (key === "") throw new Error(`standard input carried no ${name}`);
+  if (plan && !key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error(`LEMMA_CLAUDE_LOGIN=plan takes the token \`claude setup-token\` prints (it starts ${PLAN_TOKEN_PREFIX}), not an API key; for an API key, leave LEMMA_CLAUDE_LOGIN unset`);
+  if (!plan && key.startsWith(PLAN_TOKEN_PREFIX)) throw new Error("that is a Claude plan token, not an API key: a probe runs on a plan with LEMMA_CLAUDE_LOGIN=plan, and a benchmark needs an API key");
+  // Cursor is the default agent, so an Anthropic key here usually means LEMMA_BENCHMARK_AGENT was left unset.
+  if (agent === "cursor" && key.startsWith("sk-ant-")) throw new Error("that is an Anthropic API key, and this version runs Cursor: start a Claude Code version with LEMMA_BENCHMARK_AGENT=claude-code");
   return key;
 }
 
@@ -82,8 +101,95 @@ function assertCleanEnvironment(): void {
   }
 }
 
-async function adapter(): Promise<CursorAdapter> {
-  return new CursorAdapter(await readKey());
+/** The agent `freeze` and `probe` start a version with: LEMMA_BENCHMARK_AGENT, Cursor unless set. */
+function chosenAgent(): AgentKind {
+  const name = process.env["LEMMA_BENCHMARK_AGENT"] ?? "cursor";
+  if (name !== "cursor" && name !== "claude-code") throw new Error(`LEMMA_BENCHMARK_AGENT must be cursor or claude-code, not ${name}`);
+  return name;
+}
+
+/** Whether Claude Code runs on a Claude plan's token (LEMMA_CLAUDE_LOGIN=plan) instead of an API key. */
+function claudePlan(): boolean {
+  const value = process.env["LEMMA_CLAUDE_LOGIN"] ?? "";
+  if (value !== "" && value !== "plan") throw new Error(`LEMMA_CLAUDE_LOGIN must be plan or unset, not ${value}`);
+  if (value === "plan" && chosenAgent() !== "claude-code") throw new Error("LEMMA_CLAUDE_LOGIN=plan needs LEMMA_BENCHMARK_AGENT=claude-code");
+  return value === "plan";
+}
+
+/** The installed agent's release: `@cursor/sdk`'s package version, or `claude --version`, with Claude Code's price table. */
+function agentSetup(name: AgentKind, plan = false): AgentSetup {
+  if (name === "claude-code") {
+    return AgentSetup.parse({ name, version: claudeCodeVersion(findClaudeCode()), pricesDigest: pricesDigest(loadAnthropicPrices()), ...(plan ? { login: "claude-plan" } : {}) });
+  }
+  const manifest = join(REPOSITORY_ROOT, "node_modules", "@cursor", "sdk", "package.json");
+  if (!existsSync(manifest)) throw new Error("@cursor/sdk is not installed; run npm install");
+  return AgentSetup.parse({ name, version: (JSON.parse(readFileSync(manifest, "utf8")) as { version: string }).version, pricesDigest: null });
+}
+
+/** Refuses when the installed agent is not the one a version was started with: every run of a version uses one release. */
+function assertSameAgent(bound: AgentSetup): void {
+  const now = agentSetup(bound.name, bound.login !== undefined);
+  if (now.version !== bound.version) throw new Error(`${bound.name} is at ${now.version} now and this version ran ${bound.version}; use a new version`);
+  if (now.pricesDigest !== bound.pricesDigest) throw new Error("prices/anthropic.json changed since this version started; use a new version");
+}
+
+interface OpenAgent {
+  readonly adapter: AgentAdapter;
+  /** Checks, without a benchmark run, that the key can use the model (Claude Code: with a one-token request; a Claude plan: with one short run). */
+  checkModel(model: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+/** Reads the key and starts the agent; Claude Code keeps each run's meter record under `meterDir`. */
+async function openAgent(setup: AgentSetup, meterDir: string): Promise<OpenAgent> {
+  if (setup.name === "cursor") {
+    const cursor = new CursorAdapter(await readKey("cursor"));
+    return {
+      adapter: cursor,
+      checkModel: async (model) => {
+        if (!(await cursor.models()).some((m) => m.id === model)) throw new Error(`model ${model} is not available to this key`);
+      },
+      close: async () => undefined,
+    };
+  }
+  if (process.getuid?.() === 0) throw new Error("Claude Code will not run with permission checks off as root, and a benchmark run cannot stop for prompts: run the harness as a normal user");
+  if (setup.login !== undefined) {
+    const claude = new ClaudeCodeAdapter(await readKey("claude-code", true), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices(), plan: true });
+    return { adapter: claude, checkModel: (model) => inScratch((dir) => claude.checkPlan(model, dir)), close: () => claude.close() };
+  }
+  const claude = new ClaudeCodeAdapter(await readKey("claude-code"), { command: findClaudeCode(), meterDir, prices: loadAnthropicPrices() });
+  return { adapter: claude, checkModel: (model) => claude.checkModel(model), close: () => claude.close() };
+}
+
+/**
+ * Runs a check that starts an agent in a fresh directory under the run base,
+ * which is outside the repository and below no ambient settings, then kills
+ * whatever the agent left running and removes the directory.
+ */
+async function inScratch(check: (dir: string) => Promise<void>): Promise<void> {
+  const dir = mkdtempSync(join(prepareRunBase(runBase(), REPOSITORY_ROOT), "check-"));
+  const untrack = trackHome(join(dir, "home"));
+  try {
+    await check(dir);
+  } finally {
+    killByHome(join(dir, "home"));
+    untrack();
+    removeTree(dir);
+  }
+}
+
+/** What `reconcile` reads cost through: Cursor's billing (with the key), or Claude Code's meter records (without one). */
+async function usageSource(setup: AgentSetup, meterDir: string): Promise<Pick<AgentAdapter, "usage">> {
+  if (setup.name === "cursor") return new CursorAdapter(await readKey("cursor"));
+  return { usage: async (agentId) => readMeteredUsage(meterDir, agentId, setup.pricesDigest ?? "") };
+}
+
+/** The agent a version was started with: its frozen experiment, or its probe setup. */
+function boundAgent(v: string, log: RunLog): AgentSetup {
+  if (existsSync(experimentPath(v))) return ExperimentConfig.parse(JSON.parse(readFileSync(experimentPath(v), "utf8"))).agent;
+  const probeSetup = join(log.dir, "probe.json");
+  if (existsSync(probeSetup)) return AgentSetup.parse((JSON.parse(readFileSync(probeSetup, "utf8")) as { agent?: unknown }).agent);
+  throw new Error(`${v} is neither frozen nor a probe with runs`);
 }
 
 function experimentPath(v: string): string {
@@ -107,10 +213,13 @@ async function freeze(v: string): Promise<void> {
     if (listedNoMatch !== (f.fixture.kind === "no-match")) throw new Error(`${f.fixture.taskId} is a ${f.fixture.kind} fixture; list it under ${listedNoMatch ? "--tasks" : "--no-match"}`);
   }
   if (!existsSync(RULE_PATH)) throw new Error(`the Lemma rule ${RULE_PATH} is missing; the treatment cannot run without it`);
+  if (claudePlan()) throw new Error("LEMMA_CLAUDE_LOGIN=plan is for probes only: a benchmark is paid for with an API key, so freeze with one");
+  const agent = agentSetup(chosenAgent());
   // Everything that can be checked for free is checked before the paid smoke run.
   const config = ExperimentConfig.parse({
     schemaVersion: "1",
     benchmarkVersion: v,
+    agent,
     model: { id: modelId, params: [] },
     repetitions: Number(flag("repetitions") ?? "3"),
     tasks,
@@ -124,21 +233,24 @@ async function freeze(v: string): Promise<void> {
   // The smoke agent runs under the same checks as every run: outside the repository, below no ambient settings.
   const base = prepareRunBase(runBase(), REPOSITORY_ROOT);
 
-  const cursor = await adapter();
-  const models = await cursor.models();
-  if (!models.some((m) => m.id === modelId)) throw new Error(`model ${modelId} is not available to this key`);
   // Smoke run: the model must be priced per token, or savings cannot be measured in cost.
   const dir = mkdtempSync(join(base, "smoke-"));
+  const work = join(dir, "work");
   mkdirSync(join(dir, "home", "tmp"), { recursive: true });
+  mkdirSync(work);
   // Tracked, so an interrupted freeze kills what the smoke agent left running too.
   const untrackSmoke = trackHome(join(dir, "home"));
+  let opened: OpenAgent | null = null;
   try {
-    const outcome = await cursor.run({ cwd: dir, home: join(dir, "home"), prompt: "Reply with the single word OK and do nothing else.", model: { id: modelId }, mcpServers: {}, timeoutMs: 120_000 });
+    opened = await openAgent(agent, join(dir, "meter"));
+    await opened.checkModel(modelId);
+    const outcome = await opened.adapter.run({ cwd: work, home: join(dir, "home"), prompt: "Reply with the single word OK and do nothing else.", model: { id: modelId }, mcpServers: {}, timeoutMs: 120_000 });
     if (outcome.agentId === null) throw new Error(`smoke run did not start: ${outcome.error ?? outcome.status}`);
-    const cents = await pollCost(cursor, outcome.agentId);
+    const cents = await pollCost(opened.adapter, outcome.agentId);
     if (cents === null) throw new Error("smoke run cost was not reported; retry freeze later");
     if (!(cents > 0)) throw new Error("rawCostCents is 0: the model is request-priced, so savings cannot be measured in cost");
   } finally {
+    await opened?.close();
     killByHome(join(dir, "home"));
     untrackSmoke();
     removeTree(dir);
@@ -146,12 +258,12 @@ async function freeze(v: string): Promise<void> {
 
   mkdirSync(join(BENCHMARK_ROOT, "experiments"), { recursive: true });
   writeFileSync(experimentPath(v), `${JSON.stringify(config, null, 2)}\n`);
-  console.log(`frozen ${v}: ${tasks.length} tasks (${noMatch.length} no-match) x ${config.repetitions} repetitions, model ${modelId}`);
+  console.log(`frozen ${v}: ${tasks.length} tasks (${noMatch.length} no-match) x ${config.repetitions} repetitions, ${agent.name} ${agent.version}, model ${modelId}`);
 }
 
-async function pollCost(cursor: AgentAdapter, agentId: string): Promise<number | null> {
+async function pollCost(agent: AgentAdapter, agentId: string): Promise<number | null> {
   for (let i = 0; i < 36; i++) {
-    const billed = await cursor.usage(agentId);
+    const billed = await agent.usage(agentId);
     if (billed !== null && billed.rawCostCents !== null) return billed.rawCostCents;
     await sleep(5000);
   }
@@ -172,20 +284,30 @@ async function run(v: string): Promise<void> {
     throw new Error("fixtures changed since freeze; freeze a new benchmark version");
   }
   if (!existsSync(RULE_PATH) || fileDigest(readFileSync(RULE_PATH)) !== config.ruleDigest) throw new Error("the Lemma rule changed since freeze");
+  assertSameAgent(config.agent);
   const log = RunLog.forVersion(RUNS_DIR, v);
   log.lock();
   // Attempts already logged were made under this exact freeze, or `run` refuses.
   log.bind("experiment.json", config, "frozen experiment");
   const model: ModelSelection = { id: config.model.id, params: config.model.params };
   const bridge = bridgeLaunch();
-  const cursor = await adapter();
+  const agent = await openAgent(config.agent, join(log.dir, "meter"));
+  try {
+    await runMatrix(v, config, fixtures, model, bridge, agent.adapter, log);
+  } finally {
+    await agent.close();
+  }
+}
+
+async function runMatrix(v: string, config: ExperimentConfig, fixtures: readonly LoadedBenchmarkFixture[], model: ModelSelection, bridge: McpStdioServer, adapter: AgentAdapter, log: RunLog): Promise<void> {
   recoverInterrupted(log);
   // Resumes from the attempt log: a slot with a result, or with two startup failures, is not run again.
   for (const slot of planMatrix(config.tasks, config.repetitions)) {
     const fixture = fixtures.find((f) => f.fixture.taskId === slot.taskId);
     if (fixture === undefined) throw new Error(`no fixture for ${slot.taskId}`);
-    const ctx = { adapter: cursor, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: RULE_PATH, bridge, preApply: null, payments: noPayments, adoptions: noAdoptions, newRunId, log };
+    const ctx = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: RULE_PATH, bridge, preApply: null, payments: noPayments, adoptions: noAdoptions, newRunId, log, onAgentEnd: warnAgentError };
     for (let n = nextAttempt(log.attempts(), slot); n !== null; n = nextAttempt(log.attempts(), slot)) {
+      announce(slot.taskId, slot.arm, slot.repetition, fixture);
       const attempt = await runSlot(slot, n, ctx);
       log.appendAttempt(attempt);
       const startup = attempt.startupFailure ? ` (startup failure: ${attempt.startupReason})` : "";
@@ -202,28 +324,55 @@ async function probe(v: string): Promise<void> {
   if (taskId === undefined || bundlePath === undefined) throw new Error("usage: benchmark probe <probe-version> --task <taskId> --bundle <bundle.json>");
   const fixture = loadBenchmarkFixtures().find((f) => f.fixture.taskId === taskId);
   if (fixture === undefined) throw new Error(`no fixture for ${taskId}`);
-  const bundle = PatchBundle.parse(JSON.parse(readFileSync(bundlePath, "utf8")));
+  // `npm run benchmark` runs in this workspace's directory; a relative path means the one npm was started from.
+  const bundle = PatchBundle.parse(JSON.parse(readFileSync(resolve(process.env["INIT_CWD"] ?? process.cwd(), bundlePath), "utf8")));
   const model: ModelSelection = { id: process.env["LEMMA_BENCHMARK_MODEL"] ?? "" };
   if (model.id === "") throw new Error("set LEMMA_BENCHMARK_MODEL");
   const log = RunLog.forVersion(RUNS_DIR, v);
-  log.lock();
 
-  // A probe version is one experiment: the same task, fixture, bundle and model on every invocation.
-  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), model: model.id };
-  log.bind("probe.json", setup, "probe task, fixture, bundle or model");
+  // A probe version is one experiment: the same task, fixture, bundle, agent release and model on every invocation.
+  const setup = { taskId, fixturesDigest: fixturesDigest([{ taskId, dir: fixture.dir }]), bundleDigest: bundleDigest(bundle), agent: agentSetup(chosenAgent(), claudePlan()), model: model.id };
+  const agent = await openAgent(setup.agent, join(log.dir, "meter"));
+  try {
+    // Checked before the version is bound and before the first run, so a wrong agent, key or model
+    // leaves nothing behind and the corrected command can reuse the version.
+    if (setup.agent.name === "claude-code") await agent.checkModel(model.id);
+    log.lock();
+    log.bind("probe.json", setup, "probe task, fixture, bundle, agent release or model");
+    await probeRuns(v, taskId, fixture, bundle, model, agent.adapter, log);
+  } finally {
+    await agent.close();
+  }
+}
 
-  const cursor = await adapter();
-  recoverInterrupted(log);
-  const base = { adapter: cursor, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: null, bridge: null, payments: noPayments, adoptions: noAdoptions, newRunId, log };
+async function probeRuns(v: string, taskId: string, fixture: LoadedBenchmarkFixture, bundle: PatchBundle, model: ModelSelection, adapter: AgentAdapter, log: RunLog): Promise<void> {
+  recoverInterrupted(log, "they measured nothing, so the probe replaces them");
+  const base = { adapter, fixture, benchmarkVersion: v, model, runBase: runBase(), repositoryRoot: REPOSITORY_ROOT, rulePath: null, bridge: null, payments: noPayments, adoptions: noAdoptions, newRunId, log, onAgentEnd: warnAgentError };
   // Resumes from the attempt log: running the probe again only fills what is missing.
   for (let slot = nextProbeSlot(log.attempts(), taskId); slot !== null; slot = nextProbeSlot(log.attempts(), taskId)) {
+    announce(taskId, slot.arm, slot.repetition, fixture);
     const attempt = await runSlot(slot, 1, { ...base, preApply: slot.arm === "treatment" ? bundle : null });
     log.appendAttempt(attempt);
-    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    const startup = attempt.startupFailure ? ` (startup failure: ${attempt.startupReason})` : "";
+    console.log(`${taskId} ${slot.arm} #${slot.repetition}: ${attempt.status}${startup}, acceptance ${attempt.acceptance.passed ? "passed" : "failed"}`);
+    // The replacement waits for the next invocation: what failed this run (a plan's usage limit, a
+    // lost login, credit that ran out) would fail the replacements too and use them all up at once.
+    // With none left, nextProbeSlot gives up instead.
+    const left = probeReplacementsLeft(log.attempts(), taskId, slot.arm);
+    if (!isProbeMeasurement(attempt) && left >= 0) {
+      throw new Error(`${taskId} ${slot.arm} #${slot.repetition} measured nothing, so the probe stopped rather than replace it straight away (${left} ${left === 1 ? "replacement" : "replacements"} left for the ${slot.arm} runs). Once its cause is fixed or has passed, run the same command again: it continues where it stopped.`);
+    }
   }
+  // Only the runs the verdict can use are waited for: one that measured nothing (an interrupted run
+  // has no meter record) may never settle, and the verdict does not read it.
+  const unsettled = () => log.pending().filter((a) => a.taskId === taskId && isProbeMeasurement(a)).length;
   const waitUntil = Date.now() + PROBE_SETTLE_WAIT_MS;
-  for (let result = await reconcile(log, cursor); result.pending > 0; result = await reconcile(log, cursor)) {
-    printErrors(result);
+  const shown = new Set<string>();
+  for (let first = true; ; first = false) {
+    const result = await reconcile(log, adapter);
+    printErrors(result, shown);
+    if (unsettled() === 0) break;
+    if (first) console.log("waiting for the runs' cost to settle, about six minutes after the last run ended");
     if (Date.now() >= waitUntil) {
       throw new Error("billed cost has not settled yet; run the same `benchmark probe` command again later: it runs nothing new, it only reconciles and decides");
     }
@@ -245,9 +394,9 @@ async function main(): Promise<void> {
   if (command === "reconcile") {
     const log = RunLog.forVersion(RUNS_DIR, version);
     log.lock();
-    const cursor = await adapter();
+    const source = await usageSource(boundAgent(version, log), join(log.dir, "meter"));
     recoverInterrupted(log);
-    const result = await reconcile(log, cursor);
+    const result = await reconcile(log, source);
     printErrors(result);
     console.log(`reconciled ${result.reconciled}; ${result.pending} still pending (a cost is final only once it has settled, several minutes after a run)`);
     return;
@@ -279,14 +428,29 @@ async function main(): Promise<void> {
 let activeLog: RunLog | null = null;
 
 /** Records runs an earlier invocation started but never recorded, and makes this log the one an interruption records into. */
-function recoverInterrupted(log: RunLog): void {
+function recoverInterrupted(log: RunLog, outcome = "they count and are not run again"): void {
   activeLog = log;
   const recovered = log.recoverInterrupted();
-  if (recovered > 0) console.warn(`recorded ${recovered} run(s) an earlier invocation started but did not finish; they count and are not run again`);
+  if (recovered > 0) console.warn(`recorded ${recovered} run(s) an earlier invocation started but did not finish; ${outcome}`);
 }
 
-function printErrors(result: ReconcileResult): void {
-  for (const e of result.errors) console.warn(`usage lookup for ${e.agentId} failed: ${e.error}; it stays pending`);
+/** Prints failed usage lookups, each run's once when `shown` is given. */
+function printErrors(result: ReconcileResult, shown?: Set<string>): void {
+  for (const e of result.errors) {
+    if (shown?.has(e.agentId) === true) continue;
+    shown?.add(e.agentId);
+    console.warn(`usage lookup for ${e.agentId} failed: ${e.error}; it stays pending`);
+  }
+}
+
+/** Says a run is starting: nothing else prints until it ends. */
+function announce(taskId: string, arm: string, repetition: number, fixture: LoadedBenchmarkFixture): void {
+  console.log(`${taskId} ${arm} #${repetition}: starting; it can take up to ${Math.ceil(fixture.fixture.maxDurationSec / 60)} minutes and prints nothing until it ends`);
+}
+
+/** Says why an agent run failed; the attempt log keeps no agent text. */
+function warnAgentError(outcome: AgentRunOutcome): void {
+  if (outcome.status !== "finished" && outcome.error !== null) console.warn(`the agent run ended with ${outcome.status}: ${outcome.error}`);
 }
 
 // An interrupted harness takes the runs it started down with it, and records the one it was in.
@@ -303,6 +467,8 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  // A failed request says only "fetch failed"; its cause says why (no network, a refused connection).
+  const cause = error instanceof Error && error.cause instanceof Error ? ` (${error.cause.message})` : "";
+  console.error(`${error instanceof Error ? error.message : String(error)}${cause}`);
   process.exitCode = 1;
 });

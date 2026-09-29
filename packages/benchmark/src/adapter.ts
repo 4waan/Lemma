@@ -55,11 +55,17 @@ export interface UsageReport {
   readonly rawCostCents: number | null;
 }
 
+/** The agents the harness can run. */
+export type AgentKind = "cursor" | "claude-code";
+
 /**
- * The seam between the harness and an agent SDK. `CursorAdapter` implements it
- * for `@cursor/sdk`; `FakeAdapter` scripts outcomes for tests.
+ * The seam between the harness and an agent. `CursorAdapter` implements it
+ * for `@cursor/sdk`, `ClaudeCodeAdapter` for headless Claude Code, and
+ * `FakeAdapter` scripts outcomes for tests.
  */
 export interface AgentAdapter {
+  /** Which agent runs, which decides where the treatment's Lemma rule goes (`RULE_FILES`). */
+  readonly kind: AgentKind;
   run(request: AgentRunRequest): Promise<AgentRunOutcome>;
   usage(agentId: string): Promise<UsageReport | null>;
 }

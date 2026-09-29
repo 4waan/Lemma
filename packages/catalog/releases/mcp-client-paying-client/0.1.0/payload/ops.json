@@ -1,0 +1,15 @@
+{
+  "dependencies": {
+    "@x402/core": "~2.27.0",
+    "@x402/evm": "~2.27.0",
+    "@x402/mcp": "~2.27.0",
+    "viem": "^2.48.11"
+  },
+  "devDependencies": {},
+  "files": [
+    {
+      "path": "src/x402-paying-client.ts",
+      "op": "add"
+    }
+  ]
+}

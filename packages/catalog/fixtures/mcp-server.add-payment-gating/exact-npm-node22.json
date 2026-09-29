@@ -26,7 +26,7 @@
     ],
     "match": {
       "releaseId": "mcp-server-payment-gating",
-      "version": "0.1.0-skeleton",
+      "version": "0.1.0",
       "profileIndex": 0
     },
     "offer": false

@@ -1,4 +1,4 @@
-import type { AgentAdapter, AgentRunOutcome, AgentRunRequest, UsageReport } from "./adapter.js";
+import type { AgentAdapter, AgentKind, AgentRunOutcome, AgentRunRequest, UsageReport } from "./adapter.js";
 
 /**
  * A scripted adapter for tests and dry runs: each run returns the next scripted
@@ -11,6 +11,7 @@ export class FakeAdapter implements AgentAdapter {
   constructor(
     private readonly outcomes: Array<(request: AgentRunRequest) => AgentRunOutcome | Promise<AgentRunOutcome>>,
     private readonly billed: ReadonlyMap<string, UsageReport | null> = new Map(),
+    readonly kind: AgentKind = "cursor",
   ) {}
 
   async run(request: AgentRunRequest): Promise<AgentRunOutcome> {

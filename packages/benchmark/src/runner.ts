@@ -4,13 +4,13 @@ import { dirname, join } from "node:path";
 
 import { DIRECTORY, type Hex32, type PatchBundle, fileDigest, planApply, profileDigest } from "@lemma/core";
 
-import type { AgentAdapter, McpStdioServer, ModelSelection } from "./adapter.js";
+import type { AgentAdapter, AgentRunOutcome, McpStdioServer, ModelSelection } from "./adapter.js";
 import type { LoadedBenchmarkFixture } from "./fixture.js";
 import type { Slot } from "./matrix.js";
 import { childEnv, killByHome, runCommand, trackHome } from "./process.js";
 import { Attempt, type RunLog } from "./records.js";
 import { type ReportedUsage, UsageError, toRunTokens } from "./tokens.js";
-import { type RunWorkspace, filesChanged, prepareWorkspace, readTrace, snapshot } from "./workspace.js";
+import { RULE_FILES, type RunWorkspace, filesChanged, prepareWorkspace, readTrace, snapshot } from "./workspace.js";
 
 /** What the treatment paid, read from the payment work's local spend ledger after a run. */
 export interface PaymentSource {
@@ -48,6 +48,8 @@ export interface SlotContext {
   readonly keepWorkspace?: boolean;
   /** Where the run's intent and agent id are logged before it ends, so an interrupted run is still recorded. */
   readonly log?: RunLog;
+  /** Told how the agent's run ended, before acceptance runs, so the caller can say why it failed: the attempt keeps no agent text. */
+  readonly onAgentEnd?: (outcome: AgentRunOutcome) => void;
 }
 
 /** `id` plus `param:value` pairs, the form RunRecord.model accepts. */
@@ -75,6 +77,7 @@ export async function runSlot(slot: Slot, attempt: 1 | 2, ctx: SlotContext): Pro
     fixtureDir: dir,
     repositoryRoot: ctx.repositoryRoot,
     rulePath: treatment && ctx.bridge !== null ? ctx.rulePath : null,
+    ruleFile: RULE_FILES[ctx.adapter.kind],
   });
   const untrackHome = trackHome(workspace.home);
   const base = {
@@ -142,6 +145,7 @@ export async function runSlot(slot: Slot, attempt: 1 | 2, ctx: SlotContext): Pro
     });
     // An adapter that reported no start (or lost the line) still has its agent id logged before the post-run steps.
     if (outcome.agentId !== null) logAgent(outcome.agentId);
+    ctx.onAgentEnd?.(outcome);
     // Measured before acceptance, whose own output (builds, coverage) is not the agent's work.
     const changed = filesChanged(before, snapshot(workspace.cwd));
     const trace = readTrace(workspace.trace);
@@ -245,7 +249,7 @@ export function yarnFlavor(cwd: string, env: Record<string, string>): "classic" 
  * `YARN_ENABLE_SCRIPTS=false` that preApply sets.
  */
 export function installArgv(packageManager: "npm" | "pnpm" | "yarn", specs: readonly string[], dev: boolean, yarn: "classic" | "berry" = "classic"): string[] {
-  if (packageManager === "npm") return ["npm", "install", "--ignore-scripts", ...(dev ? ["--save-dev"] : ["--save"]), ...specs];
-  if (packageManager === "pnpm") return ["pnpm", "add", "--ignore-scripts", ...(dev ? ["-D"] : []), ...specs];
+  if (packageManager === "npm") return ["npm", "install", "--ignore-scripts", dev ? "--save-dev" : "--save-prod", ...specs];
+  if (packageManager === "pnpm") return ["pnpm", "add", "--ignore-scripts", dev ? "--save-dev" : "--save-prod", ...specs];
   return ["yarn", "add", yarn === "berry" ? "--mode=skip-build" : "--ignore-scripts", ...(dev ? ["-D"] : []), ...specs];
 }

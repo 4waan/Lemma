@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "1",
+  "taskId": "weather-mcp-paid-forecast",
+  "kind": "match",
+  "capability": "mcp-server.add-payment-gating",
+  "catalogCase": "mcp-server.add-payment-gating/exact-npm-node22",
+  "profile": {
+    "schemaVersion": "1",
+    "language": "typescript",
+    "runtime": {
+      "name": "node",
+      "major": 22
+    },
+    "packageManager": {
+      "name": "npm",
+      "lockfile": "package-lock.json"
+    },
+    "moduleSystem": "esm",
+    "dependencies": {
+      "@modelcontextprotocol/sdk": "1.30.1"
+    },
+    "frameworks": []
+  },
+  "initialCommit": null,
+  "prompt": "Charge for the get_forecast tool of this MCP server with x402: every call costs 0.01 USDC. get_alerts stays free.\n\n- Payment: x402 protocol version 2 over MCP (the payment in _meta[\"x402/payment\"], the settlement in _meta[\"x402/payment-response\"]), the exact scheme, in Circle's USDC on Arbitrum Sepolia (eip155:421614).\n- Payments go to the address in the PAYOUT_ADDRESS environment variable. The x402 facilitator whose base URL is in FACILITATOR_URL verifies and settles them. createServer() reads both when it is called, and throws or rejects when either is missing or malformed. It may become async.\n- A call without a valid payment gets the x402 payment requirements and never runs the forecast. The forecast runs only after the facilitator verifies the payment, and the payment settles only after the forecast succeeds. A forecast that fails is not charged, and a call whose settlement fails returns no forecast.\n\ntest/paid-forecast.test.ts checks all of this against a local stand-in facilitator. Make npm test pass. Do not change the tests or the test script.",
+  "network": "open",
+  "setup": {
+    "argv": [
+      "npm",
+      "ci",
+      "--ignore-scripts",
+      "--no-audit",
+      "--no-fund"
+    ],
+    "timeoutSec": 600
+  },
+  "acceptance": {
+    "argv": [
+      "node",
+      "-e",
+      "for(const a of process.argv.slice(1)){const[f,d]=a.split(\"=\");if(require(\"crypto\").hash(\"sha256\",require(\"fs\").readFileSync(f))!=d)throw f+\" changed\"}process.exit(require(\"child_process\").spawnSync(\"npm\",[\"test\"],{stdio:\"inherit\"}).status??1)",
+      "test/paid-forecast.test.ts=b0d626df35f027e2c9985a5d332053c48876bf794904232dbdcc7d9200b77a9e",
+      "test/weather.test.ts=7405dc3b39bc35146f1646f159c48e74a3988579d14451d12f6d49473ba9ae51"
+    ],
+    "timeoutSec": 300
+  },
+  "expected": {
+    "passed": true
+  },
+  "maxDurationSec": 1800,
+  "notes": "Acceptance checks that both test files are unchanged (sha256), then runs npm test: a typecheck and node's test runner. The x402 tests pay with a real EIP-3009 signature to a local stand-in facilitator, so no network or funds are used."
+}

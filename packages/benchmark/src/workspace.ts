@@ -3,16 +3,26 @@ import { dirname, join, resolve } from "node:path";
 
 import { fileDigest } from "@lemma/core";
 
+import type { AgentKind } from "./adapter.js";
 import { isInside } from "./files.js";
 
 /**
  * Names that give an agent ambient settings when found in any directory above
  * its workspace. `@cursor/sdk` loads `.cursor/rules`, `AGENTS.md`, `CLAUDE.md`
  * and `CLAUDE.local.md` from every ancestor of the working directory, and
- * `.cursorrules` from the enclosing git repository; `.git` would also put the
- * run inside another repository, where the agent's git commands act on it.
+ * `.cursorrules` from the enclosing git repository. Claude Code loads
+ * `CLAUDE.md` and everything under `.claude` (`.claude/CLAUDE.md`,
+ * `.claude/rules`) from every ancestor too. `.git` would also put the run
+ * inside another repository, where the agent's git commands act on it.
  */
-export const AMBIENT_SETTING_NAMES = [".cursor", ".cursorrules", "AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".git"] as const;
+export const AMBIENT_SETTING_NAMES = [".cursor", ".cursorrules", ".claude", "AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".git"] as const;
+
+/**
+ * Where each agent reads the Lemma rule in the treatment copy: a Cursor
+ * project rule, or a Claude Code project rule. The file is copied unchanged;
+ * Claude Code reads the rule's body and leaves its Cursor front matter out.
+ */
+export const RULE_FILES: Readonly<Record<AgentKind, string>> = { cursor: ".cursor/rules/lemma.mdc", "claude-code": ".claude/rules/lemma.md" };
 
 export class WorkspaceError extends Error {
   override name = "WorkspaceError";
@@ -45,6 +55,8 @@ export function prepareWorkspace(options: {
   readonly fixtureDir: string;
   readonly repositoryRoot: string;
   readonly rulePath: string | null;
+  /** Where the rule goes in the copy (default: Cursor's `RULE_FILES.cursor`). */
+  readonly ruleFile?: string;
 }): RunWorkspace {
   const base = prepareRunBase(options.base, options.repositoryRoot);
   const root = join(base, options.runId.slice(2, 18));
@@ -55,8 +67,9 @@ export function prepareWorkspace(options: {
     mkdirSync(join(home, "tmp"), { recursive: true });
     cpSync(join(options.fixtureDir, "repo"), cwd, { recursive: true, errorOnExist: true, force: false });
     if (options.rulePath !== null) {
-      mkdirSync(join(cwd, ".cursor", "rules"), { recursive: true });
-      cpSync(options.rulePath, join(cwd, ".cursor", "rules", "lemma.mdc"));
+      const rule = join(cwd, options.ruleFile ?? RULE_FILES.cursor);
+      mkdirSync(dirname(rule), { recursive: true });
+      cpSync(options.rulePath, rule);
     }
   } catch (error) {
     dispose();
@@ -128,7 +141,7 @@ export function assertNoAmbientSettings(dir: string): void {
   }
 }
 
-const SKIP = new Set(["node_modules", ".git", ".cursor"]);
+const SKIP = new Set(["node_modules", ".git", ".cursor", ".claude"]);
 
 /** Digest of every file under `dir`, skipping dependencies, VCS data and the rule. */
 export function snapshot(dir: string): Map<string, string> {

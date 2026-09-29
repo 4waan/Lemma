@@ -30,6 +30,7 @@ import {
   ancestorSecretVariables,
   installArgv,
   interruptedAttempt,
+  isProbeMeasurement,
   killByHome,
   modelLabel,
   nextAttempt,
@@ -39,6 +40,7 @@ import {
   prepareRunBase,
   prepareWorkspace,
   removeTree,
+  probeReplacementsLeft,
   probeVerdict,
   readTrace,
   reconcile,
@@ -217,7 +219,7 @@ describe("workspace isolation", () => {
   it("refuses every file the SDK loads from ancestors, and an enclosing repository", () => {
     const root = makeFixture(temp("lemma-fx-"));
     const fixtureDir = join(root, "fixtures", "add-greeting");
-    for (const name of ["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".cursorrules", ".git"]) {
+    for (const name of ["AGENTS.md", "CLAUDE.md", "CLAUDE.local.md", ".claude", ".cursorrules", ".git"]) {
       const above = temp("lemma-above-");
       writeFileSync(join(above, name), "x\n");
       expect(() => prepareWorkspace({ base: join(above, "a", "runs"), runId: newRunId(), fixtureDir, repositoryRoot: REPO_ROOT, rulePath: null })).toThrow(WorkspaceError);
@@ -262,8 +264,10 @@ describe("runSlot", () => {
     const root = makeFixture(temp("lemma-fx-"));
     process.env["CURSOR_API_KEY"] = "must-never-reach-a-run";
     const adapter = new FakeAdapter([finished("agent-1", (r) => writeFileSync(join(r.cwd, "done.txt"), "ok\n"))]);
-    const ctx = context(root, adapter, { keepWorkspace: true });
+    const ended: Array<string | null> = [];
+    const ctx = context(root, adapter, { keepWorkspace: true, onAgentEnd: (o: { agentId: string | null }) => ended.push(o.agentId) });
     const attempt = await runSlot({ taskId: "add-greeting", arm: "control", repetition: 1 }, 1, ctx);
+    expect(ended).toEqual(["agent-1"]);
     expect(attempt).toMatchObject({
       arm: "control",
       agentId: "agent-1",
@@ -578,6 +582,27 @@ describe("probe verdict", () => {
     expect(nextProbeSlot([...three, ...failing.slice(0, 2)], "add-greeting")).toEqual({ taskId: "add-greeting", arm: "treatment", repetition: 3 });
     expect(() => nextProbeSlot([...three, ...failing], "add-greeting")).toThrow(/giving up/);
   });
+
+  it("gives up on an arm as soon as it can no longer be completed, not after its last allowed attempt", () => {
+    const failed = [1, 2, 3].map((i) => attemptOf({ repetition: i, status: "error" }));
+    expect(probeReplacementsLeft(failed.slice(0, 2), "add-greeting", "control")).toBe(0);
+    // Two replaced controls leave three attempts for three measurements.
+    expect(nextProbeSlot(failed.slice(0, 2), "add-greeting")).toEqual({ taskId: "add-greeting", arm: "control", repetition: 3 });
+    // A third leaves two attempts, which cannot make three measured controls.
+    expect(probeReplacementsLeft(failed, "add-greeting", "control")).toBe(-1);
+    expect(() => nextProbeSlot(failed, "add-greeting")).toThrow(/3 control runs measured nothing, more than the 2 it may replace; giving up/);
+    expect(probeReplacementsLeft(failed, "add-greeting", "treatment")).toBe(2);
+    expect(probeReplacementsLeft(failed, "other-task", "control")).toBe(2);
+  });
+
+  it("measures only runs that started and finished or timed out, which are the only ones the probe waits on", () => {
+    const statuses = ["finished", "timeout", "error", "cancelled"] as const;
+    expect(statuses.map((status) => isProbeMeasurement(attemptOf({ status })))).toEqual([true, true, false, false]);
+    expect(isProbeMeasurement(attemptOf({ startupFailure: true, startupReason: "bridge" }))).toBe(false);
+    // An interrupted run is recorded as an error: it never has a meter record, so waiting on it would never end.
+    const intent = { type: "intent", runId: newRunId(), benchmarkVersion: "probe-1", taskId: "add-greeting", arm: "control", repetition: 1, attempt: 1, fixtureProfileDigest: hex("13"), model: "example-model-1", startedAt: "2026-10-01T00:00:00.000Z" } as const;
+    expect(isProbeMeasurement(interruptedAttempt(intent, "agent-1", new Date("2026-10-01T00:01:00.000Z")))).toBe(false);
+  });
 });
 
 describe("evidence rules", () => {
@@ -673,6 +698,10 @@ describe("workspaces and installs", () => {
     expect(installArgv("yarn", ["a@1"], true, "berry")).toEqual(["yarn", "add", "--mode=skip-build", "-D", "a@1"]);
     expect(installArgv("npm", ["a@1"], false)).toContain("--ignore-scripts");
     expect(installArgv("pnpm", ["a@1"], false)).toContain("--ignore-scripts");
+    // A runtime dependency the fixture has as a devDependency must move, as the bridge's install does.
+    expect(installArgv("npm", ["a@1"], false)).toContain("--save-prod");
+    expect(installArgv("pnpm", ["a@1"], false)).toContain("--save-prod");
+    expect(installArgv("pnpm", ["a@1"], true)).toContain("--save-dev");
     const env = { PATH: "/nonexistent" };
     const berry = temp("lemma-yarn-");
     writeFileSync(join(berry, ".yarnrc.yml"), "nodeLinker: node-modules\n");

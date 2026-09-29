@@ -43,6 +43,8 @@ const DRAIN_MS = 2_000;
  * is imported lazily, so tests and the rest of the package never load it.
  */
 export class CursorAdapter implements AgentAdapter {
+  readonly kind = "cursor" as const;
+
   constructor(
     private readonly apiKey: string,
     private readonly childScript: string = fileURLToPath(new URL("./cursor-child.js", import.meta.url)),

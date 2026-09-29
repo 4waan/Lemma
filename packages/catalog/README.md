@@ -65,10 +65,10 @@ The complete economic gate is [Economic Gates and Iterations](../../docs/economi
 
 ## Current catalog
 
-- `mcp-server-payment-gating@0.1.0-skeleton`
-- `mcp-client-paying-client@0.1.0-skeleton`
+- `mcp-server-payment-gating@0.1.0`: x402 payment gating for a TypeScript MCP server, paid in USDC on Arbitrum Sepolia (testnet). The payload adds one module, `src/x402-payment-gating.ts`, on `@x402/core`, `@x402/evm` and `@x402/mcp` 2.27 (Apache-2.0), and the buyer's agent wires it into its tools. It replaced `0.1.0-skeleton`, which had the same profiles and a placeholder payload.
+- `mcp-client-paying-client@0.1.0`: an x402-paying MCP client with spending limits, paying in USDC on Arbitrum Sepolia (testnet). The payload adds one module, `src/x402-paying-client.ts`, on `@x402/core`, `@x402/evm`, `@x402/mcp` 2.27 and `viem`: it picks the exact USDC requirement on Arbitrum Sepolia, refuses prices over a per-call limit or the remaining budget before signing, reserves the budget so concurrent calls cannot overspend it, pays at most once per call, and counts only settled payments. It replaced `0.1.0-skeleton`, which had the same profiles and a placeholder payload.
 
-Both releases define profiles, fixtures, and acceptance recipes, but their payloads are placeholders and they cannot be sold. `node-service.add-payment-facilitator` intentionally has no release so the no-release path remains covered.
+Neither release has measured evidence, so both are previewed and never sold. The first economic probe measures the server release (`weather-mcp-paid-forecast` in `packages/benchmark/fixtures/`) and the second the client release (`market-brief-paid-tools`). `node-service.add-payment-facilitator` intentionally has no release so the no-release path remains covered.
 
 ## Development
 

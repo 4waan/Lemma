@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -281,6 +281,19 @@ describe("scanWorkspace", () => {
     expect(profile.packageManager).toEqual({ name: "npm", lockfile: "package-lock.json" });
     expect(profile.dependencies).toEqual({ [SDK]: "1.30.1", hono: "4.13.9", zod: "4.6.5" });
     expect(profile.frameworks).toEqual(["hono"]);
+  });
+
+  it("gives each benchmark task the profile its fixture records, so both arms measure the case the bridge would ask about", () => {
+    const base = join(REPO, "packages/benchmark/fixtures");
+    const tasks = readdirSync(base, { withFileTypes: true }).filter((e) => e.isDirectory());
+    expect(tasks.length).toBeGreaterThan(0);
+    for (const task of tasks) {
+      const fixture = JSON.parse(readFileSync(join(base, task.name, "fixture.json"), "utf8")) as { profile: { dependencies: Record<string, string> } };
+      const root = join(base, task.name, "repo");
+      // A different running Node shows up as a mismatch: the task must pin its own.
+      const result = scanWorkspace({ root, cwd: root, interest: Object.keys(fixture.profile.dependencies), runningNodeMajor: 1 });
+      expect(result, task.name).toEqual({ profile: fixture.profile, notes: [] });
+    }
   });
 });
 

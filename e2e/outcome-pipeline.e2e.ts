@@ -16,6 +16,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type Bridge, inProcessSigner, startBridge } from "./lib/bridge.js";
 import { CAPABILITY, type E2eCatalog, writeCatalog } from "./lib/catalog.js";
 import { type LocalChain, type LocalUsdc, deployErc8004, engineAbi, installUsdc, localChain, registryReadAbi, runtimeKey } from "./lib/chain.js";
+import { STEPS, formatGasReport, measureGas } from "./lib/gas.js";
 import { type RunningServer, crashableStore, recordingJsonLogger, startServer } from "./lib/server.js";
 import { type Anvil, ROOT, type ScriptResult, forgeArtifact, freePort, runScript, startAnvil, until } from "./lib/tools.js";
 
@@ -572,6 +573,17 @@ describe("the outcome pipeline on a local chain", () => {
     // Nothing was recorded or posted for it.
     expect(await engineCalls()).toBe(6);
     expect(expired.warranty?.feedback).toBeNull();
+  });
+
+  it("measures the gas of each on-chain step a resolution causes, for the chain cost in economics.json", async () => {
+    const report = await measureGas(chain.publicClient, { usdc: usdc.address, registry, reputation, fromBlock: registryBlock });
+    // Every purchase settled once and was activated once, and every warranty ended once: by an outcome or an expiry.
+    expect(report.steps.activation.transactions).toBe(report.steps.settlement.transactions);
+    expect(report.steps.outcome.transactions + report.steps.expiry.transactions).toBe(report.steps.activation.transactions);
+    expect(report.steps.withdrawal.transactions).toBe(1);
+    for (const step of STEPS) expect(report.steps[step].minGas, step).toBeGreaterThan(21_000n);
+    expect(report.endings.refunded).toBeGreaterThan(report.endings.passed);
+    console.log(`\n${formatGasReport(report)}\n`);
   });
 
   it("never logs or prints a key or a claim secret, and never logs a buyer or refund address", () => {

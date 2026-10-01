@@ -4,8 +4,8 @@
  * the demo release fits (e2e/live/catalog.ts), spoken to over stdio as an
  * agent's MCP client does, buying through a running `lemma-signer serve`.
  *
- *   tsx e2e/live/agent.ts adopt pass|fail --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> [--refund-to <address>]
- *   tsx e2e/live/agent.ts refund --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider>
+ *   tsx e2e/live/agent.ts adopt pass|fail --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> --refund-to <address> [--activation-wait-minutes <n>]
+ *   tsx e2e/live/agent.ts refund --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> --refund-to <address>
  *
  * `adopt` writes the fixture repository (`<dir>/workspace`, whose test
  * passes or fails once the release is applied) and the bridge's state
@@ -18,7 +18,12 @@
  * `adopt` also the settlement transaction when ARBITRUM_SEPOLIA_RPC_URL is
  * set (USDC's AuthorizationUsed for the payment's nonce). The spending policy
  * is the local run's: at most 0.50 USDC per resolution and 5 a day, paid
- * only to --pay-to. Nothing here holds or reads a key.
+ * only to --pay-to. A warranty credit goes to --refund-to (LEMMA_REFUND_TO),
+ * which purchases need and which must be an address you control other than
+ * the buyer's: a refund shows it next to the resolution id on chain. The wait
+ * for the activation (default 75 minutes) covers the server's hourly
+ * activation batches (WARRANTY_ACTIVATION_BATCH_SECONDS). Nothing here holds
+ * or reads a key.
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
@@ -33,8 +38,8 @@ import { CAPABILITY, writeWorkspace } from "../lib/catalog.js";
 import { ROOT, until } from "../lib/tools.js";
 
 const USAGE = [
-  "usage: tsx e2e/live/agent.ts adopt pass|fail --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> [--refund-to <address>]",
-  "       tsx e2e/live/agent.ts refund --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider>",
+  "usage: tsx e2e/live/agent.ts adopt pass|fail --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> --refund-to <address> [--activation-wait-minutes <n>]",
+  "       tsx e2e/live/agent.ts refund --dir <dir> --api <server url> --signer-socket <path> --pay-to <provider> --refund-to <address>",
 ].join("\n");
 
 function fail(message: string): never {
@@ -47,7 +52,7 @@ function parse() {
   return parseArgs({
     allowPositionals: true,
     strict: true,
-    options: { dir: { type: "string" }, api: { type: "string" }, "signer-socket": { type: "string" }, "pay-to": { type: "string" }, "refund-to": { type: "string" } },
+    options: { dir: { type: "string" }, api: { type: "string" }, "signer-socket": { type: "string" }, "pay-to": { type: "string" }, "refund-to": { type: "string" }, "activation-wait-minutes": { type: "string" } },
   });
 }
 try {
@@ -56,8 +61,10 @@ try {
   fail(USAGE);
 }
 const [command, variant] = parsed.positionals;
-const { dir: dirArg, api, "signer-socket": signerSocket, "pay-to": payTo, "refund-to": refundTo } = parsed.values;
-if (dirArg === undefined || api === undefined || signerSocket === undefined || payTo === undefined) fail(USAGE);
+const { dir: dirArg, api, "signer-socket": signerSocket, "pay-to": payTo, "refund-to": refundTo, "activation-wait-minutes": waitArg } = parsed.values;
+if (dirArg === undefined || api === undefined || signerSocket === undefined || payTo === undefined || refundTo === undefined) fail(USAGE);
+const activationWaitMinutes = waitArg === undefined ? 75 : Number(waitArg);
+if (!Number.isInteger(activationWaitMinutes) || activationWaitMinutes < 1 || activationWaitMinutes > 24 * 60) fail("--activation-wait-minutes must be a whole number of minutes, at most a day");
 if (!(command === "adopt" && (variant === "pass" || variant === "fail") && parsed.positionals.length === 2) && !(command === "refund" && parsed.positionals.length === 1)) fail(USAGE);
 const dir = resolve(dirArg);
 const rel = relative(ROOT, dir);
@@ -70,7 +77,7 @@ const address = (value: string, flag: string): Address => {
   }
 };
 const provider = address(payTo, "--pay-to");
-const refundAddress = refundTo === undefined ? undefined : address(refundTo, "--refund-to");
+const refundAddress = address(refundTo, "--refund-to");
 
 mkdirSync(dir, { recursive: true, mode: 0o700 });
 const workspace = join(dir, "workspace");
@@ -103,7 +110,7 @@ const watch = async (id: Hex32, what: string, done: (v: ResolutionView) => boole
 };
 const say = (tool: string, answer: { text: string; isError: boolean }) => console.log(`${tool}${answer.isError ? " (error)" : ""}: ${answer.text}`);
 
-const agent: AgentProcess = await startAgentProcess({ apiUrl: api, workspace, stateDir, signerSocket, provider, ...(refundAddress === undefined ? {} : { refundTo: refundAddress }) });
+const agent: AgentProcess = await startAgentProcess({ apiUrl: api, workspace, stateDir, signerSocket, provider, refundTo: refundAddress });
 try {
   if (command === "adopt") {
     const preview = await agent.call("lemma_preview", { capability: CAPABILITY });
@@ -128,8 +135,8 @@ try {
       });
       console.log(`settlement ${logs[0]?.transactionHash ?? "not found in the last 20,000 blocks"}`);
     }
-    // The activation waits out WARRANTY_ACTIVATION_JITTER_SECONDS and the indexer's confirmations.
-    await watch(id, "the warranty to be active", (v) => v.warranty?.state === "active", 20 * 60_000);
+    // The activation waits for the next batch (WARRANTY_ACTIVATION_BATCH_SECONDS), or the jitter with batches off, and the indexer's confirmations.
+    await watch(id, "the warranty to be active", (v) => v.warranty?.state === "active", activationWaitMinutes * 60_000);
     say("lemma_apply_resolution", await agent.call("lemma_apply_resolution", { capability: CAPABILITY, mode: "apply" }));
     say("lemma_verify_adoption", await agent.call("lemma_verify_adoption", { capability: CAPABILITY }));
     const v = await watch(id, "the receipt to be verified", (r) => r.receipt?.verified === true, 10 * 60_000);

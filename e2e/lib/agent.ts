@@ -90,7 +90,8 @@ export interface AgentProcess {
  * `workspace`, spoken to over stdio as an agent's MCP client speaks to it.
  * Purchases go through the signer at `signerSocket`, within the spending
  * policy (by default the run's), and a warranty credit goes to `refundTo`
- * (LEMMA_REFUND_TO; the buyer's own address when unset).
+ * (LEMMA_REFUND_TO), which purchases need and which must not be the buyer's
+ * own address.
  */
 export async function startAgentProcess(options: {
   readonly apiUrl: string;
@@ -98,7 +99,7 @@ export async function startAgentProcess(options: {
   readonly stateDir: string;
   readonly signerSocket: string;
   readonly provider: Address;
-  readonly refundTo?: Address;
+  readonly refundTo: Address;
   readonly policy?: Readonly<Record<string, string>>;
 }): Promise<AgentProcess> {
   const env = processEnv({
@@ -107,7 +108,7 @@ export async function startAgentProcess(options: {
     LEMMA_STATE_DIR: options.stateDir,
     LEMMA_SIGNER_SOCKET: options.signerSocket,
     ...(options.policy ?? policyEnv(options.provider)),
-    ...(options.refundTo === undefined ? {} : { LEMMA_REFUND_TO: options.refundTo }),
+    LEMMA_REFUND_TO: options.refundTo,
   });
   const transport = new StdioClientTransport({ command: process.execPath, args: [LEMMA_MCP], env, cwd: options.workspace, stderr: "pipe" });
   let stderr = "";

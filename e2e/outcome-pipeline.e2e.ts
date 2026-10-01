@@ -564,12 +564,15 @@ describe("the outcome pipeline on a local chain", () => {
     hidden.push(key.address);
     await usdc.mint(key.address, 1_000_000n);
     const signer = await startSignerProcess({ stateDir: signerState, provider: roles.provider.address });
+    const refundTo = runtimeKey().address;
+    hidden.push(refundTo);
     const agent = await startAgentProcess({
       apiUrl: server.url,
       workspace: writeWorkspace(mkdtempSync(join(tmp, "workspace-")), "pass"),
       stateDir: mkdtempSync(join(tmp, "state-")),
       signerSocket: signer.socket,
       provider: roles.provider.address,
+      refundTo,
     });
     try {
       expect(await agent.tools()).toEqual(expect.arrayContaining(["lemma_preview", "lemma_buy_resolution", "lemma_apply_resolution", "lemma_verify_adoption", "lemma_claim_refund"]));

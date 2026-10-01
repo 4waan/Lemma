@@ -121,6 +121,8 @@ describe("apply and verify through the bridge", () => {
       cwd: () => root,
       runningNodeMajor: 22,
       monotonic: () => 0,
+      // The bridge's own wall clock, as the adoption tools': its recovery ages pending purchases by it (Date.now otherwise).
+      wallClock: () => NOW.getTime() + 60_000,
       registerPaidTools: (_s, ctx) => (paid = ctx),
       registerAdoptionTools: adoptionTools({ inbox, remote, scanner, root, cwd: () => root, runningNodeMajor: 22, clock: () => new Date(NOW.getTime() + 60_000), offlineAcceptance: false, installTimeoutSec: 60, signReceipt: options.signReceipt }),
     });

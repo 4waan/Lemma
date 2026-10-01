@@ -2,6 +2,8 @@
 
 Subtitle: Where the unit economics break, which business models fix them, who would pay for what, and what to test before spending more.
 
+> **Update, October 1, 2026.** [OBSERVED] Since this analysis was prepared, the five feature branches have merged into `main` (pull requests #51 to #55) and run on Arbitrum Sepolia. One purchase passed and one was refunded, through the shipped bridge, on a demo release whose evidence is made up ([deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md)). The gas was measured there: about 454,000 for a passed purchase (settlement 91,275, warranty activation 216,065, outcome with its engine record 146,896), and 84,009 more for a refund's withdrawal. The rest of this report is as prepared on September 28. Its [PLANNED] items are now merged and on testnet, and nothing else it depends on has been measured yet: no saving, no evidence cost, no buyer outside the test, and the chain cost `g` in `packages/catalog/economics.json` is still the placeholder 0.
+
 ## 1. Executive summary
 
 **What this report rests on.** [REPO] The business model is the one in Lemma's repository (`docs/economics.md`, `docs/economic-gates.md`, the catalog, the bridge and server code) and in the revenue report of September 27, 2026 (`docs/business-model.md`), whose 121 sources supply every external fact quoted here. Every modeled number comes from one script, `docs/profitability-analysis/model.mjs`, whose inputs are listed in section 15. Amounts are USD; the repository treats 1 USDC as 1 USD. Nothing Lemma has built has settled a payment on any chain, so no Lemma amount below is observed.

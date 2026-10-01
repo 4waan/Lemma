@@ -8,6 +8,7 @@
     "rootDir": ".",
     "paths": {
       "@lemma/core": ["./packages/core/src/index.ts"],
+      "@lemma/confidence": ["./packages/confidence/src/index.ts"],
       "@lemma/catalog": ["./packages/catalog/src/index.ts"],
       "@lemma/benchmark": ["./packages/benchmark/src/index.ts"],
       "@lemma/server": ["./apps/server/src/index.ts"],

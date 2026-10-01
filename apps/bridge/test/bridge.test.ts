@@ -3,10 +3,11 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { buildIndex, loadCatalog } from "@lemma/catalog";
-import { type Hex32, MAX_FILE_CONTENT, type PatchBundle, bundleDigest, deriveResolutionId, fileDigest } from "@lemma/core";
+import { type Hex32, MAX_FILE_CONTENT, type PatchBundle, REASON_CODES, bundleDigest, deriveResolutionId, fileDigest } from "@lemma/core";
 import { MemoryStore, ResolutionService, createApp, loadConfig, silentLogger } from "@lemma/server";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import type { Hono } from "hono";
 import { afterEach, describe, expect, it } from "vitest";
 
@@ -22,12 +23,14 @@ import {
   ResolutionInbox,
   ScanCache,
   Trace,
+  compactToolList,
   createBridgeServer,
   defaultStateDir,
   driftCheck,
   installRule,
   installRules,
   previewText,
+  recordText,
   recoverPending,
   ruleBody,
   stateDirFor,
@@ -124,6 +127,43 @@ describe("the agent-facing bridge", () => {
     expect(tools.every((t) => t.outputSchema === undefined)).toBe(true);
     expect(JSON.stringify(tools).length + BRIDGE_INSTRUCTIONS.length).toBeLessThanOrEqual(3000);
     expect(BRIDGE_INSTRUCTIONS.split(/\s+/).length).toBeLessThanOrEqual(60);
+  });
+
+  it("lists its tools without the fields the SDK adds only to restate protocol defaults, and still checks arguments", async () => {
+    const { client } = await bridge(serverApp().app, workspace());
+    const [preview] = (await client.listTools()).tools;
+    expect(preview).toEqual({
+      name: "lemma_preview",
+      description: expect.stringMatching(/^Free check/),
+      inputSchema: { type: "object", properties: { capability: expect.any(Object), package: expect.any(Object) }, required: ["capability"], additionalProperties: false },
+      annotations: { readOnlyHint: true },
+    });
+    // The server validates arguments against its own schema, which the listing does not change.
+    expect((await client.callTool({ name: "lemma_preview", arguments: { capability: "mcp-server.add-payment-gating", extra: true } })).isError).toBe(true);
+  });
+
+  it("compacts only a tool list, and keeps a setting that is not the default", () => {
+    const listed: JSONRPCMessage = {
+      jsonrpc: "2.0",
+      id: 1,
+      result: {
+        tools: [
+          { name: "a", inputSchema: { $schema: "http://json-schema.org/draft-07/schema#", type: "object" }, execution: { taskSupport: "forbidden" } },
+          { name: "b", inputSchema: { type: "object" }, execution: { taskSupport: "optional" } },
+        ],
+      },
+    };
+    expect(compactToolList(listed)).toEqual({
+      jsonrpc: "2.0",
+      id: 1,
+      result: { tools: [{ name: "a", inputSchema: { type: "object" } }, { name: "b", inputSchema: { type: "object" }, execution: { taskSupport: "optional" } }] },
+    });
+    const others: JSONRPCMessage[] = [
+      { jsonrpc: "2.0", id: 2, result: { content: [] } },
+      { jsonrpc: "2.0", id: 3, method: "tools/list" },
+      { jsonrpc: "2.0", method: "notifications/tools/list_changed" },
+    ];
+    for (const other of others) expect(compactToolList(other)).toBe(other);
   });
 
   it("answers from the real server with short text, in one request per preview once warm", async () => {
@@ -319,6 +359,111 @@ describe("the agent-facing bridge", () => {
     const result = await client.callTool({ name: "lemma_preview", arguments: { capability: "mcp-server.add-payment-gating" } });
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain("Build it yourself");
+  });
+});
+
+describe("public adoption record", () => {
+  it("appends the matched release's record from the server to the preview answer, within the budget", async () => {
+    const store = new MemoryStore();
+    const index = sellableIndexFor();
+    const service = new ResolutionService(store, () => NOW, silentLogger);
+    const app = createApp({
+      config: loadConfig({ NODE_ENV: "test", PROVIDER_ADDRESS: "0x00000000000000000000000000000000000000a1" }),
+      index,
+      store,
+      service,
+      clock: () => NOW,
+      newPreviewId: () => `0x${(++n).toString(16).padStart(64, "0")}` as Hex32,
+      logger: silentLogger,
+      reputation: { current: (capability) => (capability === "mcp-server.add-payment-gating" ? { passBps: 9750, count: 34 } : null) },
+    });
+    const b = await bridge(app, workspace(), { paid: true });
+    const text = await b.preview();
+    expect(text).toContain("a verified resolution fits");
+    expect(text.endsWith(" Record: pass 97.5%, n 34.")).toBe(true);
+    expect(text.length).toBeLessThanOrEqual(MAX_TOOL_TEXT);
+    // No release matched, so no record, whatever the server knows.
+    expect(await b.preview("node-service.add-payment-facilitator")).not.toContain("Record:");
+    const plain = await bridge(serverApp(sellableIndexFor(), new MemoryStore()).app, workspace(), { paid: true });
+    expect(await plain.preview()).not.toContain("Record:");
+  });
+
+  it("formats the pass rate from basis points without rounding up, and drops the record rather than cut the answer", () => {
+    expect([10_000, 9700, 9750, 9733, 9999, 5, 0].map((passBps) => recordText({ passBps, count: 3 }))).toEqual([
+      " Record: pass 100%, n 3.",
+      " Record: pass 97%, n 3.",
+      " Record: pass 97.5%, n 3.",
+      " Record: pass 97.33%, n 3.",
+      " Record: pass 99.99%, n 3.",
+      " Record: pass 0.05%, n 3.",
+      " Record: pass 0%, n 3.",
+    ]);
+    const preview = {
+      schemaVersion: "1" as const,
+      previewId: `0x${"22".repeat(32)}`,
+      taskDigest: `0x${"33".repeat(32)}`,
+      profileDigest: `0x${"44".repeat(32)}`,
+      catalogDigest: `0x${"45".repeat(32)}`,
+      createdAt: NOW.toISOString(),
+      decision: "adapt" as const,
+      release: { releaseId: "gating", version: "1.0.0+bench-1", releaseDigest: `0x${"55".repeat(32)}`, profileIndex: 0 },
+      offer: null,
+      reasons: ["EVIDENCE_STALE" as const, "PROFILE_NOT_BENCHMARKED" as const],
+    };
+    const record = { passBps: 9733, count: Number.MAX_SAFE_INTEGER };
+    // The longest answers there are, with the longest record: never over the budget.
+    for (const incomplete of [false, true]) {
+      const text = previewText(preview, "unchecked", true, incomplete, undefined, record);
+      expect(text.length).toBeLessThanOrEqual(MAX_TOOL_TEXT);
+      expect(text).toContain("Record: pass 97.33%");
+      expect(text.endsWith("…")).toBe(false);
+    }
+    // Even with every reason code and the longest record, a preview answer has room for it, whole.
+    for (let k = 1; k <= REASON_CODES.length; k++) {
+      const long = { ...preview, reasons: [...REASON_CODES].sort().slice(0, k) };
+      const withRecord = previewText(long, "unchecked", true, true, undefined, record);
+      expect(withRecord).toBe(previewText(long, "unchecked", true, true) + recordText(record));
+      expect(withRecord.length).toBeLessThanOrEqual(MAX_TOOL_TEXT);
+    }
+    const offer = { terms: { scheme: "exact" as const, network: "eip155:421614", asset: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", amount: "250000", payTo: "0x00000000000000000000000000000000000000a1", maxTimeoutSeconds: 300 }, expectedRawSavingUsdc: "1000000", expectedTokenSaving: 420000, claimWindowHours: 72, validUntil: NOW.toISOString() };
+    for (const drift of ["none", "likely"] as const) {
+      for (const bought of [undefined, "bought", "pending"] as const) {
+        const text = previewText({ ...preview, decision: "reuse", offer, reasons: [] }, drift, true, true, bought, record);
+        expect(text.endsWith(recordText(record))).toBe(true);
+        expect(text.length).toBeLessThanOrEqual(MAX_TOOL_TEXT);
+      }
+    }
+  });
+});
+
+describe("opt-in agent reputation", () => {
+  it("sends LEMMA_AGENT_ID with every receipt, and nothing when it is unset", async () => {
+    const { app, service, store } = serverApp(sellableIndexFor(), new MemoryStore());
+    await store.saveCatalog(sellableIndexFor(), NOW);
+    const bodies: unknown[] = [];
+    const capture = (target: Hono) => async (input: string | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/api/v1/adoption-receipts")) bodies.push(JSON.parse(String(init?.body)));
+      return target.request(String(input), init);
+    };
+    const receiptFor = async (remote: LemmaRemote) => {
+      const b = await bridge(app, workspace(), { paid: true });
+      await b.preview();
+      const offer = b.offer();
+      if (offer === undefined) throw new Error("expected an offer");
+      await service.prepare(offer.previewId, { payer: BUYER, nonce: offer.previewId, validBefore: new Date(NOW.getTime() + 300_000) });
+      const id = deriveResolutionId(offer.previewId, BUYER);
+      await service.commit(id, { nonce: offer.previewId, settlementRef: offer.previewId });
+      const receipt = { schemaVersion: "1" as const, resolutionId: id, outcome: "passed" as const, acceptance: { exitCode: 0, durationMs: 5, outputDigest: null }, recordedAt: NOW.toISOString(), signature: null };
+      expect(await remote.postReceipt(receipt, offer.previewId)).toBe("ACCEPTED");
+      return id;
+    };
+    const opted = await receiptFor(new LemmaRemote(new URL("http://lemma.test"), capture(app), undefined, { agentId: "42" }));
+    expect((await store.getReceipt(opted))?.buyerAgentId).toBe("42");
+    const plain = await receiptFor(new LemmaRemote(new URL("http://lemma.test"), capture(app)));
+    expect((await store.getReceipt(plain))?.buyerAgentId).toBeNull();
+    expect(bodies[0]).toMatchObject({ agentId: "42" });
+    expect(bodies[1]).not.toHaveProperty("agentId");
+    expect(() => new LemmaRemote(new URL("http://lemma.test"), undefined, undefined, { agentId: "0x2a" })).toThrow();
   });
 });
 

@@ -22,6 +22,7 @@ contracts/cache
 contracts/out
 contracts/broadcast
 contracts/lib
+contracts/stylus/target
 
 *.log
 *.sqlite

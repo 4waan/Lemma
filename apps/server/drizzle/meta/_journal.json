@@ -8,6 +8,34 @@
       "when": 1790304537379,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790486842220,
+      "tag": "0001_payment_path",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790499058217,
+      "tag": "0002_reputation",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790518713504,
+      "tag": "0003_warranty_pipeline",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1790542447961,
+      "tag": "0004_buyer_passes",
+      "breakpoints": true
     }
   ]
 }

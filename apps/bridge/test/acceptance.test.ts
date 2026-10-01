@@ -9,6 +9,10 @@ import { ID, NOW, removeTemps, temp, tree } from "./fixtures.js";
 
 afterEach(removeTemps);
 
+/** Variables the operating system adds to every process it starts (macOS: `__CF_USER_TEXT_ENCODING`), whatever environment the parent passed. */
+const OS_ADDED = new Set(["__CF_USER_TEXT_ENCODING"]);
+const ownKeys = (keys: readonly string[]) => keys.filter((k) => !OS_ADDED.has(k));
+
 describe("acceptance", () => {
   const recipe = { script: "test", args: [], timeoutSec: 30, env: ["CI" as const, "NODE_ENV" as const] };
 
@@ -25,7 +29,7 @@ describe("acceptance", () => {
     const run = await runAcceptance([process.execPath, "check.mjs"], { cwd: dir, recipe, host: { CI: "1", SECRET_TOKEN: "t" } });
     expect(run).toMatchObject({ exitCode: 3, timedOut: false, truncated: true });
     expect(run.outputDigest).toBe(fileDigest(Buffer.alloc(MAX_ACCEPTANCE_OUTPUT, "x")));
-    expect(JSON.parse(readFileSync(join(dir, "env.json"), "utf8"))).toEqual(["CI", "COREPACK_ENABLE_NETWORK", "COREPACK_HOME", "HOME", "PATH"]);
+    expect(ownKeys(JSON.parse(readFileSync(join(dir, "env.json"), "utf8")) as string[])).toEqual(["CI", "COREPACK_ENABLE_NETWORK", "COREPACK_HOME", "HOME", "PATH"]);
   });
 
   it("reports a command that could not start as not started, never as a failed test", async () => {
@@ -60,16 +64,17 @@ describe("acceptance", () => {
     expect(argv.slice(0, 5)).toEqual(["/usr/bin/unshare", "--map-root-user", "--net", "/bin/sh", "-c"]);
     expect(argv.slice(6)).toEqual(["/usr/sbin/ip", "npm", "run", "test", "--", "a;b"]);
     expect(offlineAvailable({ ...tools, ip: join(temp("lemma-ip-"), "missing-ip") })).toBe(false);
-    // Found on the bridge's PATH or where systems keep them; missing ones make offline mode unavailable.
-    expect(offlineTools("/nonexistent")?.sh).toMatch(/\/sh$/);
-    // The wrapper's shell step, run here without a namespace: "n" once loopback is up, "x" just before the command, and fd 3 closed for it.
-    const { spawnSync } = await import("node:child_process");
     const bin = temp("lemma-ip-");
     const script = (name: string, body: string) => {
       writeFileSync(join(bin, name), `#!/bin/sh\n${body}\n`);
       chmodSync(join(bin, name), 0o755);
       return join(bin, name);
     };
+    // Found on the bridge's PATH first. (Where systems keep them is searched too, but whether ip is there depends on the machine.)
+    const onPath = { unshare: script("unshare", "exit 0"), sh: script("sh", "exit 0"), ip: script("ip", "exit 0") };
+    expect(offlineTools(bin)).toEqual(onPath);
+    // The wrapper's shell step, run here without a namespace: "n" once loopback is up, "x" just before the command, and fd 3 closed for it.
+    const { spawnSync } = await import("node:child_process");
     const wrapper = (ip: string, command: readonly string[]) => {
       const [, , , sh, ...rest] = offlineArgv(command, { ...tools, ip });
       const run = spawnSync(sh as string, rest, { stdio: ["ignore", "pipe", "ignore", "pipe"] });
@@ -77,10 +82,10 @@ describe("acceptance", () => {
     };
     const up = script("ip-up", "exit 0");
     const down = script("ip-down", "exit 1");
-    const fds = script("fds", "ls /proc/$$/fd; exit 7");
+    const fds = script("fds", "(: >&3) 2>/dev/null && echo fd3-open; exit 7");
     const ran = wrapper(up, [fds]);
     expect(ran).toMatchObject({ status: 7, marks: "nx" });
-    expect(ran.out.split("\n")).not.toContain("3");
+    expect(ran.out).not.toContain("fd3-open");
     expect(wrapper(down, [fds])).toMatchObject({ status: 125, marks: "" });
     expect(wrapper(up, ["lemma-no-such-command-xyz"])).toMatchObject({ status: 127, marks: "n" });
   });
@@ -131,7 +136,7 @@ describe("acceptance", () => {
   });
 
   it("builds a receipt that parses, with a stable digest", async () => {
-    const run = { started: true, notStarted: null, exitCode: 0, timedOut: false, durationMs: 1234, outputDigest: fileDigest("ok"), truncated: false };
+    const run = { started: true, notStarted: null, exitCode: 0, timedOut: false, durationMs: 1234, outputDigest: fileDigest("ok"), truncated: false, confined: false };
     const a = receiptFor(ID, run, NOW);
     expect(AdoptionReceipt.parse(a)).toEqual(a);
     expect(adoptionReceiptDigest(a)).toBe(adoptionReceiptDigest(receiptFor(ID, run, NOW)));

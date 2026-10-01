@@ -1,19 +1,23 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
-import { resolve as resolvePath } from "node:path";
+import { dirname, isAbsolute, resolve as resolvePath } from "node:path";
 import { performance } from "node:perf_hooks";
 
+import { AgentId } from "@lemma/core";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { adoptionTools } from "./adoption.js";
+import { confinementAvailable } from "./confine.js";
 import { recoverJournals } from "./apply.js";
 import { killInstalls } from "./install.js";
 import { createBridgeServer } from "./bridge.js";
 import { ResolutionInbox, stateDirFor } from "./inbox.js";
+import { paymentsFromEnv } from "./payments.js";
 import { flushReceipts, recoverPending } from "./recovery.js";
 import { LemmaRemote } from "./remote.js";
 import { RULE_TARGETS, installRules, isRuleAgent } from "./rule.js";
 import { ScanCache } from "./scan/cache.js";
+import { defaultSignerSocket } from "./signer/paths.js";
 import { Trace } from "./trace.js";
 
 /**
@@ -25,13 +29,22 @@ import { Trace } from "./trace.js";
  * Environment: LEMMA_API_URL (default http://localhost:3000), LEMMA_WORKSPACE
  * (default: the current directory), LEMMA_STATE_DIR (default
  * $XDG_STATE_HOME/lemma; absolute, outside the workspace), LEMMA_ACCEPTANCE_OFFLINE=1
- * (Linux: run acceptance tests without network), LEMMA_BRIDGE_TRACE (benchmark
- * harness only).
+ * (Linux: run acceptance tests without network), LEMMA_ACCEPTANCE_CONFINE=0
+ * (run acceptance tests without the sandbox that hides the state directory and
+ * the signer; on by default where it works), LEMMA_AGENT_ID (opt-in: this
+ * agent's own ERC-8004 agent id, sent with receipts), LEMMA_BRIDGE_TRACE
+ * (benchmark harness only).
  */
 async function serve(): Promise<void> {
   // The real path, so a workspace reached through a link is scanned like any other; links below it are still refused.
   const root = realpathSync(resolvePath(process.env["LEMMA_WORKSPACE"] || process.cwd()));
-  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? "http://localhost:3000"));
+  const agentId = process.env["LEMMA_AGENT_ID"] || undefined;
+  if (agentId !== undefined && !AgentId.safeParse(agentId).success) {
+    console.error("lemma-mcp: LEMMA_AGENT_ID must be this agent's ERC-8004 agent id, a decimal number such as 42");
+    process.exitCode = 2;
+    return;
+  }
+  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? "http://localhost:3000"), undefined, undefined, { agentId });
   let stateDir: string;
   try {
     stateDir = stateDirFor(root);
@@ -49,6 +62,21 @@ async function serve(): Promise<void> {
   if (recovery.left > 0) console.error(`lemma-mcp: ${recovery.left} files changed after an interrupted apply were left as they are; the originals of files it had replaced are kept in ${inbox.recoveredDir}`);
   const scanner = new ScanCache();
   const runningNodeMajor = Number(process.versions.node.split(".")[0]);
+  const clock = () => new Date();
+  const payments = await paymentsFromEnv(process.env, { stateDir, root, clock });
+  if (payments.note !== undefined) console.error(`lemma-mcp: ${payments.note}`);
+  // Acceptance tests run confined (hiding the state directory and the signer) where Linux user namespaces work.
+  // The socket's directory, and the socket itself for when that directory holds the workspace and so cannot be covered.
+  const named = process.env["LEMMA_SIGNER_SOCKET"];
+  const socket = named !== undefined && isAbsolute(named) ? named : defaultSignerSocket(stateDir);
+  const acceptanceHidden = process.env["LEMMA_ACCEPTANCE_CONFINE"] === "0" ? false : [dirname(socket), socket];
+  if (acceptanceHidden === false) console.error("lemma-mcp: LEMMA_ACCEPTANCE_CONFINE=0: acceptance tests run unconfined, able to read the Lemma state directory and reach the signer");
+  else {
+    // Checked in the background, so the trial run never delays the MCP handshake.
+    void confinementAvailable().then((ok) => {
+      if (!ok) console.error("lemma-mcp: acceptance tests run unconfined here (the sandbox needs Linux with unprivileged user namespaces, unshare and mount): a release's tests could read the Lemma state directory and reach the signer. Verify on Linux for receipts you can fully trust.");
+    });
+  }
   const server = createBridgeServer({
     remote,
     scanner,
@@ -58,6 +86,7 @@ async function serve(): Promise<void> {
     cwd: () => root,
     runningNodeMajor,
     monotonic: () => performance.now(),
+    registerPaidTools: payments.registerPaidTools,
     registerAdoptionTools: adoptionTools({
       inbox,
       remote,
@@ -65,9 +94,11 @@ async function serve(): Promise<void> {
       root,
       cwd: () => root,
       runningNodeMajor,
-      clock: () => new Date(),
+      clock,
       offlineAcceptance: process.env["LEMMA_ACCEPTANCE_OFFLINE"] === "1",
       installTimeoutSec: 600,
+      acceptanceHidden,
+      signReceipt: payments.signReceipt,
     }),
   });
   // Installs are killed when the bridge exits or is stopped by a signal; after a crash, the next start's recovery kills a verified one before undoing its apply.

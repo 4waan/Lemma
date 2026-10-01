@@ -1,6 +1,7 @@
 import {
   type Address,
   AdoptionReceipt,
+  AgentId,
   Hex32,
   type PatchBundle,
   type PaymentTerms,
@@ -16,7 +17,7 @@ import { z } from "zod";
 
 import { describeError, safeStore } from "./errors.js";
 import type { Logger } from "./log.js";
-import type { LemmaStore, ResolutionRow } from "./persistence.js";
+import type { LemmaStore, ResolutionRow, UnsettledCursor } from "./persistence.js";
 import type { ResolutionReader } from "./store.js";
 
 export type QuoteResult =
@@ -36,11 +37,22 @@ export interface VerifiedPayment {
   readonly validBefore: Date;
 }
 
+/**
+ * What `commit` did: `COMMITTED` settled the row; `UNCHANGED` found no row
+ * to settle (none unsettled with this nonce: already settled, say); `FAILED`
+ * could not reach the store (logged, left for the reconciler).
+ */
+export type CommitResult = "COMMITTED" | "UNCHANGED" | "FAILED";
+
 /** What the payment work passes to `commit` once settlement succeeded. */
 export interface Settlement {
   /** The nonce of the authorization that settled, so a stale settlement never lands on a re-armed row. */
   readonly nonce: string;
-  /** The settlement transaction (or the facilitator's reference); one settlement settles one resolution. */
+  /**
+   * The transaction that used the authorization. An authorization settles one
+   * resolution, once; one transaction may use several authorizations (anyone
+   * may submit them), so it may settle several resolutions, each paid.
+   */
   readonly settlementRef: string;
 }
 
@@ -55,9 +67,11 @@ export type ReceiptResult = "ACCEPTED" | "DUPLICATE" | "NOT_SETTLED" | "TOO_EARL
  * A receipt as the buyer's bridge submits it: the receipt, and the preview id
  * it bought. The preview id is the recovery secret, known only to the buyer's
  * bridge, so it proves the submitter is the buyer. A resolution id is public
- * and proves nothing.
+ * and proves nothing. `agentId` is the buyer's ERC-8004 agent, when its bridge
+ * opted in (LEMMA_AGENT_ID): it is stored with the receipt, and the attester
+ * gives that agent feedback on the outcome only if the buyer's address controls it.
  */
-export const ReceiptSubmission = z.strictObject({ receipt: AdoptionReceipt, previewId: Hex32 });
+export const ReceiptSubmission = z.strictObject({ receipt: AdoptionReceipt, previewId: Hex32, agentId: AgentId.optional() });
 
 export type ReceiptSubmission = z.infer<typeof ReceiptSubmission>;
 
@@ -67,14 +81,22 @@ export const RECEIPT_CLOCK_SKEW_MS = 5 * 60_000;
 /** Normalized so the same authorization cannot pass as two by changing case. */
 const normalizeNonce = (nonce: string) => nonce.toLowerCase();
 
-/** What anyone may see about a resolution: no preview id (the recovery secret), no buyer, no bundle. */
+/** The UTC day of an ISO timestamp (`2026-10-01T12:00:03.123Z` is `2026-10-01`). */
+const utcDay = (iso: string) => new Date(iso).toISOString().slice(0, 10);
+
+/**
+ * What anyone may see about a resolution: no preview id (the recovery secret), no buyer, no bundle, and no time
+ * finer than the day it was created (core `ResolutionView.createdOn`), because a warranted resolution's id is
+ * public on chain and a precise time would point at the settlement that paid for it.
+ */
 export interface PublicResolution {
   readonly resolutionId: Hex32;
   readonly state: ResolutionRow["state"];
   readonly release: Resolution["release"];
   readonly payloadDigest: Hex32;
   readonly terms: PaymentTerms;
-  readonly createdAt: string;
+  /** The UTC day, `YYYY-MM-DD`. */
+  readonly createdOn: string;
   readonly receipt: { readonly outcome: AdoptionReceipt["outcome"]; readonly verified: boolean } | null;
 }
 
@@ -90,12 +112,17 @@ export interface PublicResolution {
  *   One authorization (payer and nonce) backs one resolution only: a second
  *   resolution paid with it gets PAYMENT_REUSED.
  * - `commit` runs after settlement and only changes state, for the
- *   authorization that settled. It never throws, because a throw there would
- *   tell a buyer who already paid that settlement failed; failures are logged
- *   and left to the reconciler (`listUnsettled`, `expire`).
+ *   authorization that settled, and answers whether it did (`CommitResult`).
+ *   It never throws, because a throw there would tell a buyer who already paid
+ *   that settlement failed; failures are logged and left to the reconciler
+ *   (`listUnsettled`, `expire`).
  * - `expire` takes the nonce the reconciler judged, and only expires a row that
  *   still holds it after its window closed.
  * - `recover` (free tool) returns only settled resolutions.
+ *
+ * The payment path (`payments/`) drives it: the paid tool's handler calls
+ * `prepare`, x402's settlement hook calls `commit`, and the settlement
+ * reconciler calls `listUnsettled`, `commit` and `expire`.
  *
  * A store failure rejects with a `StoreError` that carries only the error's
  * name and code (never SQL, parameters or a connection string), so the
@@ -120,7 +147,12 @@ export class ResolutionService implements ResolutionReader {
     return { ok: true, terms: preview.offer.terms, preview };
   }
 
-  async prepare(previewId: Hex32, payment: VerifiedPayment, now: Date = this.clock()): Promise<PrepareResult> {
+  /**
+   * `claimHash` is the buyer's warranty credit commitment from the paid call
+   * (core `BuyInput`); it is stored with the row, and a re-armed row takes the
+   * new payment's one.
+   */
+  async prepare(previewId: Hex32, payment: VerifiedPayment, now: Date = this.clock(), claimHash: Hex32 | null = null): Promise<PrepareResult> {
     const quote = await this.quote(previewId, now);
     if (!quote.ok) return quote;
     const preview = quote.preview;
@@ -144,7 +176,7 @@ export class ResolutionService implements ResolutionReader {
       terms: quote.terms,
       createdAt: now.toISOString(),
     });
-    const row: ResolutionRow = { resolutionId, previewId, payer: payment.payer, state: "prepared", nonce, validBefore: payment.validBefore, settlementRef: null, resolution };
+    const row: ResolutionRow = { resolutionId, previewId, payer: payment.payer, state: "prepared", nonce, validBefore: payment.validBefore, settlementRef: null, claimHash, resolution };
     if (await this.store.insertPrepared(row, now)) return { ok: true, resolution, bundle };
 
     const existing = await this.store.getResolution(resolutionId);
@@ -152,7 +184,7 @@ export class ResolutionService implements ResolutionReader {
     if (existing === undefined) return { ok: false, reason: "PAYMENT_REUSED" };
     if (existing.state === "settled") return { ok: false, reason: "ALREADY_SETTLED" };
     if (existing.state === "expired") {
-      const rearmed = await this.store.rearmExpired(resolutionId, nonce, payment.validBefore, now);
+      const rearmed = await this.store.rearmExpired(resolutionId, nonce, payment.validBefore, now, claimHash);
       if (rearmed === "REARMED") return { ok: true, resolution: existing.resolution, bundle };
       if (rearmed === "PAYMENT_REUSED") return { ok: false, reason: "PAYMENT_REUSED" };
     }
@@ -160,19 +192,26 @@ export class ResolutionService implements ResolutionReader {
     return { ok: false, reason: current?.state === "settled" ? "ALREADY_SETTLED" : "IN_FLIGHT" };
   }
 
-  /** Records settlement by the authorization that settled. Never throws. */
-  async commit(resolutionId: Hex32, settlement: Settlement): Promise<void> {
+  /** Records settlement by the authorization that settled, and says whether it did. Never throws. */
+  async commit(resolutionId: Hex32, settlement: Settlement): Promise<CommitResult> {
     try {
       const changed = await this.store.markSettled(resolutionId, normalizeNonce(settlement.nonce), settlement.settlementRef, this.clock());
-      if (!changed) this.logger.log("warn", "commit.no_change", { resolutionId });
+      if (changed) return "COMMITTED";
+      this.logger.log("warn", "commit.no_change", { resolutionId });
+      return "UNCHANGED";
     } catch (error) {
       this.logger.log("error", "commit.failed", { resolutionId, error: describeError(error) });
+      return "FAILED";
     }
   }
 
-  /** Prepared rows whose authorization ended before `before`: the payment reconciler checks each on chain. */
-  listUnsettled(before: Date, limit = 100): Promise<ResolutionRow[]> {
-    return this.store.listUnsettled(before, limit);
+  /**
+   * Prepared rows whose authorization ended before `before`, oldest window
+   * first, after `after` when given: the payment reconciler pages through
+   * them and checks each on chain.
+   */
+  listUnsettled(before: Date, limit = 100, after?: UnsettledCursor): Promise<ResolutionRow[]> {
+    return this.store.listUnsettled(before, limit, after);
   }
 
   /**
@@ -200,13 +239,14 @@ export class ResolutionService implements ResolutionReader {
    * Accepts the buyer's adoption receipt for a settled resolution. Only the
    * holder of the preview id (the buyer's bridge) can submit it, so nobody
    * else can take the resolution's one receipt slot. The first accepted
-   * receipt wins; its signature is verified later by the payment work, and
+   * receipt wins, signed or not; its signature is checked later against the
+   * resolution's buyer by the receipt verifier (`payments/receipts.ts`), and
    * until then it counts for nothing (`verified: false`). A resolution whose
    * preview id does not match is answered as unknown, so the answer confirms
    * nothing to anyone else.
    */
   async acceptReceipt(submission: ReceiptSubmission): Promise<ReceiptResult> {
-    const { receipt, previewId } = ReceiptSubmission.parse(submission);
+    const { receipt, previewId, agentId } = ReceiptSubmission.parse(submission);
     const row = await this.store.getResolution(receipt.resolutionId);
     if (row === undefined || row.previewId !== previewId) return "UNKNOWN_RESOLUTION";
     if (row.state !== "settled") return "NOT_SETTLED";
@@ -216,7 +256,7 @@ export class ResolutionService implements ResolutionReader {
     if (recordedAt < Date.parse(row.resolution.createdAt) - RECEIPT_CLOCK_SKEW_MS) return "MISMATCH";
     // A buyer clock running fast: the signed receipt stays valid, so the bridge keeps it and sends it again later.
     if (recordedAt > now.getTime() + RECEIPT_CLOCK_SKEW_MS) return "TOO_EARLY";
-    return (await this.store.insertReceipt(receipt, adoptionReceiptDigest(receipt), now)) ? "ACCEPTED" : "DUPLICATE";
+    return (await this.store.insertReceipt(receipt, adoptionReceiptDigest(receipt), now, agentId ?? null)) ? "ACCEPTED" : "DUPLICATE";
   }
 
   async publicResolution(resolutionId: Hex32): Promise<PublicResolution | undefined> {
@@ -230,7 +270,7 @@ export class ResolutionService implements ResolutionReader {
       release: r.release,
       payloadDigest: r.payloadDigest,
       terms: r.terms,
-      createdAt: r.createdAt,
+      createdOn: utcDay(r.createdAt),
       receipt: receipt === undefined ? null : { outcome: receipt.receipt.outcome, verified: receipt.verified },
     };
   }

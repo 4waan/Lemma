@@ -1,6 +1,6 @@
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 
-import type { Preview, RepositoryProfile } from "@lemma/core";
+import type { BuyerPass, Hex32, Preview, RepositoryProfile } from "@lemma/core";
 import { canonicalize } from "@lemma/core";
 
 import { describeError } from "./errors.js";
@@ -62,14 +62,38 @@ export class DemandRecorder {
     this.sourceKey = sourceKey ?? randomBytes(32);
   }
 
-  async record(preview: Preview, capability: string, profile: RepositoryProfile, now: Date, source: string): Promise<void> {
+  /**
+   * Records a preview. A buyer pass counts only when the server issued it
+   * (its digest is stored, checked in the same write); an unknown one is
+   * ignored, never an error, so a made-up pass counts as a preview without one.
+   */
+  async record(preview: Preview, capability: string, profile: RepositoryProfile, now: Date, source: string, buyerPass?: BuyerPass): Promise<void> {
     const day = now.toISOString().slice(0, 10);
     const keyedSource = createHmac("sha256", this.sourceKey).update(`${day}\n${source}`).digest("hex");
+    const bucket = demandBucket(preview, capability, profile);
+    const buyer = buyerPass === undefined ? undefined : { passDigest: passDigest(buyerPass), keyed: createHmac("sha256", this.sourceKey).update(`${day}\nbuyer:${buyerPass}`).digest("hex") };
     const write = this.store
-      .recordDemand(day, demandBucket(preview, capability, profile), preview.profileDigest, keyedSource)
+      .recordDemand(day, bucket, preview.profileDigest, keyedSource, buyer)
       .catch((error: unknown) => this.logger.log("warn", "demand.record_failed", { error: describeError(error) }));
     let timer: NodeJS.Timeout | undefined;
     await Promise.race([write, new Promise<void>((resolve) => (timer = setTimeout(resolve, this.budgetMs)))]);
     clearTimeout(timer);
   }
+
+  /**
+   * The buyer pass for a settled resolution: keyed with the source key, so it
+   * is the same on every claim and cannot be guessed, and stored only as its
+   * digest. Without the key, the stored digests say nothing about which
+   * resolution (or wallet) a pass came from.
+   */
+  async issuePass(resolutionId: Hex32): Promise<BuyerPass> {
+    const pass = `0x${createHmac("sha256", this.sourceKey).update(`buyer-pass\n${resolutionId}`).digest("hex")}` as BuyerPass;
+    await this.store.addBuyerPass(passDigest(pass));
+    return pass;
+  }
+}
+
+/** A pass as the store keeps it. */
+export function passDigest(pass: BuyerPass): Hex32 {
+  return `0x${createHash("sha256").update(pass).digest("hex")}` as Hex32;
 }

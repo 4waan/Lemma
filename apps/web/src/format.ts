@@ -1,7 +1,8 @@
-import { ARBITRUM_SEPOLIA, type ReasonCode, formatUsdc } from "@lemma/core";
+import { ARBITRUM_SEPOLIA, type CapabilityId, type ReasonCode, formatUsdc } from "@lemma/core";
 
+/** An atomic USDC string as an exact amount with at least two decimals, and its unit. */
 export function usdc(atomic: string): string {
-  return `${formatUsdc(BigInt(atomic))} USDC`;
+  return `${usdcAmount(BigInt(atomic))} USDC`;
 }
 
 /** Basis points as a percentage with two decimals, in integer math. */
@@ -10,6 +11,14 @@ export function percent(bps: string | bigint): string {
   const sign = value < 0n ? "-" : "";
   const abs = value < 0n ? -value : value;
   return `${sign}${abs / 100n}.${(abs % 100n).toString().padStart(2, "0")} %`;
+}
+
+/** A count in thousandths as an exact decimal without trailing zeros: "3000" is "3", "21727" is "21.727". */
+export function thousandths(milli: string | bigint): string {
+  const value = BigInt(milli);
+  const fraction = (value % 1000n).toString().padStart(3, "0").replace(/0+$/, "");
+  const whole = (value / 1000n).toLocaleString("en-US");
+  return fraction === "" ? whole : `${whole}.${fraction}`;
 }
 
 export function shortHex(hex: string): string {
@@ -43,3 +52,21 @@ export const REASON_TEXT: Readonly<Record<ReasonCode, string>> = {
 export function reasonText(code: string): string {
   return (REASON_TEXT as Readonly<Record<string, string>>)[code] ?? code;
 }
+
+/**
+ * Atomic USDC as an exact decimal with at least two places ("2.50", "0.005"),
+ * for columns and charts where amounts are compared. Never rounds.
+ */
+export function usdcAmount(atomic: bigint): string {
+  const sign = atomic < 0n ? "-" : "";
+  const text = formatUsdc(atomic < 0n ? -atomic : atomic);
+  const [whole, fraction = ""] = text.split(".");
+  return `${sign}${whole}.${fraction.padEnd(2, "0")}`;
+}
+
+/** Plain words for each capability id; the ids come from core. */
+export const CAPABILITY_TEXT: Readonly<Record<CapabilityId, string>> = {
+  "mcp-server.add-payment-gating": "x402 payment gating for a TypeScript MCP server",
+  "mcp-client.add-paying-client": "An x402-paying MCP client with spending limits",
+  "node-service.add-payment-facilitator": "An Arbitrum x402 facilitator for a Node service",
+};

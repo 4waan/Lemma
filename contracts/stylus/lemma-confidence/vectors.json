@@ -1,0 +1,677 @@
+{
+  "about": "Generated from contracts/stylus/lemma-confidence (LEMMA_WRITE_VECTORS=1 cargo test -p lemma-confidence --test vectors) and replayed by packages/confidence. Integers that can pass 2^53 are decimal strings; times are Unix seconds.",
+  "confidence": [
+    {
+      "expected": {
+        "confidenceBps": 0,
+        "effectiveNMilli": "0"
+      },
+      "name": "no data",
+      "now": "1760000000",
+      "prior": {
+        "failures": 0,
+        "passes": 0
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "0",
+        "passWad": "0"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 8039,
+        "effectiveNMilli": "20000"
+      },
+      "name": "prior only: 19 of 20 treatment runs passed",
+      "now": "1760000000",
+      "prior": {
+        "failures": 1,
+        "passes": 19
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "0",
+        "passWad": "0"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 2698,
+        "effectiveNMilli": "1000"
+      },
+      "name": "prior only: a one-run probe",
+      "now": "1760000000",
+      "prior": {
+        "failures": 0,
+        "passes": 1
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "0",
+        "passWad": "0"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 0,
+        "effectiveNMilli": "5000"
+      },
+      "name": "prior only: every run failed",
+      "now": "1760000000",
+      "prior": {
+        "failures": 5,
+        "passes": 0
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "0",
+        "passWad": "0"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 6488,
+        "effectiveNMilli": "5000"
+      },
+      "name": "outcomes only: five passes now",
+      "now": "1760000000",
+      "prior": {
+        "failures": 0,
+        "passes": 0
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "5000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 7444,
+        "effectiveNMilli": "22777"
+      },
+      "name": "benchmark and outcomes",
+      "now": "1760000000",
+      "prior": {
+        "failures": 2,
+        "passes": 18
+      },
+      "stats": {
+        "failWad": "500000000000000000",
+        "last": "1759136000",
+        "passWad": "3000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 9989,
+        "effectiveNMilli": "1001253000"
+      },
+      "name": "large n: a million passes and a thousand failures",
+      "now": "1760000000",
+      "prior": {
+        "failures": 1000,
+        "passes": 1000000
+      },
+      "stats": {
+        "failWad": "3000000000000000000",
+        "last": "1760000000",
+        "passWad": "250000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 5000,
+        "effectiveNMilli": "18446744073709551615"
+      },
+      "name": "every input at its maximum",
+      "now": "1760000000",
+      "prior": {
+        "failures": 4294967295,
+        "passes": 4294967295
+      },
+      "stats": {
+        "failWad": "340282366920938463463374607431768211455",
+        "last": "1760000000",
+        "passWad": "340282366920938463463374607431768211455"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 0,
+        "effectiveNMilli": "0"
+      },
+      "name": "one wei of evidence",
+      "now": "1760000000",
+      "prior": {
+        "failures": 0,
+        "passes": 0
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "1"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 6522,
+        "effectiveNMilli": "10000"
+      },
+      "name": "long gap: outcomes 200 half-lives old leave the prior",
+      "now": "1760000000",
+      "prior": {
+        "failures": 1,
+        "passes": 9
+      },
+      "stats": {
+        "failWad": "40000000000000000000",
+        "last": "1241600000",
+        "passWad": "40000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 6475,
+        "effectiveNMilli": "12828"
+      },
+      "name": "a 45-day gap",
+      "now": "1760000000",
+      "prior": {
+        "failures": 1,
+        "passes": 9
+      },
+      "stats": {
+        "failWad": "2000000000000000000",
+        "last": "1756112000",
+        "passWad": "6000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 6481,
+        "effectiveNMilli": "18000"
+      },
+      "name": "now before last counts as no time passed",
+      "now": "1757408000",
+      "prior": {
+        "failures": 1,
+        "passes": 9
+      },
+      "stats": {
+        "failWad": "2000000000000000000",
+        "last": "1760000000",
+        "passWad": "6000000000000000000"
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 0,
+        "effectiveNMilli": "0"
+      },
+      "name": "weight 0 only is no data",
+      "now": "1760000000",
+      "prior": {
+        "failures": 0,
+        "passes": 0
+      },
+      "stats": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "0"
+      }
+    }
+  ],
+  "constants": {
+    "decayTable": [
+      "707106781186547524",
+      "840896415253714543",
+      "917004043204671231",
+      "957603280698573646",
+      "978572062087700134",
+      "989228013193975484",
+      "994599423483633175",
+      "997296056085470126",
+      "998647112890970173",
+      "999323327502650752",
+      "999661606496243683",
+      "999830788931929063",
+      "999915390886613497",
+      "999957694548431132",
+      "999978847050491929",
+      "999989423469314464",
+      "999994711720674283",
+      "999997355856841394",
+      "999998677927546759",
+      "999999338963554895",
+      "999999669481722826",
+      "999999834740847757",
+      "999999917370420465",
+      "999999958685209379",
+      "999999979342604476",
+      "999999989671302184",
+      "999999994835651079",
+      "999999997417825536",
+      "999999998708912767",
+      "999999999354456383",
+      "999999999677228191",
+      "999999999838614095"
+    ],
+    "fractionBits": 32,
+    "halfLifeSeconds": "2592000",
+    "maxWeightBps": 10000,
+    "wad": "1000000000000000000",
+    "z2Wad": "2705543454095414564",
+    "zWad": "1644853626951472714"
+  },
+  "decay": [
+    {
+      "dt": "0",
+      "expected": "1000000000000000000",
+      "name": "no time passes",
+      "valueWad": "1000000000000000000"
+    },
+    {
+      "dt": "1",
+      "expected": "999999732583592497",
+      "name": "one second",
+      "valueWad": "1000000000000000000"
+    },
+    {
+      "dt": "1296000",
+      "expected": "707106781186547524",
+      "name": "half a half-life",
+      "valueWad": "1000000000000000000"
+    },
+    {
+      "dt": "2592000",
+      "expected": "500000000000000000",
+      "name": "one half-life",
+      "valueWad": "1000000000000000000"
+    },
+    {
+      "dt": "2592001",
+      "expected": "499999866291796248",
+      "name": "one half-life and a second",
+      "valueWad": "1000000000000000000"
+    },
+    {
+      "dt": "3888000",
+      "expected": "530330085889910643",
+      "name": "45 days",
+      "valueWad": "1500000000000000000"
+    },
+    {
+      "dt": "331775999",
+      "expected": "0",
+      "name": "just under 128 half-lives",
+      "valueWad": "340282366920938463463374607431768211455"
+    },
+    {
+      "dt": "331776000",
+      "expected": "0",
+      "name": "128 half-lives reach zero",
+      "valueWad": "340282366920938463463374607431768211455"
+    },
+    {
+      "dt": "18446744073709551615",
+      "expected": "0",
+      "name": "the longest gap",
+      "valueWad": "340282366920938463463374607431768211455"
+    },
+    {
+      "dt": "864000",
+      "expected": "270082293622792436320633173056205339120",
+      "name": "the largest sum over a third of a half-life",
+      "valueWad": "340282366920938463463374607431768211455"
+    },
+    {
+      "dt": "2591999",
+      "expected": "0",
+      "name": "one wei",
+      "valueWad": "1"
+    },
+    {
+      "dt": "1000",
+      "expected": "0",
+      "name": "nothing to decay",
+      "valueWad": "0"
+    },
+    {
+      "dt": "12345678",
+      "expected": "4546855980996990185635811",
+      "name": "an odd sum and an odd gap",
+      "valueWad": "123456789012345678901234567"
+    }
+  ],
+  "fold": [
+    {
+      "expected": {
+        "confidenceBps": 8039,
+        "effectiveNMilli": "20000",
+        "stats": {
+          "failWad": "0",
+          "last": "0",
+          "passWad": "0"
+        }
+      },
+      "name": "the prior alone",
+      "now": "1760000000",
+      "outcomes": [],
+      "prior": {
+        "failures": 1,
+        "passes": 19
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 7337,
+        "effectiveNMilli": "21727",
+        "stats": {
+          "failWad": "445449359118095810",
+          "last": "1759568000",
+          "passWad": "1493861146662136965"
+        }
+      },
+      "name": "outcomes out of order apply in time order",
+      "now": "1760000000",
+      "outcomes": [
+        {
+          "at": "1759568000",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1756544000",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1758272000",
+          "passed": true,
+          "weightBps": 5000
+        },
+        {
+          "at": "1752224000",
+          "passed": true,
+          "weightBps": 10000
+        }
+      ],
+      "prior": {
+        "failures": 2,
+        "passes": 18
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 4529,
+        "effectiveNMilli": "5198",
+        "stats": {
+          "failWad": "1000000000000000000",
+          "last": "1760000000",
+          "passWad": "1250000000000000000"
+        }
+      },
+      "name": "ties at one second",
+      "now": "1760086400",
+      "outcomes": [
+        {
+          "at": "1760000000",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1760000000",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1760000000",
+          "passed": true,
+          "weightBps": 2500
+        }
+      ],
+      "prior": {
+        "failures": 0,
+        "passes": 3
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 3778,
+        "effectiveNMilli": "4250",
+        "stats": {
+          "failWad": "0",
+          "last": "1759136000",
+          "passWad": "314980262507607199"
+        }
+      },
+      "name": "a weight 0 outcome still moves time",
+      "now": "1760000000",
+      "outcomes": [
+        {
+          "at": "1754816000",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759136000",
+          "passed": false,
+          "weightBps": 0
+        }
+      ],
+      "prior": {
+        "failures": 1,
+        "passes": 3
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 6522,
+        "effectiveNMilli": "10000",
+        "stats": {
+          "failWad": "1977159968518352533",
+          "last": "1728550400",
+          "passWad": "0"
+        }
+      },
+      "name": "outcomes a year old",
+      "now": "1760000000",
+      "outcomes": [
+        {
+          "at": "1728464000",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1728550400",
+          "passed": false,
+          "weightBps": 10000
+        }
+      ],
+      "prior": {
+        "failures": 1,
+        "passes": 9
+      }
+    },
+    {
+      "expected": {
+        "confidenceBps": 4887,
+        "effectiveNMilli": "10601",
+        "stats": {
+          "failWad": "2742960385587275075",
+          "last": "1760000000",
+          "passWad": "7858676313407600693"
+        }
+      },
+      "name": "outcomes without evidence",
+      "now": "1760000000",
+      "outcomes": [
+        {
+          "at": "1760000000",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759913600",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759827200",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759740800",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759654400",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759568000",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759481600",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759395200",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759308800",
+          "passed": false,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759222400",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759136000",
+          "passed": true,
+          "weightBps": 10000
+        },
+        {
+          "at": "1759049600",
+          "passed": true,
+          "weightBps": 10000
+        }
+      ],
+      "prior": {
+        "failures": 0,
+        "passes": 0
+      }
+    }
+  ],
+  "record": [
+    {
+      "expected": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "1000000000000000000"
+      },
+      "name": "a first pass",
+      "now": "1760000000",
+      "passed": true,
+      "stats": {
+        "failWad": "0",
+        "last": "0",
+        "passWad": "0"
+      },
+      "weightBps": 10000
+    },
+    {
+      "expected": {
+        "failWad": "793700526026797082",
+        "last": "1760864000",
+        "passWad": "2881101578080391265"
+      },
+      "name": "a half-weight pass after 10 days",
+      "now": "1760864000",
+      "passed": true,
+      "stats": {
+        "failWad": "1000000000000000000",
+        "last": "1760000000",
+        "passWad": "3000000000000000000"
+      },
+      "weightBps": 5000
+    },
+    {
+      "expected": {
+        "failWad": "1000000000000000000",
+        "last": "1762592000",
+        "passWad": "2000000000000000000"
+      },
+      "name": "a failure after one half-life",
+      "now": "1762592000",
+      "passed": false,
+      "stats": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "4000000000000000000"
+      },
+      "weightBps": 10000
+    },
+    {
+      "expected": {
+        "failWad": "250000000000000000",
+        "last": "1765184000",
+        "passWad": "500000000000000000"
+      },
+      "name": "weight 0 decays and adds nothing",
+      "now": "1765184000",
+      "passed": true,
+      "stats": {
+        "failWad": "1000000000000000000",
+        "last": "1760000000",
+        "passWad": "2000000000000000000"
+      },
+      "weightBps": 0
+    },
+    {
+      "expected": {
+        "failWad": "1250000000000000000",
+        "last": "1760000000",
+        "passWad": "2000000000000000000"
+      },
+      "name": "now before last decays nothing and keeps last",
+      "now": "1759913600",
+      "passed": false,
+      "stats": {
+        "failWad": "1000000000000000000",
+        "last": "1760000000",
+        "passWad": "2000000000000000000"
+      },
+      "weightBps": 2500
+    },
+    {
+      "expected": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "340282366920938463463374607431768211455"
+      },
+      "name": "a sum saturates",
+      "now": "1760000000",
+      "passed": true,
+      "stats": {
+        "failWad": "0",
+        "last": "1760000000",
+        "passWad": "340282366920938463463374607431768211454"
+      },
+      "weightBps": 10000
+    }
+  ],
+  "schema": "lemma.confidence-vectors/1"
+}

@@ -298,12 +298,47 @@
       },
       "canonical": "{\"kind\":\"run-record\",\"value\":{\"acceptance\":{\"exitCode\":0,\"passed\":true},\"arm\":\"treatment\",\"benchmarkVersion\":\"bench-1\",\"filesChanged\":3,\"finishedAt\":\"2026-09-21T10:30:00.000Z\",\"fixtureProfileDigest\":\"0x1313131313131313131313131313131313131313131313131313131313131313\",\"humanInterventions\":0,\"model\":\"example-model-1\",\"payment\":{\"amountUsdc\":\"250000\",\"gasCostMicroUsd\":\"10000\",\"transaction\":\"0x7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a\"},\"rawModelCostMicroUsd\":\"900000\",\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"repetition\":1,\"retries\":1,\"runId\":\"0xc1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1\",\"schemaVersion\":\"1\",\"startedAt\":\"2026-09-21T10:00:00.000Z\",\"taskId\":\"mcp-server-gating\",\"tokens\":{\"cacheRead\":150000,\"cacheWrite\":10000,\"input\":400000,\"output\":20000,\"reasoning\":5000},\"toolCalls\":12}}",
       "digest": "0xee6e4815dd8d28251dfc59fc4e0016c6f3ecc665ad8de2ea63281f645ec70e92"
+    },
+    {
+      "name": "payment-nonce",
+      "kind": "payment-nonce",
+      "value": {
+        "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
+        "previewId": "0x2222222222222222222222222222222222222222222222222222222222222222"
+      },
+      "canonical": "{\"kind\":\"payment-nonce\",\"value\":{\"previewId\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\"}}",
+      "digest": "0xf07315862ee17050e9977c56cf59b411b1ecdd692244a7b0496a864f0d17a183"
+    },
+    {
+      "name": "acceptance-recipe",
+      "kind": "acceptance-recipe",
+      "value": {
+        "script": "test",
+        "args": [
+          "--run"
+        ],
+        "timeoutSec": 300,
+        "env": [
+          "CI",
+          "NODE_ENV"
+        ]
+      },
+      "canonical": "{\"kind\":\"acceptance-recipe\",\"value\":{\"args\":[\"--run\"],\"env\":[\"CI\",\"NODE_ENV\"],\"script\":\"test\",\"timeoutSec\":300}}",
+      "digest": "0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63"
     }
   ],
   "derived": {
     "resolutionId": "0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1",
     "adoptionReceiptDigest": "0xac81ea136ad765b8b8b934f7203162209ecbc7e8d03d8724d6f20f7c10ebdfd6",
     "catalogDigest": "0x91e4753ca8a454383e5a46d0674dce650bd62eea9211039a9a6d34326d08711b",
-    "baseReleaseDigest": "0x1dc49faba87349a8220ccfd14bb29e3552494b5485975652123a87b6ecce1188"
+    "baseReleaseDigest": "0x1dc49faba87349a8220ccfd14bb29e3552494b5485975652123a87b6ecce1188",
+    "paymentNonce": "0xf07315862ee17050e9977c56cf59b411b1ecdd692244a7b0496a864f0d17a183",
+    "warrantyClaimHash": "0x8aa8ce960abafa662b3494e6caa16ceeb38db251c08e1ebacb292bfde95a73c2",
+    "adoptionReceiptTypedDataHash": "0x276bfda9064f1aa742d506914c84c5e63b0b0b4774f5ff5c017b9eb9a765beaa",
+    "acceptanceRecipeDigest": "0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63",
+    "adoptionFeedbackFileBytes": "{\"agentId\":7,\"agentRegistry\":\"eip155:421614:0x8004a818bfb912233c491871b3d84c89a494bd9e\",\"clientAddress\":\"eip155:421614:0x00000000000000000000000000000000000000f1\",\"createdAt\":\"2026-09-24T13:00:00.000Z\",\"endpoint\":\"\",\"lemma\":{\"acceptance\":{\"durationMs\":41250,\"exitCode\":0,\"outputDigest\":\"0x8888888888888888888888888888888888888888888888888888888888888888\"},\"acceptanceRecipeDigest\":\"0xc1c469278ee1ef1822c50153ca7fcba077c6d69532403b24ca3b07ed66454d63\",\"capability\":\"mcp-server.add-payment-gating\",\"finalizedAt\":\"2026-09-24T13:00:00.000Z\",\"kind\":\"lemma.adoption-evidence\",\"registry\":{\"address\":\"0x00000000000000000000000000000000000000e1\",\"chainId\":421614},\"release\":{\"profileIndex\":0,\"releaseDigest\":\"0x5555555555555555555555555555555555555555555555555555555555555555\",\"releaseId\":\"mcp-server-payment-gating\",\"version\":\"0.1.0\"},\"resolutionId\":\"0xd44ec4f0daea55b5e56e16a17db9559bd0e0d222663405ad6d0e8654a6b504c1\",\"schemaVersion\":\"1\",\"verdict\":\"passed\"},\"tag1\":\"lemma.adoption\",\"tag2\":\"mcp-server.add-payment-gating\",\"value\":100,\"valueDecimals\":0}",
+    "adoptionFeedbackHash": "0xd3290b75f9e0e0b4f24ec2824b63f61e8f1de8ffd79c429d6116205c0b87b6e9",
+    "warrantyVoucherTypedDataHash": "0x2770a4591ffeb5922cf0d77e5f159ea23e24297c9164f970a1cf74d85a1a2473",
+    "warrantyOutcomeTypedDataHash": "0xc4f2af8ca4c3b7a3a512cf4621f3ebf6de602412ed19545450663cf604c8b590"
   }
 }

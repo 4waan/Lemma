@@ -370,7 +370,16 @@ describe("applyPlan", () => {
     await j.stall({ during: (onGroup) => onGroup(orphan.pid as number) });
     j.crash();
     expect(j.recover()).toMatchObject({ recovered: 1 });
-    await new Promise((r) => setTimeout(r, 100));
+    // The pid is gone once the kill has landed and Node has reaped the orphan; on a busy machine both take a while.
+    const alive = () => {
+      try {
+        process.kill(orphan.pid as number, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (let i = 0; i < 40 && alive(); i++) await new Promise((r) => setTimeout(r, 50));
     expect(() => process.kill(orphan.pid as number, 0)).toThrow();
   });
 
@@ -423,7 +432,8 @@ describe("applyPlan", () => {
     expect(existsSync(empty)).toBe(false);
   });
 
-  it("compares start times only when read the same way, and reads them the same in every time zone", async () => {
+  // Both readers must work here: /proc or ps for this process, and ps itself. A sandbox that hides processes from ps cannot run this.
+  it.skipIf(processStart(process.pid) === null || psStart(process.pid) === null)("compares start times only when read the same way, and reads them the same in every time zone", async () => {
     expect(processStart(process.pid)).toMatch(/^(proc|ps):/);
     // ps is asked in UTC and the C locale, so bridges in different time zones read the same start time.
     const tz = process.env["TZ"];
@@ -452,7 +462,8 @@ describe("applyPlan", () => {
     expect(readFileSync(join(root, "run.sh"), "utf8")).toBe("echo 1\n");
   });
 
-  it("judges an owner in other namespaces by its heartbeat, and one from another boot as gone", async () => {
+  // Namespaces are Linux's (/proc/self/ns); CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/ns/pid"))("judges an owner in other namespaces by its heartbeat, and one from another boot as gone", async () => {
     const root = tree(start);
     const j = journalFor(root);
     await j.stall();
@@ -487,7 +498,7 @@ describe("applyPlan", () => {
     const { spawn } = await import("node:child_process");
     const run = (script: string) =>
       new Promise<string>((resolve, reject) => {
-        const child = spawn(process.execPath, ["--import", "tsx", join(dir, script)], { cwd: process.cwd(), stdio: ["ignore", "pipe", "inherit"] });
+        const child = spawn(process.execPath, ["--conditions=source", "--import", "tsx", join(dir, script)], { cwd: process.cwd(), stdio: ["ignore", "pipe", "inherit"] });
         let out = "";
         child.stdout.on("data", (d: Buffer) => (out += d.toString()));
         child.on("error", reject);

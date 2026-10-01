@@ -10,7 +10,8 @@ import { TaskRequest } from "./task.js";
 /**
  * MCP tool names shared by the server, the bridge and the dashboard.
  * `recoverResolution` is a free server tool the bridge calls on its own after a
- * lost paid response; it is never offered to the agent.
+ * lost paid response, and `claimBuyerPass` one it calls after a purchase; they
+ * are never offered to the agent.
  */
 export const LEMMA_TOOLS = {
   preview: "lemma_preview",
@@ -18,6 +19,7 @@ export const LEMMA_TOOLS = {
   applyResolution: "lemma_apply_resolution",
   verifyAdoption: "lemma_verify_adoption",
   recoverResolution: "lemma_recover_resolution",
+  claimBuyerPass: "lemma_claim_buyer_pass",
 } as const;
 
 export type LemmaToolName = (typeof LEMMA_TOOLS)[keyof typeof LEMMA_TOOLS];
@@ -35,9 +37,21 @@ export function toolResourceUrl(name: LemmaToolName): string {
  * SDK publishes `additionalProperties: false` and rejects extra keys instead of
  * silently dropping them.
  */
+/**
+ * A buyer pass: 32 bytes the server hands a bridge once one of its purchases
+ * settled (`lemma_claim_buyer_pass`). Sent with later previews, it lets demand
+ * count bridges that have bought apart from raw previews, so previews from
+ * addresses that never bought cannot move the "what to build next" ranking.
+ * It names no wallet and no resolution: the server keeps only its hash.
+ */
+export const BuyerPass = Hex32;
+
+export type BuyerPass = z.infer<typeof BuyerPass>;
+
 export const PreviewInput = z.strictObject({
   task: TaskRequest,
   profile: RepositoryProfile,
+  buyerPass: BuyerPass.optional(),
 });
 
 export type PreviewInput = z.infer<typeof PreviewInput>;
@@ -66,6 +80,16 @@ export const RecoverInput = z.strictObject({
 });
 
 export type RecoverInput = z.infer<typeof RecoverInput>;
+
+/** Bridge → server input of `lemma_claim_buyer_pass`: the same bearer pair as recovery, for a settled purchase. */
+export const ClaimBuyerPassInput = RecoverInput;
+
+export type ClaimBuyerPassInput = z.infer<typeof ClaimBuyerPassInput>;
+
+/** Output of `lemma_claim_buyer_pass`: the same pass for the same resolution on every call. */
+export const ClaimBuyerPassResult = z.strictObject({ buyerPass: BuyerPass });
+
+export type ClaimBuyerPassResult = z.infer<typeof ClaimBuyerPassResult>;
 
 /**
  * A delivered resolution with its patch bundle. The recover tool returns it as

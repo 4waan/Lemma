@@ -1,7 +1,9 @@
-import { CapabilityId, type Preview } from "@lemma/core";
+import { type BuyerPass, CapabilityId, type Preview, type ReleaseReputation } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 
+import { BuyerPassKeeper } from "./buyer-pass.js";
 import { driftCheck } from "./drift.js";
 import { type PackageRef, type ResolutionInbox, packageRef } from "./inbox.js";
 import { recoverPending } from "./recovery.js";
@@ -79,12 +81,14 @@ export interface PaidToolContext {
  * full Preview stays here.
  *
  * Tool calls are traced from the transport, before the SDK validates their
- * arguments, so a rejected call still counts.
+ * arguments, so a rejected call still counts. The tool list leaves the
+ * transport compacted (`compactToolList`).
  */
 export function createBridgeServer(deps: BridgeDeps): McpServer {
   const server = new McpServer({ name: "lemma-bridge", version: "0.1.0" }, { instructions: BRIDGE_INSTRUCTIONS });
   const cache = new Map<CapabilityId, PreviewCacheEntry>();
   const wallClock = deps.wallClock ?? Date.now;
+  const passes = new BuyerPassKeeper(deps.inbox, deps.remote, deps.monotonic);
   // Reuse and adapt offers alike are checked for drift and for an earlier purchase.
   const block = (preview: Preview, here: PackageRef) => ("release" in preview ? deps.inbox.offerBlock(preview.release.releaseDigest, preview.profileDigest, here) : undefined);
   /** Per capability, the latest preview started: an earlier one that finishes later never replaces its answer. */
@@ -111,6 +115,8 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
       if ("method" in message && message.method === "tools/call") deps.trace.event("tool", toolName(message.params));
       next?.(message, extra);
     };
+    const send = transport.send.bind(transport);
+    transport.send = (message, options) => send(compactToolList(message), options);
     return connect(transport);
   };
 
@@ -131,7 +137,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         if (cwd === undefined) {
           return { isError: true, content: [{ type: "text", text: `Lemma: ${pkg} is not a package directory in this workspace (it needs its own package.json, reached without links). Check the path and ask again; nothing is charged.` }] };
         }
-        const { preview, packageDir, incomplete } = await previewFor(deps, capability, cwd);
+        const { preview, reputation, packageDir, incomplete } = await previewFor(deps, capability, cwd, passes.current());
         const receivedMono = deps.monotonic();
         const receivedWall = wallClock();
         const ttlMs = "offer" in preview && preview.offer !== null ? Date.parse(preview.offer.validUntil) - Date.parse(preview.createdAt) : 0;
@@ -141,7 +147,7 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
         if (latest.get(capability) === call) cache.set(capability, { preview, here, drift, expiresAtMono: receivedMono + ttlMs, expiresAtWall: receivedWall + ttlMs });
         // Apply and verify later find a purchase from this preview by the package and capability it was for.
         if ("offer" in preview && preview.offer !== null) deps.inbox.notePreview(preview.previewId, here, capability);
-        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, block(preview, here)) }] };
+        return { content: [{ type: "text", text: previewText(preview, drift, deps.registerPaidTools !== undefined, incomplete, block(preview, here), reputation) }] };
       } catch (error) {
         return { isError: true, content: [{ type: "text", text: `Lemma preview failed (${error instanceof Error ? error.name : "error"}). Build it yourself; nothing is charged.` }] };
       }
@@ -153,6 +159,36 @@ export function createBridgeServer(deps: BridgeDeps): McpServer {
   return server;
 }
 
+/**
+ * A `tools/list` answer without the two fields the MCP SDK adds to every
+ * tool definition that only restate the protocol's defaults, because every
+ * character of a definition is in the agent's context on every turn: each
+ * input schema's `$schema` (draft-07; MCP reads a schema without one as JSON
+ * Schema 2020-12, and every keyword these schemas use means the same in
+ * both, which a test pins) and `execution: { taskSupport: "forbidden" }` (what an absent
+ * `execution` means). Any other message, or field, passes unchanged.
+ */
+export function compactToolList(message: JSONRPCMessage): JSONRPCMessage {
+  if (!("result" in message) || !Array.isArray(message.result["tools"])) return message;
+  return { ...message, result: { ...message.result, tools: message.result["tools"].map(compactTool) } };
+}
+
+function compactTool(tool: unknown): unknown {
+  if (!isRecord(tool)) return tool;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(tool)) {
+    if (key === "execution" && isRecord(value) && Object.keys(value).length === 1 && value["taskSupport"] === "forbidden") continue;
+    if (key === "inputSchema" && isRecord(value)) {
+      const schema = { ...value };
+      delete schema["$schema"];
+      out[key] = schema;
+    } else out[key] = value;
+  }
+  return out;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);
+
 /** The called tool's name for the trace: a Lemma tool name, or "other" for anything an agent could put there. */
 function toolName(params: unknown): string {
   const name = typeof params === "object" && params !== null ? (params as { name?: unknown }).name : undefined;
@@ -160,18 +196,24 @@ function toolName(params: unknown): string {
 }
 
 /**
- * Scans with the current interest set and asks for a preview. If the answer
- * comes from a different catalog than the interest set, the interest set is
- * revalidated and the preview asked once more, so a dependency the new catalog
- * matches on is not missing from the profile.
+ * Scans with the current interest set and asks for a preview, with this
+ * bridge's buyer pass if it has one. If the answer comes from a different
+ * catalog than the interest set, the interest set is revalidated and the
+ * preview asked once more, so a dependency the new catalog matches on is not
+ * missing from the profile.
  */
-async function previewFor(deps: BridgeDeps, capability: CapabilityId, cwd: string): Promise<{ preview: Preview; packageDir: string; incomplete: boolean }> {
+async function previewFor(
+  deps: BridgeDeps,
+  capability: CapabilityId,
+  cwd: string,
+  buyerPass: BuyerPass | undefined,
+): Promise<{ preview: Preview; reputation: ReleaseReputation | null; packageDir: string; incomplete: boolean }> {
   let interest = await deps.remote.interest();
   for (let attempt = 0; ; attempt++) {
     const { profile, notes } = deps.scanner.scan({ root: deps.root, cwd, interest: interest.capabilities[capability] ?? [], runningNodeMajor: deps.runningNodeMajor });
-    const preview = await deps.remote.preview({ task: { schemaVersion: "1", capability }, profile });
+    const { preview, reputation } = await deps.remote.previewWithRecord({ task: { schemaVersion: "1", capability }, profile, ...(buyerPass === undefined ? {} : { buyerPass }) });
     if (preview.catalogDigest === interest.catalogDigest || attempt > 0) {
-      return { preview, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
+      return { preview, reputation, packageDir: deps.scanner.packageDir(deps.root, cwd), incomplete: notes.some((n) => !n.startsWith("no .nvmrc")) };
     }
     interest = await deps.remote.interest(true);
   }

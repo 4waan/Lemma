@@ -19,10 +19,14 @@ packages/benchmark/runs/*
 contracts/cache/
 contracts/out/
 contracts/broadcast/
-contracts/lib/
+contracts/stylus/target/
+contracts/deployments/rehearsal/
 
 .data/
 *.sqlite
 *.sqlite3
 
 .railway/
+
+# Claude Code agent worktrees (temporary checkouts; never content)
+.claude/worktrees/

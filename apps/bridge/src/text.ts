@@ -1,4 +1,4 @@
-import { type Preview, formatUsdc } from "@lemma/core";
+import { type AdoptionReceipt, type Preview, type ReleaseReputation, formatUsdc } from "@lemma/core";
 
 import type { ApplyOutcome, Undone } from "./apply.js";
 
@@ -12,9 +12,10 @@ export type DriftCheck = "none" | "likely" | "unchecked";
  * No catalog prose (titles, provenance, file names) reaches the model, which
  * limits prompt injection through release content. `bought` says whether
  * this bridge already bought the offered release for this profile, or has a
- * purchase of it still settling.
+ * purchase of it still settling. `record` is the matched release's public
+ * adoption record (ERC-8004), appended as numbers only when it fits.
  */
-export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, bought?: "bought" | "pending"): string {
+export function previewText(preview: Preview, drift: DriftCheck, purchasesEnabled: boolean, incomplete = false, bought?: "bought" | "pending", record?: ReleaseReputation | null): string {
   const reasons = preview.reasons.join(", ");
   let text: string;
   if (preview.decision === "build") {
@@ -39,7 +40,21 @@ export function previewText(preview: Preview, drift: DriftCheck, purchasesEnable
     text = `Lemma: a verified resolution fits (decision ${preview.decision}). Price ${formatUsdc(BigInt(o.terms.amount))} USDC; expected raw model-cost saving ${formatUsdc(BigInt(o.expectedRawSavingUsdc))} USDC, about ${o.expectedTokenSaving} tokens; offer valid until ${o.validUntil}.${driftNote}${next}`;
   }
   if (incomplete && preview.decision !== "reuse") text += " Part of the repository profile (a dependency version, the lockfile or the Node pin) could not be read exactly, which can hide a match; fix that and ask again.";
+  // The record is left out rather than cutting the answer short.
+  if (record !== undefined && record !== null && "release" in preview && text.length + recordText(record).length <= MAX_TOOL_TEXT) text += recordText(record);
   return text.length <= MAX_TOOL_TEXT ? text : `${text.slice(0, MAX_TOOL_TEXT - 1)}…`;
+}
+
+/**
+ * ` Record: pass <p>%, n <count>.`: the share of the release capability's
+ * finalized adoptions that passed (from basis points, never rounded up) and how
+ * many there were. Numbers only.
+ */
+export function recordText(record: ReleaseReputation): string {
+  const whole = Math.trunc(record.passBps / 100);
+  const hundredths = record.passBps % 100;
+  const pass = hundredths === 0 ? String(whole) : `${whole}.${String(hundredths).padStart(2, "0").replace(/0$/, "")}`;
+  return ` Record: pass ${pass}%, n ${record.count}.`;
 }
 
 /** The longest bundle path, and path segment, an answer shows, and the most path text in one answer; the rest are counted, not shown. */
@@ -154,7 +169,10 @@ function commandText(command: { manager: string; script: string }): string {
   return /^test(:[a-z0-9]{1,12})?$/.test(command.script) ? `${command.manager} run ${command.script}` : `${command.manager} run of the release's acceptance script`;
 }
 
-export function notStartedText(command: { manager: string; script: string }, reason: "command-not-found" | "manager-unusable" | "offline-unavailable" | "script-missing" | null): string {
+export function notStartedText(command: { manager: string; script: string }, reason: "command-not-found" | "manager-unusable" | "offline-unavailable" | "confinement-failed" | "script-missing" | null): string {
+  if (reason === "confinement-failed") {
+    return "Lemma: the sandbox acceptance tests run in (Linux user, mount and PID namespaces that hide the Lemma state and signer) could not be set up for this run, so no test ran and nothing was recorded. Try again; LEMMA_ACCEPTANCE_CONFINE=0 runs tests without it.";
+  }
   if (reason === "offline-unavailable") {
     return "Lemma: offline acceptance (LEMMA_ACCEPTANCE_OFFLINE=1) needs Linux with unprivileged network namespaces and the ip tool, which are not available here, so no test ran and nothing was recorded. Unset it, or run where it works.";
   }
@@ -222,3 +240,21 @@ function firstRun(note: ReceiptNote, outcome: string): string {
 }
 
 const upper = (text: string) => `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+
+/** The line verify adds after a failed run on a purchase under warranty. */
+export const WARRANTY_HINT = " The purchase is under warranty: the evaluator reviews failures, and lemma_claim_refund collects a confirmed refund.";
+
+/**
+ * Whether a verify answer may carry `WARRANTY_HINT`: the receipt that counts
+ * failed, and the server has not refused it for good (`UNKNOWN_RESOLUTION`
+ * and `MISMATCH` leave the evaluator nothing to review). Verify then asks
+ * whether the purchase is under warranty.
+ */
+export function warrantyHintMayApply(outcome: AdoptionReceipt["outcome"], note: ReceiptNote): boolean {
+  return outcome === "failed" && note !== "UNKNOWN_RESOLUTION" && note !== "MISMATCH";
+}
+
+/** A verify answer with `WARRANTY_HINT`, which is left out rather than cutting the answer short. */
+export function withWarrantyHint(text: string): string {
+  return text.length + WARRANTY_HINT.length <= MAX_TOOL_TEXT ? `${text}${WARRANTY_HINT}` : text;
+}

@@ -110,10 +110,10 @@ From one funded key to a passing and a refunded purchase on chain, in this order
 
 Before you start:
 
-- The hosts are reachable: `sepolia-rollup.arbitrum.io` (RPC), `sepolia.arbiscan.io` and `api.etherscan.io` (explorer and verification).
+- The hosts are reachable: `sepolia-rollup.arbitrum.io` (RPC), `arbitrum-sepolia-rpc.publicnode.com` (the Stylus activation check of step 3, which the official endpoint refuses), `sepolia.arbiscan.io` and `api.etherscan.io` (explorer and verification).
 - One funded key, `ARBITRUM_SEPOLIA_FUNDER_PRIVATE_KEY`: about 0.05 Sepolia ETH and 20 testnet USDC from Circle's faucet. It only funds the roles.
 - `npm ci`, then `npm run build` (the scripts import the built packages); Foundry 1.7.1, cargo-stylus 0.10.9, and `jq`.
-- `ARBITRUM_SEPOLIA_RPC_URL` set in the shell for every step. The public endpoint (`https://sepolia-rollup.arbitrum.io/rpc`) carries no key; a provider's URL does, so keep it in the environment. Step 3 is the one place it becomes an argument (`--endpoint`): use the public endpoint there.
+- `ARBITRUM_SEPOLIA_RPC_URL` set in the shell for every step. The public endpoint (`https://sepolia-rollup.arbitrum.io/rpc`) carries no key; a provider's URL does, so keep it in the environment. Step 3 is the one place an endpoint becomes an argument (`--endpoint`): use a keyless public endpoint there.
 - A private directory outside the repository for the keys, for example `ROLES=~/.lemma/arbitrum-sepolia`.
 
 A key reaches a command only through that command's environment: `PROVIDER_PRIVATE_KEY="$(cat "$ROLES/provider.key")" <command>` sets it for the command alone. The shell history keeps only the `$(cat …)`, and other users' process lists never show it, but the same user and root can read the running command's environment (`ps e`, `/proc/<pid>/environ`), so run these on a machine no one else uses as that user. The scripts that read a key (`sepolia:roles`, `warranty:admin`, `agent:register`) refuse a key-shaped argument (`sepolia:roles` and `warranty:admin` with or without `0x`). A role's public address is `jq -r .roles.<role> "$ROLES/roles.json"`.
@@ -132,12 +132,12 @@ A key reaches a command only through that command's environment: `PROVIDER_PRIVA
 3. **Engine.** From `contracts/stylus/confidence-contract`, deploy the Stylus engine with its constructor in the same transaction, owned by the deployer and recording only from the registry (see [Deploying](../contracts/README.md#deploying-not-done-yet)):
 
    ```sh
-   cargo stylus check --endpoint https://sepolia-rollup.arbitrum.io/rpc
-   cargo stylus deploy --endpoint https://sepolia-rollup.arbitrum.io/rpc --private-key-path "$ROLES/deployer.key" \
-     --constructor-args "$DEPLOYER_ADDRESS" "$RESOLUTION_WARRANTY_REGISTRY_ADDRESS" --no-verify
+   cargo stylus check --endpoint https://arbitrum-sepolia-rpc.publicnode.com
+   cargo stylus deploy --endpoint https://arbitrum-sepolia-rpc.publicnode.com --private-key-path "$ROLES/deployer.key" --no-verify \
+     --constructor-args "$DEPLOYER_ADDRESS" "$RESOLUTION_WARRANTY_REGISTRY_ADDRESS"
    ```
 
-   Export its address as `ENGINE`. Then measure `record`'s gas against the registry's 300,000 budget, cold and warm, as [Gas for `record`](../contracts/README.md#gas-for-record-not-measured) describes, and cache the program first if the cold figure comes near it.
+   Both commands simulate the program's activation first, which the official endpoint refuses (`program activation failed: stylus activations not allowed for this request`, seen on 2026-10-01); publicnode's endpoint, which carries no key either, answers it (so does `https://arbitrum-sepolia.gateway.tenderly.co`). `--constructor-args` takes every argument after it, so `--no-verify` must come before it: placed after, cargo stylus does not see it and tries to build in Docker. Export the deployed address as `ENGINE`. Then measure `record`'s gas against the registry's 300,000 budget, cold and warm, as [Gas for `record`](../contracts/README.md#gas-for-record-not-measured) describes, and cache the program first if the cold figure comes near it.
 4. **Engine hook.** `REGISTRY_OWNER_PRIVATE_KEY="$(cat "$ROLES/deployer.key")" npm run warranty:admin -w @lemma/server -- set-engine "$ENGINE"`. It refuses an engine that does not name this registry as the one allowed to record, and a key that is not the registry's owner.
 5. **Releases.** For each release to sell, as the registry's owner, with its roles: `REGISTRY_OWNER_PRIVATE_KEY="$(cat "$ROLES/deployer.key")" PROVIDER_ADDRESS="$(jq -r .roles.provider "$ROLES/roles.json")" EVALUATOR_ADDRESS="$(jq -r .roles.evaluator "$ROLES/roles.json")" npm run warranty:admin -w @lemma/server -- register-release <releaseId@version> --provisional`. The testnet sells the provisional overlay's releases; a public release needs no `--provisional`. The claim window is the release's own `warranty.claimWindowHours`, the release must pay `PROVIDER_ADDRESS`, and a digest registers once (running it again reports it registered).
 6. **Bonds.** As the provider: `PROVIDER_PRIVATE_KEY="$(cat "$ROLES/provider.key")" npm run warranty:admin -w @lemma/server -- deposit-bond <releaseId@version> 5000000 --provisional`. Amounts are atomic USDC (5000000 is 5 testnet USDC); each warranty reserves its price, so 5 USDC covers 20 warranties at 0.25. When the registry's allowance is short, it approves exactly the amount; then it deposits.

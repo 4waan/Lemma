@@ -233,10 +233,12 @@ The first runs the engine, wasm-export and contract tests (`npm run stylus:test`
 
 ### Deploying (not done yet)
 
-Deployment needs a reachable Arbitrum Sepolia RPC and a deployer with about 0.001 testnet ETH. Run `cargo stylus check --endpoint <rpc>` first. Then, from `contracts/stylus/confidence-contract`:
+Deployment needs a reachable Arbitrum Sepolia RPC and a deployer with about 0.001 testnet ETH. Run `cargo stylus check --endpoint <rpc>` first. Both commands simulate the activation, which the official endpoint (`https://sepolia-rollup.arbitrum.io/rpc`) refuses with `stylus activations not allowed for this request` (seen on 2026-10-01); a keyless public endpoint such as `https://arbitrum-sepolia-rpc.publicnode.com` answers it (the check there on that day: 19.4 KB compressed, activation data fee 0.000122 ETH with the 20% bump). Then, from `contracts/stylus/confidence-contract`:
 
 ```bash
-cargo stylus deploy --endpoint <rpc> --private-key-path <key file, mode 0600> --constructor-args <owner> <registry> --no-verify
+cargo stylus deploy --endpoint <rpc> --private-key-path <key file, mode 0600> --no-verify --constructor-args <owner> <registry>
 ```
+
+`--constructor-args` takes every argument after it, so `--no-verify` (build locally, without Docker) must come before it. `cargo stylus deploy --estimate-gas` with the same arguments only estimates; its figures mean nothing for an unfunded deployer.
 
 This deploys, activates and runs the constructor in one transaction. Never run the constructor in a separate transaction: it runs once, for whoever calls it first. Never pass `--private-key`, which exposes the key in shell history and process listings. After deployment, call `setRegistry` if the registry was deployed later, call `setPrior` for each benchmarked profile from frozen evidence only, and measure `record`'s gas before the registry calls `setEngine` with this contract. `npm run warranty:admin -w @lemma/server -- set-priors` calls `setPrior` from each profile's frozen evidence, and `-- set-engine` points the registry at the contract; the [runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) gives the order. A Stylus program must be reactivated every 365 days.

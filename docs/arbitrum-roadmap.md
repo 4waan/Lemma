@@ -1,6 +1,6 @@
 # Arbitrum Roadmap: Bounded Spending and Private Compatibility Proofs
 
-Section 6 of [arbitrum.md](arbitrum.md) analyzes four ways Lemma could use Arbitrum beyond payments. Two are being built (ERC-8004 reputation and a Stylus confidence engine). This document covers the other two in depth, because both are **roadmap items: documented, not built**:
+Section 6 of [arbitrum.md](arbitrum.md) analyzes four ways Lemma could use Arbitrum beyond payments. Two are built and merged (ERC-8004 reputation and a Stylus confidence engine). This document covers the other two in depth, because both are **roadmap items: documented, not built**:
 
 1. **Bounded spending** with ERC-7715 and ERC-7710: the chain, not only the bridge, limits what an agent can spend.
 2. **Zero-knowledge compatibility proofs**: a buyer proves its repository fits a release without revealing the repository's profile.
@@ -13,15 +13,15 @@ Everything here is on testnet. Amounts are test USDC and Sepolia ETH, unless a l
 
 ### 1.1 What it would replace
 
-Today's design, which the paid path is building:
+Today's design, which the paid path ships:
 
 - **The policy is code.** Core `checkPurchase` checks network, token, recipient, amount and the daily cap before anything is signed. The bridge keeps a spending ledger.
-- **The buyer key lives in a separate signer process.** Acceptance tests run as the user and can read the user's files and the bridge's start environment (`/proc`), so the key cannot sit in the bridge. The paid path adds `lemma-signer`, a separate process on a private Unix socket that holds the key and enforces the policy again itself, because every process of the user can reach the socket. It only signs USDC transfers on Arbitrum Sepolia to an allowed payee, within the per-purchase cap, its own rolling daily cap and a short authorization window.
+- **The buyer key lives in a separate signer process.** Acceptance tests run as the user and can read the user's files and the bridge's start environment (`/proc`), so the key cannot sit in the bridge. The paid path ships `lemma-signer`, a separate process on a private Unix socket that holds the key and enforces the policy again itself, because every process of the user can reach the socket. It only signs USDC transfers on Arbitrum Sepolia to an allowed payee, within the per-purchase cap, its own rolling daily cap and a short authorization window.
 - **The weak point.** The policy is only as strong as the code that holds the key. The bridge README asks for a signer "that runs as another user, or on a hardware or remote signer". That is the heaviest setup step in the product.
 
 A delegation moves the daily cap, the token, the payee and an expiry onto the chain. Then a compromised bridge, a leaked session key, or an acceptance test that reads the key can spend at most the daily cap, only in USDC, only to Lemma's provider, and only until the expiry. Money can only reach the payee, so a thief cannot take funds; the worst case is unwanted purchases within the cap. That bounded worst case is what would let the bridge keep its own session key and retire the separate signer.
 
-| | Paid path (EIP-3009, being built) | With a delegation (roadmap) |
+| | Paid path (EIP-3009, built) | With a delegation (roadmap) |
 | --- | --- | --- |
 | Where the buyer's main key lives | In `lemma-signer`, used for every purchase; ideally another user or a hardware or remote signer | Used twice at setup, then can go offline (a hardware wallet or cold storage) |
 | What signs each purchase | The main key, through the signer | A session key the bridge holds |
@@ -30,7 +30,7 @@ A delegation moves the daily cap, the token, the payee and an expiry onto the ch
 | Worst case if the bridge or a test is compromised | Bounded only if the signer is out of the attacker's reach | At most the daily cap, paid only to Lemma's provider, until expiry |
 | x402 payment method | EIP-3009 `transferWithAuthorization` | ERC-7710 `redeemDelegations` (x402 `exact`, `assetTransferMethod: "erc7710"`) |
 | No second payment per resolution | A nonce derived from the resolution and the preview id; USDC refuses a reused nonce | Needs its own design (section 1.5) |
-| Gas per purchase | About 80,000 (estimate) | About 200,000 to 280,000 (estimate) |
+| Gas per purchase | 91,275 and 92,582 for the two settlements on Arbitrum Sepolia on October 1, 2026 (measured; the estimate was about 80,000) | About 200,000 to 280,000 (estimate) |
 
 What stays the same: `checkPurchase`, the ledger, recovery after a lost answer, and the `Signer` interface. The paid path keeps its signer behind that one interface, so a delegation signer can replace the EIP-3009 key later without touching the tools.
 
@@ -176,7 +176,7 @@ Contracts, x402 facilitator code, signing and typed-data layouts belong to the p
 
 ### 1.9 Checklist for starting
 
-- [ ] The plain x402 paid path (EIP-3009) is merged and has settled a real purchase on Arbitrum Sepolia.
+- [x] The plain x402 paid path (EIP-3009) is merged and has settled a real purchase on Arbitrum Sepolia: two on October 1, 2026 ([deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md)).
 - [ ] Read the bytecode at each address in section 1.3 on Arbitrum Sepolia and compare it with the v1.3.0 build. Record which audit report covers each contract Lemma uses.
 - [ ] Measure the gas of one real ERC-7710 x402 payment on Arbitrum Sepolia. Replace the estimates in section 1.6, and the chain cost `g` in `packages/catalog/economics.json` if it changes.
 - [ ] Prove, in a fork test, that a retried payment for the same resolution is refused on chain (derived delegation fields plus `LimitedCallsEnforcer`).
@@ -212,7 +212,7 @@ Today the bridge sends the server an allowlisted repository profile: language, N
 | --- | --- | --- | --- | --- |
 | Noir with Barretenberg (UltraHonk) | 137.6 ms median for a trivial circuit in Node on 2 CPUs [21]; with the native prover (`bb` 0.63.0, on a laptop), 0.52 s at 2^12 gates, 1.13 s at 2^15 and 1.73 s at 2^16 [22] | `@aztec/bb.js` 5.2.0: 156,572,374 bytes unpacked (about 157 MB) [24]; the native `bb` binary about 44.6 MB [23] | About 2.43 million gas [20]; raw generated verifiers came out 64 to 65 bytes over the 24,576-byte contract limit until patched [20] | No per-circuit trusted setup |
 | Circom with snarkjs (Groth16) | 143 ms for a trivial circuit [21]; 4.1 to 4.7 s for AegisClear's 115,066-constraint circuit [25] | `snarkjs` 0.7.6: 9,671,132 bytes unpacked (about 9.7 MB) [24], plus the circuit's files and proving key | 229,241 gas measured by AegisClear with 6 public inputs [25]; about 181,000 plus 6,150 per public input by the pairing prices of EIP-1108 [26] (derived) | A trusted setup: whoever runs a single-party setup can forge proofs [25] |
-| zkVMs (SP1, RISC Zero) [28] | About 19 s for a trivial RISC Zero receipt on a CPU, and compressing it for on-chain use "needs GPU" [21] | Large | About 270,000 to 300,000 gas for SP1 (search summary only) | Ruled out for per-purchase use |
+| zkVMs (SP1, RISC Zero) [28] | About 19 s for a trivial RISC Zero receipt on a CPU, and compressing it for on-chain use "needs GPU" [21] | Large | About 270,000 gas for an SP1 Groth16 proof, or 300,000 for PLONK, by Succinct's docs [28] | Ruled out for per-purchase use |
 
 - **Per purchase** (derived from the native prover's figures above): a small predicate of 2^12 to 2^15 gates should prove in about 0.5 to 1.1 seconds. A trivial circuit in `bb.js` takes about 0.14 seconds, but a real predicate is larger. **UX gap: holds implementation.** It lifts when proving happens outside the purchase call, for example in the background right after a preview that found an offer, and is reused while the profile is unchanged, and when a measurement shows no added wait on the purchase path.
 - **Install:** about 157 MB for the Noir prover package, or a 44.6 MB native binary, next to a bridge that is small today. **UX gap: holds implementation.** It lifts when the prover is an optional component installed only for users who opt in, with the default install unchanged. snarkjs is smaller, but Groth16 needs a trusted setup with several independent contributors.
@@ -295,10 +295,10 @@ Each row holds implementation until the condition in the last column is met.
 25. [AegisClear](https://github.com/mdlog/AegisClear), README and `docs/TOOLCHAIN.md`.
 26. [EIP-1108: Reduce alt_bn128 precompile gas costs](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1108.md).
 27. [zk-sunade, a Groth16 verifier in Stylus](https://github.com/supernovahs/zk-sunade).
-28. [SP1](https://github.com/succinctlabs/sp1) and [RISC Zero Ethereum contracts](https://github.com/risc0/risc0-ethereum).
+28. [SP1](https://github.com/succinctlabs/sp1), with its [proof types](https://docs.succinct.xyz/docs/sp1/generating-proofs/proof-types) for the verification gas, and [RISC Zero Ethereum contracts](https://github.com/risc0/risc0-ethereum).
 29. [GitHub Actions OpenID Connect reference](https://docs.github.com/en/actions/reference/security/oidc).
 30. [noir-jwt](https://github.com/zkemail/noir-jwt).
 31. [Reclaim zk-fetch](https://github.com/reclaimprotocol/zk-fetch).
 32. [MetaMask support: Advanced Permissions](https://support.metamask.io/more-web3/dapps/advanced-permissions/) (search summary only; the page could not be opened).
 
-Sources 1 to 31 were read on September 27, 2026 as raw files on GitHub or through the npm registry. The Arbitrum, MetaMask and GitHub docs were read from their source repositories, because their websites could not be opened from the build environment. Two facts come from search summaries only, and are marked where they appear: the SP1 verification gas in section 2.3, and MetaMask's upgrade prompt in section 1.5 (source 32). Re-check both before quoting them.
+Sources 1 to 31 were read on September 27, 2026 as raw files on GitHub or through the npm registry. The Arbitrum, MetaMask and GitHub docs were read from their source repositories, because their websites could not be opened from the build environment. One fact comes from a search summary only, and is marked where it appears: MetaMask's upgrade prompt in section 1.5 (source 32). Re-check it before quoting it. The SP1 verification gas in section 2.3 was re-read on Succinct's docs on October 1, 2026.

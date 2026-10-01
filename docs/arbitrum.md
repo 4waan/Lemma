@@ -2,7 +2,7 @@
 
 This document explains why Lemma runs on Arbitrum, what is already built, and the ways the product can use Arbitrum more deeply during the Arbitrum Open House Singapore buildathon (submissions close October 4, 2026). It also records what past Arbitrum winners and this round's other entries built, so the team can see which kinds of integration judges reward. Section 6 asks whether Arbitrum can carry more than payments, and [arbitrum-roadmap.md](arbitrum-roadmap.md) holds the two ideas it leaves for later.
 
-Everything here is on testnet. Amounts are test USDC. Status labels are as of September 26, 2026, except section 6, which is as of September 27, 2026.
+Everything here is on testnet. Amounts are test USDC. Status labels are as of October 1, 2026: the paid path, the warranty registry, the Stylus engine, ERC-8004 reputation and the outcome pipeline have merged, and the first live run on Arbitrum Sepolia is recorded in [deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md). The research in sections 3 to 6 was done on September 26 and 27, 2026.
 
 ## 1. Why Lemma needs Arbitrum
 
@@ -19,7 +19,7 @@ The reasons, each tied to how Lemma works:
    | 0.60 USDC | 0.075 USDC |
    | 0.675 USDC or more | nothing can be sold |
 
-   These figures were computed with core's own `maxPriceFor`. On a chain where four contract calls cost dollars, the product cannot exist. On Arbitrum, one USDC payment is estimated at well under a cent. About 80,000 gas at roughly 0.02 gwei is 0.0000016 ETH, which stays under one cent while ETH is below $6,000, plus a small fee for posting the data to Ethereum. The gas price is Arbiscan's figure for late September 2026, read through search results [10]. This is an estimate, not a Lemma measurement; idea C replaces it.
+   These figures were computed with core's own `maxPriceFor`. On a chain where four contract calls cost dollars, the product cannot exist. On Arbitrum, one USDC payment is estimated at well under a cent. About 80,000 gas at roughly 0.02 gwei is 0.0000016 ETH, which stays under one cent while ETH is below $6,000, plus a small fee for posting the data to Ethereum. The gas price is Arbiscan's figure for late September 2026, read through search results [10]. Lemma has since measured each step on Arbitrum Sepolia (October 1, 2026, [deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md)): the settlement used 91,275 gas, the warranty activation 216,065, the outcome with its engine record 146,896, and a refund withdrawal 84,009. A whole purchase cost under 0.00002 testnet ETH. The catalog's `g` stays a placeholder until that gas is priced at Arbitrum One's gas price (idea C).
 
 2. **Agents pay with signed USDC transfers, not gas.** x402's `exact` scheme uses native USDC's EIP-3009 `transferWithAuthorization`: the agent signs, and the facilitator submits the transaction and pays the gas. The agent needs no ETH. The installed x402 package already lists Arbitrum Sepolia USDC (`0x75fa…aa4d`, "USD Coin", version 2) as a default asset. Arbitrum has announced official x402 support [11], and PayAI's hosted facilitator already settles x402 payments on Arbitrum Sepolia for another entry in this buildathon [12][13].
 
@@ -27,7 +27,7 @@ The reasons, each tied to how Lemma works:
 
 4. **Evidence must be public.** Lemma's claims are only as good as the records behind them. Settlements, warranty activations and outcomes on Arbitrum are public transactions anyone can check on Arbiscan, which the dashboard links to. A database row cannot give that assurance.
 
-5. **Arbitrum is betting on agents, and on checking their work.** The Arbitrum Foundation writes that the agent economy has a verification problem, and argues that agent work should be spot-checked rather than redone [14]. That is Lemma's model: a release is checked once with fixtures and benchmarks, each buyer's agent reruns only its acceptance test, and the warranty covers a failed adoption. Arbitrum also funds agents that integrate on chain through its Trailblazer grants [15].
+5. **Arbitrum is betting on agents, and on checking their work.** The Arbitrum Foundation writes that "the verification problem in the agent economy has the same shape as the verification problem Arbitrum already solved", and that the answer for AI inference is to "Spot-check rather than re-execute" [14]. That is Lemma's model: a release is checked once with fixtures and benchmarks, each buyer's agent reruns only its acceptance test, and the warranty covers a failed adoption. Arbitrum also funds agents that integrate on chain through its Trailblazer grants [15].
 
 ## 2. What is built and what is not
 
@@ -35,14 +35,15 @@ The reasons, each tied to how Lemma works:
 | --- | --- | --- |
 | Network pinned to Arbitrum Sepolia (`eip155:421614`) and its native USDC | `packages/core/src/primitives.ts`, `apps/server/src/config.ts` | Built |
 | Offers quote exact x402 payment terms in Arbitrum USDC | resolver, `PaymentTerms` in core | Built |
-| Spending policy checks network, token, recipient, amount and daily cap before anything is signed | `checkPurchase` in `packages/core/src/policy.ts` | Built in core; the bridge's purchase tool is in progress |
-| Price bound includes the chain cost `g` | `packages/core/src/pricing.ts`, `packages/catalog/economics.json` | Built; `g` is a placeholder until measured |
-| Idempotent purchases: a nonce derived from the resolution, so USDC refuses a second payment | design in `packages/core/src/receipt.ts` | Designed; lands with the payment work |
-| x402 settlement through a self-hosted facilitator | `apps/server` | In progress (paused) |
-| Warranty registry: bonds, vouchers, outcomes, refunds | `contracts/` | Planned |
+| Spending policy checks network, token, recipient, amount and daily cap before anything is signed | `checkPurchase` in `packages/core/src/policy.ts`, enforced by the bridge's `lemma_buy_resolution` and again by the separate `lemma-signer` that holds the buyer key (`apps/bridge`) | Built |
+| Price bound includes the chain cost `g` | `packages/core/src/pricing.ts`, `packages/catalog/economics.json` | Built; `g` is a placeholder until the measured gas is priced (section 1) |
+| Idempotent purchases: a nonce derived from the resolution and the preview id, so USDC refuses a second payment | `derivePaymentNonce` in `packages/core/src/purchase.ts` | Built |
+| x402 settlement through a self-hosted facilitator | `apps/server/src/payments/` | Built; settled two purchases on Arbitrum Sepolia on October 1, 2026 |
+| Warranty registry: bonds, vouchers, outcomes, refunds | `contracts/src/ResolutionWarrantyRegistry.sol` | Built; deployed on Arbitrum Sepolia at `0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14` |
+| Outcome pipeline: activation, event indexing, evaluation, finalization, expiry, refund relay | `apps/server/src/warranty/` | Built; ran one passed and one refunded purchase on Arbitrum Sepolia |
 | Dashboard links to Arbiscan | `apps/web` | Built |
-| ERC-8004 reputation: provider identity, feedback per finalized outcome, cached pass rates | `apps/server/src/reputation/` | In progress on the branch `reputation/erc-8004` (September 27); see section 6 |
-| Stylus compatibility-confidence engine | `contracts/stylus/`, `packages/confidence/` | In progress on the branch `contracts/stylus-confidence` (September 27); see section 6 |
+| ERC-8004 reputation: provider identity, feedback per finalized outcome, cached pass rates | `apps/server/src/reputation/` | Built; no agent registered yet, because registration publishes the server's URL and no server is hosted (section 6) |
+| Stylus compatibility-confidence engine | `contracts/stylus/`, `packages/confidence/` | Built; deployed on Arbitrum Sepolia at `0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6`, where it recorded both outcomes of the live run (section 6) |
 
 ## 3. Ways to use Arbitrum
 
@@ -138,6 +139,8 @@ Checked against each project's repository on September 26, 2026.
 
 ## 5. Recommendation for the buildathon
 
+**Where this stands on October 1, 2026.** A (x402 settlement) and B (the warranty registry) are built and ran on Arbitrum Sepolia, with one purchase passed and one refunded. C is half done: the gas is measured, and `g` is not yet priced. I (ERC-8004) is built but waits for a hosted server before registering. The registry is not yet verified on Arbiscan, which needs an Etherscan API key. G, D and F are not started.
+
 1. **Must have by October 4:** A (x402 settlement, resuming the paused payment work), a thin B (bond, activation, outcome, refund and expiry), and C (measure `g` once A and B run, then publish it). Ship B tested, deployed and verified on Arbiscan, because contract quality is scored [17].
 2. **Lead with verification.** The demo and the README should open on the fit check, the evidence and the warranty. Payment alone is common among entries.
 3. **One creative feature:** G, "pay the maintainers". It is small, it reuses the settlement from A, and it tells the story judges remember: agents that reuse open source pay the people who wrote it. Tell L's story in the pitch as well, since it costs nothing to build.
@@ -145,7 +148,7 @@ Checked against each project's repository on September 26, 2026.
 5. **For the roadmap slide:** H (Stylus fit check), J (chain-enforced caps), K (demand bounties), M (pay after the tests pass) and N (underwriting pools).
 6. **After the buildathon:** Founder House Singapore runs October 23 to 25 [33], and Arbitrum's Trailblazer grants fund agents that integrate on chain [15].
 
-Section 6 updates items 4 and 5. Idea I is being built now, and a Stylus confidence engine takes the place of H's on-chain fit check. J (chain-enforced caps) and a private version of H (zero-knowledge proofs) are roadmap items with their own document.
+Section 6 updates items 4 and 5. Idea I is built, and a Stylus confidence engine took the place of H's on-chain fit check. J (chain-enforced caps) and a private version of H (zero-knowledge proofs) are roadmap items with their own document.
 
 Demo moments to plan for:
 
@@ -169,17 +172,17 @@ Sections 1 to 5 use Arbitrum for payments and the warranty. This section asks wh
 
 One rule decides every verdict: **the MCP experience stays fast and nearly hands-free.** Anything that adds a manual blockchain step, or makes an agent's tool call wait for the chain, is marked **UX gap: holds implementation**, and it is not built until the gap is lifted.
 
-**Status on September 27, 2026, stated plainly:**
+**Status on October 1, 2026, stated plainly:**
 
-- ERC-8004 reputation is being built on the branch `reputation/erc-8004`. It is not finished.
-- The Stylus confidence engine is being built on the branch `contracts/stylus-confidence`. It is not finished.
-- Both consume outcomes, so both depend on the paid path (branch `payments/x402-paid-path`) and the warranty registry (branch `contracts/warranty-registry`), which are also being built. Nothing in this section is deployed.
+- ERC-8004 reputation is built and merged (`apps/server/src/reputation/`). No agent is registered and no feedback is posted yet: registration writes the server's public URL on chain for good, and no server is hosted.
+- The Stylus confidence engine is built and merged (`contracts/stylus/`, `packages/confidence/`) and deployed on Arbitrum Sepolia, where the registry recorded both outcomes of the first live run.
+- Both consume outcomes, so both depend on the paid path and the warranty registry. Those are built, merged and deployed on Arbitrum Sepolia ([deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md)).
 - Bounded spending and ZK compatibility proofs are roadmap items. [arbitrum-roadmap.md](arbitrum-roadmap.md) documents both in depth, with their UX gaps.
 
 ### 6.1 What Lemma already has
 
-- **The receipt is the atom.** An `AdoptionReceipt` (`packages/core/src/receipt.ts`) records the resolution id, the outcome (`passed`, `failed` or `abandoned`), the acceptance run's exit code, duration and output digest, and a slot for the buyer's signature. The slot stays empty until the buyer signs with a typed-data layout defined by the contract work (EIP-712, being added by the paid path); smart-account signatures are accepted. The `Resolution` it points to binds the release digest, the matched profile index, the profile digest, the payload digest, the buyer and the payment terms. The acceptance recipe is fixed by the release manifest's digest. Joined, the two objects already say which release, on which profile, tested by which recipe, with what result. Publishing outcomes needs no new data, only a choice of what to publish.
-- **Compatibility history is already planned, off chain.** Lever 7 of [economic-gates.md](economic-gates.md) groups verified receipts by release digest and profile index to estimate the failure rate `q`, stop offering failing profiles, and later build provider reputation. Lever 8 reserves a ranking slot: "Pass rate slots in after 'sellable' once verified receipts exist." The two ideas being built put these levers on chain.
+- **The receipt is the atom.** An `AdoptionReceipt` (`packages/core/src/receipt.ts`) records the resolution id, the outcome (`passed`, `failed` or `abandoned`), the acceptance run's exit code, duration and output digest, and the buyer's signature over EIP-712 typed data (`adoptionReceiptTypedData` in `packages/core/src/signing.ts`), which the server checks with viem, so EOA, ERC-1271 and ERC-6492 signatures are accepted. The `Resolution` it points to binds the release digest, the matched profile index, the profile digest, the payload digest, the buyer and the payment terms. The acceptance recipe is fixed by the release manifest's digest. Joined, the two objects already say which release, on which profile, tested by which recipe, with what result. Publishing outcomes needs no new data, only a choice of what to publish.
+- **Compatibility history is already planned, off chain.** Lever 7 of [economic-gates.md](economic-gates.md) groups verified receipts by release digest and profile index to estimate the failure rate `q`, stop offering failing profiles, and later build provider reputation. Lever 8 reserves a ranking slot: "Pass rate slots in after 'sellable' once verified receipts exist." The two ideas built since put these levers on chain.
 - **Privacy is a design rule.** The resolution id is public, so the payment nonce is derived from it and the preview id rather than being the id itself; otherwise "anyone could join a wallet to what it bought" (`deriveResolutionId`). The public `ResolutionView` leaves out the buyer, the preview id, the settlement reference and the profile digest. Anything published on chain must keep that property.
 - **Key custody is the heaviest setup burden.** Acceptance tests run as the user and can read the user's files and the bridge's start environment, so the buyer key belongs with "a signer that runs as another user, or on a hardware or remote signer" ([apps/bridge/README.md](../apps/bridge/README.md)).
 - **Every idea needs outcomes, and outcomes only exist after settled purchases.** The server accepts a receipt only for a settled resolution (it answers `NOT_SETTLED` otherwise, in `apps/server/src/service.ts`). Reputation, confidence and proofs all wait on the paid path and the warranty registry. An outcome with no payment behind it is the ungrounded kind of feedback that, as idea 1 shows, the existing registries are already full of.
@@ -196,12 +199,12 @@ One rule decides every verdict: **the MCP experience stays fast and nearly hands
 - **On Arbitrum.** The identity and reputation registries are on Arbitrum Sepolia (section 3's address table) and on Arbitrum One (`0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` and `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63`) [23]. The Arbitrum Foundation writes that ERC-8004 "went live on Arbitrum on February 5th" 2026 [35]. The deployed contracts report version 2.0.0 and are upgradeable proxies that the ERC-8004 team controls [23].
 - **Beware old tutorials.** An October 2025 revision had agents sign a `feedbackAuth` and used a `uint8 score`. The current text has neither [34].
 
-**The gap Lemma fills.** An index of every feedback event on Ethereum and Base, up to Ethereum block 25,601,019 and Base block 49,018,739 (roughly six months of events), counts 419,155. One agent receives 66.05% of all Base feedback, from 60 worker wallets of one mining protocol, and the validation registry has seen 12 requests, all from one agent whose validator is its own owner [36]. A paper quoted in issue #99 of the contracts repository finds that "feedback records are rarely grounded in verifiable interactions", and the issue proposes admitting only feedback grounded in a paid interaction, an escrow release or an outcome checked against a claim [37]. Lemma's outcomes are grounded four ways at once: a paid resolution, a bonded warranty, an acceptance recipe pinned by digest, and an evaluator's signed verdict. The research behind this section found test-based outcomes only in hackathon projects, and none for code patches.
+**The gap Lemma fills.** An index of every feedback event on Ethereum and Base, up to Ethereum block 25,601,019 and Base block 49,018,739 (roughly six months of events), counts 419,155. One agent receives 66.05% of all Base feedback, from 60 worker wallets of one mining protocol, and the validation registry has seen 12 requests, all from one agent whose validator is its own owner [36]. A study of ERC-8004 on Ethereum, BNB Smart Chain and Base finds that "feedback records are rarely grounded in verifiable interactions" [37]. Issue #99 of the contracts repository, citing it, proposes admitting only feedback that carries proof the rater paid, such as an x402 settlement or escrow-release proof [37]. Lemma's outcomes are grounded four ways at once: a paid resolution, a bonded warranty, an acceptance recipe pinned by digest, and an evaluator's signed verdict. The research behind this section found test-based outcomes only in hackathon projects, and none for code patches.
 
-**How it fits Lemma, with no step for the buyer.** This is the planned design for the branch `reputation/erc-8004`, not a description of finished code; names and details may change before that branch merges.
+**How it fits Lemma, with no step for the buyer.** This is what shipped, in `apps/server/src/reputation/`:
 
-- **Provider identity.** Lemma's provider registers once as an ERC-8004 agent. The server serves the registration file (`GET /api/v1/agent/registration.json`) with the MCP endpoint, `x402Support: true` and `supportedTrust: ["reputation", "crypto-economic"]`. The provider bond is the crypto-economic part.
-- **Provider reputation.** For each finalized outcome, one published Lemma attester address posts feedback on the provider's `agentId`: `value` 100 for passed and 0 for failed with `valueDecimals` 0 (abandoned runs are left out), `tag1` set to `"lemma.adoption"`, `tag2` set to the capability id, and a `feedbackURI` pointing at a public evidence file (`GET /api/v1/evidence/:resolutionId`) whose canonical JSON bytes hash to `feedbackHash`. Then `getSummary(provider, [attester], "lemma.adoption", capability)` gives anyone a pass rate and a count per capability.
+- **Provider identity.** Lemma's provider registers once as an ERC-8004 agent (`npm run agent:register -w @lemma/server`). The server serves the registration file at `GET /api/v1/agent/registration.json` and `GET /.well-known/agent-registration.json`, with the MCP endpoint, `x402Support` (true while the paid tools are on) and `supportedTrust: ["reputation", "crypto-economic"]`. The provider bond is the crypto-economic part.
+- **Provider reputation.** For each finalized outcome, one published Lemma attester address posts feedback on the provider's `agentId`: `value` 100 for passed and 0 for failed with `valueDecimals` 0 (void and abandoned outcomes are never posted), `tag1` set to `"lemma.adoption"`, `tag2` set to the capability id, and a `feedbackURI` pointing at a public evidence file (`GET /api/v1/evidence/:resolutionId/provider`) whose canonical JSON bytes hash to `feedbackHash`. Then `getSummary(provider, [attester], "lemma.adoption", capability)` gives anyone a pass rate and a count per capability.
 - **Agent reputation, opt in.** A buyer that sets `LEMMA_AGENT_ID` in the bridge receives the same feedback from the attester. That is task-specific, evidence-backed reputation for the coding agent, and it costs the agent nothing.
 - **Reads.** The server caches each summary for five minutes. The Catalog shows it, and a matched preview carries it as metadata, from which the bridge adds a short token such as ` Record: pass 97%, n 34.` to its answer, still within 600 characters. Nothing on the buyer's path waits for the chain.
 - **Privacy.** The evidence file names the resolution, the release and profile index, the capability, the recipe digest, the acceptance result, the verdict and the time. It never names the buyer, the payer, the preview id, the settlement transaction or the nonce. An opted-in agent is the only exception, by its own choice.
@@ -209,7 +212,7 @@ One rule decides every verdict: **the MCP experience stays fast and nearly hands
 
 **Risks and answers.**
 
-- **Wash adoption.** A provider that buys its own patch gets the price back and pays only gas, so a pass rate can be inflated cheaply. The evaluator signs each outcome's weight and can count a doubtful one for less. Publishing distinct-buyer counts next to every pass rate is planned, not built.
+- **Wash adoption.** A provider that buys its own patch gets the price back and pays only gas, so a pass rate can be inflated cheaply. The evaluator signs each outcome's weight and can count a doubtful one for less, and a damper gives weight 0 to a payer's outcomes on one profile beyond three in 30 days. The catalog publishes the distinct buyers behind every pass rate and confidence, from three buyers up.
 - **A Draft, upgradeable registry.** Lemma treats ERC-8004 as a public mirror. Bonds, refunds and confidence stay in Lemma's own contracts.
 - **Keys.** The attester key holds no funds. It must differ from the key that owns the provider's agent, because the registry refuses feedback from the owner or an operator.
 
@@ -222,12 +225,12 @@ One rule decides every verdict: **the MCP experience stays fast and nearly hands
 - EIP-7702 is live on Arbitrum since ArbOS 40 (Arbitrum Sepolia on May 6, 2025, Arbitrum One on June 17, 2025), so an existing account can gain these features without changing its address [41].
 - x402's `exact` scheme already lists ERC-7710 as its "Smart Account Option", verified by simulating `redeemDelegations` [42].
 
-**How it fits Lemma.** In the paid path being built, the spending policy (per-purchase cap, daily cap, token, recipient) is enforced by code: core `checkPurchase`, the bridge, and a separate signer process (`lemma-signer`) that holds the buyer key. Under a delegation, the chain enforces the daily cap, the token, the payee and an expiry. A compromised bridge, or an acceptance test that reads the bridge's key, could then spend at most the daily cap, only in USDC, only to Lemma's provider, and only until the expiry. That bounded worst case would let the bridge hold a session key itself and retire the separate signer, the heaviest setup step in that design. Once set up, this improves the UX rather than costing it.
+**How it fits Lemma.** In the paid path, the spending policy (per-purchase cap, daily cap, token, recipient) is enforced by code: core `checkPurchase`, the bridge, and a separate signer process (`lemma-signer`) that holds the buyer key. Under a delegation, the chain enforces the daily cap, the token, the payee and an expiry. A compromised bridge, or an acceptance test that reads the bridge's key, could then spend at most the daily cap, only in USDC, only to Lemma's provider, and only until the expiry. That bounded worst case would let the bridge hold a session key itself and retire the separate signer, the heaviest setup step in that design. Once set up, this improves the UX rather than costing it.
 
 **Why it waits.**
 
 - The x402 reference facilitator implements EIP-3009 and Permit2 only; the installed `@x402/evm` 2.27.0 has no ERC-7710 code. MetaMask's hosted facilitators do not cover Arbitrum. Lemma's own facilitator would have to add ERC-7710 settlement.
-- It is a second payment method inside the paid path, which is still being built.
+- It would be a second payment method in the paid path, beside EIP-3009, with its own settlement and recovery to test.
 - MetaMask's browser grant needs the desktop extension, a smart-account upgrade, an approval page per grant, and a renewal at each expiry. **UX gap: holds implementation.** It lifts when a one-click local grant page, a sponsored or ETH-free upgrade, a long expiry with a revoke button, and a path without the extension are proven ([arbitrum-roadmap.md, section 1.5](arbitrum-roadmap.md#15-two-setup-paths)).
 - Settlement is estimated at 2.5 to 3.5 times the gas of a plain EIP-3009 transfer. This is an estimate from the code paths, not a measurement.
 
@@ -255,15 +258,15 @@ Postgres stays the operational store, with fast queries and private fields. The 
 - **Weighted outcomes that fade.** Each finalized outcome carries a weight in basis points that the evaluator signs. Weights halve every 30 days, so old evidence ages out as dependencies move on.
 - **A cautious result.** The lower end of a 90% Wilson interval, in basis points, with the effective sample size. Three passes do not score like three hundred.
 
-**How it fits.** This is the planned design for the branch `contracts/stylus-confidence`, not a description of finished code; names and details may change before that branch merges.
+**How it fits.** This is what shipped:
 
-- A crate, `lemma-confidence`, with shared test vectors that the Rust tests and a TypeScript package both replay.
-- A Stylus contract that stores the sums. `record` is callable only by the warranty registry, `setPrior` only by the owner (with the evidence digest), and `confidence(release, profile)` is a view. `cargo stylus export-abi` produces the Solidity interface the registry calls.
-- The server loads the same crate as a committed WebAssembly file that rebuilds byte for byte, and adds a `compatibility` field (confidence, effective sample size, outcome count, source) to each profile in the catalog read model. The dashboard shows it on the Catalog and Proof pages, with "no outcomes yet" while only the prior exists.
-- The registry calls the engine inside `finalizeOutcome` and catches any failure, so a broken engine never blocks a refund.
+- A crate, `lemma-confidence` (`contracts/stylus/lemma-confidence/`), with shared test vectors that the Rust tests and the TypeScript package `@lemma/confidence` both replay.
+- A Stylus contract that stores the sums (`contracts/stylus/confidence-contract/`). `record` is callable only by the warranty registry, `setPrior` only by the owner (with the evidence digest), and `confidence(release, profile)` and `stats(release, profile)` are views. `ICompatibilityConfidence.sol`, from `cargo stylus export-abi`, is the interface the registry calls.
+- The server loads the same crate as a committed WebAssembly file (`packages/confidence/wasm/lemma_confidence.wasm`) that rebuilds byte for byte, and adds a `compatibility` field (confidence, effective sample size, outcome count, source, distinct buyers) to each profile in the catalog read model. The dashboard shows it on the Catalog and Proof pages, with "benchmark prior, no outcomes yet" while only the prior exists.
+- The registry calls the engine inside `finalizeOutcome` with a fixed budget of 300,000 gas (`ENGINE_GAS_LIMIT`) and catches any failure, emitting `EngineRecordFailed`, so a broken engine never blocks a refund. On Arbitrum Sepolia, `record` measured about 90,100 gas for a key's first record and about 63,000 after.
 - Later: rank by confidence in lever 8's slot, and stop offering a profile whose confidence falls below a floor once enough outcomes exist (lever 7). That needs a new sale-blocker reason code.
 
-**Risks.** Deploying needs Sepolia ETH (about 0.001 testnet ETH per deployment and activation, derived from the Arbitrum docs' examples [51]) and a reachable RPC, which this build environment does not have. If Stylus stalls, the fallback is a Solidity port held bit-identical by the same test vectors, as Equinox did [44].
+**Deployment and risks.** Deploying, activating and constructing the engine took one transaction and 0.000437 testnet ETH on October 1, 2026, of which 0.000122 was the activation data fee; the estimate beforehand, from the Arbitrum docs' examples, was about 0.001 [51]. The official Arbitrum Sepolia endpoint refuses the activation check, so the runbook uses a public endpoint that allows it. The program must be activated again within 365 days, and the live check (`npm run sepolia:check`) warns 60 days ahead. A Solidity port held bit-identical by the same test vectors, as Equinox did [44], stays the fallback if Stylus ever has to be left.
 
 #### Idea 4: zero-knowledge compatibility proofs. Verdict: roadmap, with a UX gap
 
@@ -279,10 +282,10 @@ Postgres stays the operational store, with fast queries and private fields. The 
 
 Effort uses section 3's scale.
 
-| Idea | Verdict | Status on September 27, 2026 | Effort | UX effect | Needs first, and what lifts a UX gap |
+| Idea | Verdict | Status on October 1, 2026 | Effort | UX effect | Needs first, and what lifts a UX gap |
 | --- | --- | --- | --- | --- | --- |
-| ERC-8004 reputation for providers and opted-in agents | Build now | Being built on `reputation/erc-8004`; not finished | M | None for buyers; agents opt in with one setting | Outcomes: the paid path and the warranty registry |
-| Stylus compatibility confidence | Build now | Being built on `contracts/stylus-confidence`; not finished | M to L | None: on the server, cached, after the fact | Outcomes; Sepolia ETH and a reachable RPC to deploy |
+| ERC-8004 reputation for providers and opted-in agents | Build now | Built and merged; no agent registered yet | M | None for buyers; agents opt in with one setting | A hosted server, since registration publishes its URL for good |
+| Stylus compatibility confidence | Build now | Built, merged, and deployed on Arbitrum Sepolia, with two outcomes recorded | M to L | None: on the server, cached, after the fact | Activation again before 365 days pass |
 | ERC-7710 bounded spending, headless setup | Roadmap | Documented in [arbitrum-roadmap.md](arbitrum-roadmap.md) | M | Better than the paid path's design once set up; one automated setup step | The plain x402 paid path; ERC-7710 settlement in Lemma's facilitator |
 | MetaMask Advanced Permissions (ERC-7715 browser grant) | UX gap: holds implementation | Documented in the roadmap | M | Browser approval, smart-account upgrade, renewals, no mobile | The gap lifts when a one-click local grant page, a sponsored or ETH-free upgrade, a long expiry with a revoke button, and a path without the extension are proven (roadmap section 1.5) |
 | ZK compatibility proof | Roadmap; UX gap: holds implementation | Documented in the roadmap | L | About 0.5 to 1.1 seconds of proving and about 157 MB per agent | A salted profile commitment, then a binding such as GitHub OIDC. The gap lifts when proving runs outside the purchase call and the prover is an opt-in install (roadmap section 2.3) |
@@ -325,10 +328,10 @@ Only the settlement happens inside an agent's tool call. Everything after it run
 **The privacy rule for this flow.** The settlement is the only record that names the buyer's wallet, so no other record may point back to it.
 
 - The registry never stores a buyer or payer address. The payment reference in the provider's voucher is a salted commitment chosen by the server, never a function of the payer and the nonce.
-- A refund credit is withdrawn by presenting a per-purchase secret and a refund address whose hash (`claimHash`) was fixed in the voucher. The refund address is revealed when the credit is withdrawn. It defaults to the buyer's own address, so a refund does join that wallet to that resolution. A buyer who wants no link sets a fresh refund address and has the withdrawal relayed (next point).
+- A refund credit is withdrawn by presenting a per-purchase secret and a refund address whose hash (`claimHash`) was fixed in the voucher. The refund address is revealed when the credit is withdrawn. The bridge requires one (`LEMMA_REFUND_TO`) and turns purchases off for the buyer's own address, so a refund never joins the paying wallet to that resolution, and the withdrawal is relayed (next point).
 - Finalization and credit withdrawal are sent by a relayer (Lemma's server or any third party), never from the buyer's wallet. A transaction's sender is public, so sending one yourself joins your wallet to the resolution. The relayer also pays the gas, as UX rule 2 requires, and a fresh refund address holds no ETH anyway.
 - Engine records and feedback name releases, profiles and capabilities, never buyers. An agent that opts in to reputation is the only exception, by its own choice.
-- Timing and amounts can still hint at a link while volume is low. Batching activations and finalizations blurs that, but does not remove it.
+- Timing and amounts can still hint at a link while volume is low. The server sends activations in hourly batches with random jitter by default (`WARRANTY_ACTIVATION_BATCH_SECONDS`, `WARRANTY_ACTIVATION_JITTER_SECONDS`), which blurs that but does not remove it.
 
 ## Sources
 
@@ -345,7 +348,7 @@ Only the settlement happens inside an agent's tool call. Everything after it run
 11. [x402 and MPP for agentic finance on Arbitrum](https://blog.arbitrum.io/x402-and-mpp-for-agentic-finance-on-arbitrum/).
 12. [PayAI adds x402 support for Arbitrum](https://blog.payai.network/x402-on-arbitrum-payai-adds-support-for-arbitrum-one/).
 13. [Signal402 repository](https://github.com/zedili/Signal402-Arbitrum-Singapore).
-14. [The agent economy has a verification problem](https://blog.arbitrum.foundation/the-agent-economy-has-a-verification-problem/).
+14. Arbitrum Foundation, ["The agent economy has a verification problem"](https://blog.arbitrum.foundation/the-agent-economy-has-a-verification-problem/), by Ben Greenberg (June 3, 2026).
 15. [Trailblazer: $1M in grants for AI on Arbitrum](https://blog.arbitrum.foundation/trailblazer-1m-grants-to-power-ai-innovation-on-arbitrum/).
 16. [x402 facilitator for Arbitrum](https://github.com/hummusonrails/x402-facilitator).
 17. [Arbitrum Open House India online buildathon on HackQuest](https://www.hackquest.io/hackathons/Arbitrum-Open-House-India-Online-Buildathon).
@@ -366,9 +369,9 @@ Only the settlement happens inside an agent's tool call. Everything after it run
 32. [Coinbase x402 network support](https://docs.cdp.coinbase.com/x402/network-support).
 33. [Founder House Singapore](https://blog.arbitrum.foundation/founder-house-singapore-apply-now-to-launch-products-on-arbitrum-one-robinhood-chain/).
 34. [ERC-8004: Trustless Agents](https://github.com/ethereum/ERCs/blob/master/ERCS/erc-8004.md) (Draft; the October 2025 revision is commit `cb7ae283` of the same repository).
-35. [Arbitrum Foundation: AI and Stylus, the builder's new toolkit](https://blog.arbitrum.foundation/ai-and-stylus-the-builders-new-toolkit/) (February 25, 2026).
+35. Arbitrum Foundation, ["AI and Stylus: The Builder's New Toolkit"](https://blog.arbitrum.foundation/ai-and-stylus-the-builders-new-toolkit/), by Ben Greenberg (February 20, 2026).
 36. [ERC-8004 forensics: a full index of the registries on Ethereum and Base](https://github.com/marsakahenry14-lab/erc8004-forensics): `FINDINGS.md` for the counts, and `process/STATUS.md` for the indexed block ranges.
-37. [erc-8004-contracts issue #99](https://github.com/erc-8004/erc-8004-contracts/issues/99), which quotes the paper [arXiv 2606.26028](https://arxiv.org/abs/2606.26028).
+37. Xiong et al., ["Can Trustless Agents Be Trusted? An Empirical Study of the ERC-8004 Decentralized AI Agent Ecosystem"](https://arxiv.org/abs/2606.26028), arXiv 2606.26028 (version 2, July 8, 2026), and [erc-8004-contracts issue #99](https://github.com/erc-8004/erc-8004-contracts/issues/99), which cites it.
 38. [ERC-7715: Request Permissions from Wallets](https://github.com/ethereum/ERCs/blob/master/ERCS/erc-7715.md) (Draft).
 39. [ERC-7710: Smart Contract Delegation](https://github.com/ethereum/ERCs/blob/master/ERCS/erc-7710.md) (Draft).
 40. [MetaMask Delegation Framework deployments](https://github.com/MetaMask/delegation-framework/blob/main/documents/Deployments.md).
@@ -386,4 +389,4 @@ Only the settlement happens inside an agent's tool call. Everything after it run
 
 Repository pages on GitHub, ERC-3009 and the contract addresses above were read directly on September 26, 2026. The other pages, including the x402 escrow proposal, could not be opened from the build environment. Their content comes from search-result summaries and should be re-checked before it is quoted in the submission.
 
-Sources 34 to 51 were read on September 27, 2026 from their source repositories or registries: the ERCs, specifications and GitHub, Arbitrum and x402 docs as raw files on GitHub, the Foundation post [35] through its author's mirror, and the npm and crates.io entries through their registries. Nothing was read on chain, because this build environment cannot reach Arbitrum's RPCs or explorers. The arXiv paper in [37] is known only through its quotation in the issue.
+Sources 34 to 51 were read on September 27, 2026 from their source repositories or registries: the ERCs, specifications and GitHub, Arbitrum and x402 docs as raw files on GitHub, the Foundation post [35] through its author's mirror, and the npm and crates.io entries through their registries. On October 1, 2026 the Foundation posts [14] and [35] were re-read on blog.arbitrum.foundation and the arXiv paper in [37] on arxiv.org, and every quotation here matches them; the status updates of that day were checked against `main` and against the chain.

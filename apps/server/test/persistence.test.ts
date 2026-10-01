@@ -618,6 +618,12 @@ describe.each(stores)("the warranty outbox and registry index on the %s store", 
     await expect(store.advanceChainCursor("warranty-registry", 21n, 31n, [{ ...finalized(a, 25n, 1), txHash: "0xAB" as Hex32 }], NOW)).rejects.toThrow();
     expect(await store.getChainCursor("warranty-registry")).toBe(21n);
     expect(await store.listRegistryEvents({}, 10)).toHaveLength(4);
+    // So is a misread block time (a node answering a log's blockTimestamp as 0x0), even beside a good row.
+    for (const blockTime of [new Date(0), new Date(1_790_100_000), new Date(Number.NaN)]) {
+      await expect(store.advanceChainCursor("warranty-registry", 21n, 31n, [event({ name: "Unpaused", blockNumber: 22n, logIndex: 0 }), { ...finalized(a, 25n, 1), blockTime }], NOW)).rejects.toThrow(RangeError);
+    }
+    expect(await store.getChainCursor("warranty-registry")).toBe(21n);
+    expect(await store.listRegistryEvents({}, 10)).toHaveLength(4);
   });
 
   it("lists settled resolutions bought with a claim until an activation covers them", async () => {

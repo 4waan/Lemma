@@ -160,6 +160,17 @@ A key reaches a command only through that command's environment: `PROVIDER_PRIVA
 - Database and RPC failures produce bounded, scrubbed responses.
 - Uncertain settlements are reconciled from the chain. While a resolution's payment is in flight, another payment for it is refused; the reconciler commits or expires the row once its window closes.
 
+## Repairing registry event block times
+
+Before the indexer read block times from headers, an RPC endpoint that answers a log's `blockTimestamp` as `0x0`, as Arbitrum's public endpoint does, had every row in `registry_events` dated 1970-01-01. Rows keep their time, since the indexer reads each range once, so a server with such rows now refuses its warranty reads, and the rows need repairing once. Only `block_time` is wrong; every other column, and the cursor, are right.
+
+1. Stop the server, and take a dump of the database (`pg_dump`).
+2. List the affected blocks: `SELECT DISTINCT block_number FROM registry_events WHERE block_time < '2015-07-30' ORDER BY 1;`
+3. For each block, read the header's time from two endpoints (`cast block <n> --field timestamp --rpc-url <rpc>`), which must agree, then: `UPDATE registry_events SET block_time = to_timestamp(<timestamp>) WHERE block_number = <n> AND block_time < '2015-07-30';`
+4. Check that `SELECT count(*) FROM registry_events WHERE block_time < '2015-07-30';` answers 0, and start the server.
+
+Do not delete the rows to have the indexer read them again unless nothing else has happened since: while it catches up, the expirer sees activations without the events that ended them and can queue expiries the registry refuses. Before repairing a server with reputation on, check `reputation_posts`: a post's evidence, which includes the outcome's finalization time, is frozen when it is queued.
+
 ## Rollout and rollback
 
 Keep paid tools off while verifying a new build. Enable them only after free preview, recovery, read APIs, and catalog health pass.

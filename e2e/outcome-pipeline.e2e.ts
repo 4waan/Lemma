@@ -180,10 +180,13 @@ describe("the outcome pipeline on a local chain", () => {
     );
     expect(v.receipt).toEqual({ outcome, verified: true });
   };
-  /** The outcome as the chain has it: the finalization's row, with its block time. */
+  /** A block's time in seconds, from its header: the chain's own clock, which the engine folds by. */
+  const headerSeconds = async (blockNumber: bigint) => (await chain.publicClient.getBlock({ blockNumber })).timestamp;
+  /** The outcome as the chain has it: the finalization's row, whose stored time must be its block header's. */
   const finalization = async (id: Hex32) => {
     const [row] = await registryEvents(id, ["OutcomeFinalized"]);
     if (row === undefined) throw new Error("not finalized");
+    expect(unixSeconds(row.blockTime)).toBe(await headerSeconds(row.blockNumber));
     return row;
   };
 
@@ -397,7 +400,7 @@ describe("the outcome pipeline on a local chain", () => {
       },
       { what: "the catalog to count the outcome" },
     );
-    const expected = fold(priorFromEvidence(catalog.evidence), [{ passed: true, weightBps: 10_000, at: unixSeconds(finalized.blockTime) }], unixSeconds(new Date(generatedAt)));
+    const expected = fold(priorFromEvidence(catalog.evidence), [{ passed: true, weightBps: 10_000, at: await headerSeconds(finalized.blockNumber) }], unixSeconds(new Date(generatedAt)));
     expect(profile.compatibility).toEqual({ confidenceBps: expected.confidenceBps, effectiveNMilli: expected.effectiveNMilli.toString(), outcomes: 1, source: "benchmark+outcomes", buyers: null });
 
     // ERC-8004: the attester's feedback on the real reputation registry, counted by getSummary.
@@ -498,7 +501,10 @@ describe("the outcome pipeline on a local chain", () => {
       { what: "the catalog to count five outcomes" },
     );
     const finalizations = await new PgStore(db).listRegistryEvents({ names: ["OutcomeFinalized"] }, 32);
-    const counted = finalizations.filter((row) => (row.weightBps ?? 0) > 0).map((row) => ({ passed: row.verdict === VERDICT_PASSED, weightBps: row.weightBps as number, at: unixSeconds(row.blockTime) }));
+    // Folded at the block headers' times, not the server's stored ones, so a misread time cannot agree with itself.
+    const counted = await Promise.all(
+      finalizations.filter((row) => (row.weightBps ?? 0) > 0).map(async (row) => ({ passed: row.verdict === VERDICT_PASSED, weightBps: row.weightBps as number, at: await headerSeconds(row.blockNumber) })),
+    );
     expect(finalizations).toHaveLength(6);
     expect(counted).toHaveLength(5);
     const expected = fold(priorFromEvidence(catalog.evidence), counted, unixSeconds(new Date(generatedAt)));

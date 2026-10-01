@@ -859,11 +859,23 @@ function toAction(row: StoredAction): WarrantyAction {
   return { ...rest, payload: decodeWarrantyPayload(row.kind, row.resolutionId, body) };
 }
 
+/**
+ * The earliest block time a registry event can have: the day Ethereum's first block was mined.
+ * Anything earlier is a misread timestamp (a node answering 0, or seconds taken for
+ * milliseconds), not a block's time.
+ */
+export const EARLIEST_BLOCK_TIME = new Date("2015-07-30T00:00:00.000Z");
+
 /** Checks a registry event row's fields before it is stored or after it is read (a store never keeps a row it could not have read). */
 export function checkRegistryEvent(row: RegistryEventRow): RegistryEventRow {
   const hex32 = (v: string | null) => (v === null ? null : Hex32.parse(v));
   if (!isRegistryEventName(row.name)) throw new TypeError(`unknown registry event ${String(row.name)}`);
   if (row.blockNumber < 0n || !Number.isSafeInteger(row.logIndex) || row.logIndex < 0) throw new RangeError("invalid log position");
+  // A stored row with a misread time would date outcomes, pauses and the damper's window wrongly
+  // and silently; refusing it on write and on read makes the problem loud (docs/deployment.md has the repair).
+  if (!(row.blockTime instanceof Date) || Number.isNaN(row.blockTime.getTime()) || row.blockTime < EARLIEST_BLOCK_TIME) {
+    throw new RangeError(`registry event at block ${row.blockNumber} has an impossible block time; block times come from block headers`);
+  }
   return {
     blockNumber: row.blockNumber,
     logIndex: row.logIndex,

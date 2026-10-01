@@ -64,7 +64,7 @@ function Hero() {
   );
 }
 
-/** What a session looks like, with the worked example's numbers. Illustrative: the paid step is not built yet. */
+/** What a session looks like, with the worked example's numbers: illustrative, not a recorded session or a measurement. */
 function ExampleSession() {
   return (
     <aside className="session" aria-label="Example agent session">

@@ -18,8 +18,9 @@
 3. **Scenario 2, refund:** another buyer's tests fail, `EVALUATOR_FAILURES=auto` finalizes FAILED, the agent claims the refund with the bridge's `lemma_claim_refund` (its answer names the resolution and the amount, never the claim secret or the refund address), the evaluator relays it, the refund address receives the price, and the tool asked again answers `refunded`.
 4. **Scenario 4, damper:** one buyer, four repositories, four passing outcomes on one profile: the fourth finalizes with weight 0, and the engine, the catalog (five outcomes from three buyers, so the buyer count is published) and ERC-8004 never count it.
 5. **Scenario 5, crash safety:** the server dies right after the activator broadcasts an activation and before it records the hash; a restarted server leaves the action alone while the dead attempt's lease holds, then reads the nonces and the registry and closes it without a second send.
-6. **Scenario 3, expiry:** a purchase with no receipt; the chain's clock passes the claim deadline and the provider expires the warranty. It runs last because it moves the chain's clock an hour ahead of the wall clock that x402 authorizations follow.
-7. No log line or script output holds a key or claim secret, and no log line a buyer or refund address.
+6. **Scenario 6, the shipped programs:** a buyer set up as the bridge's README says (`lemma-signer init`, then `lemma-signer serve` with the spending policy) and the real `lemma-mcp` process, spoken to over stdio as an agent's MCP client does, buy, apply and verify; the purchase passes like scenario 1's. The other scenarios run the same bridge code in process.
+7. **Scenario 3, expiry:** a purchase with no receipt; the chain's clock passes the claim deadline and the provider expires the warranty. It runs last because it moves the chain's clock an hour ahead of the wall clock that x402 authorizations follow.
+8. No log line or script output holds a key or claim secret, and no log line a buyer or refund address.
 
 ## What differs from Arbitrum Sepolia
 
@@ -28,7 +29,7 @@
 - **The server's process.** The run assembles the server as `apps/server/src/main.ts` does (the same app, payment path, pipeline and reputation jobs; `e2e/lib/server.ts`), with an in-process PGlite database behind the same `PgStore`, and job intervals of a fraction of a second instead of 15 s to a minute.
 - **Blocks.** anvil mines each transaction at once and also makes a block every second, as a live chain goes on making blocks. The indexer reads 2 blocks behind the head (`WARRANTY_INDEXER_CONFIRMATIONS=2`) instead of the default 64, so each indexed step waits about two seconds.
 - **The catalog.** A one-release catalog written for the run (made-up evidence and economics, testnet prices), read with `loadCatalog({ root })`; the admin commands read it with `--catalog`.
-- **The bridge's signer.** The bridges use `LocalSigner` in process, where a buyer runs `lemma-signer serve`; the wiring around it is the bridge's own (`paymentsFromEnv`, `adoptionTools`).
+- **The bridge's signer.** Every scenario but the sixth runs the bridge in process with `LocalSigner`, where a buyer runs `lemma-signer serve`; the wiring around it is the bridge's own (`paymentsFromEnv`, `adoptionTools`). Scenario 6 runs the shipped `lemma-signer` and `lemma-mcp` programs (`e2e/lib/agent.ts`).
 
 ## When it fails
 

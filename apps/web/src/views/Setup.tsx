@@ -206,6 +206,7 @@ const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string; reado
   { name: "lemma_buy_resolution", text: "Pays for an open offer through x402 and your local signer, within your spending limits. Never pays twice.", built: true },
   { name: "lemma_apply_resolution", text: "Previews the patch by default. Applies it all or nothing on request, or exports it to merge by hand.", built: true },
   { name: "lemma_verify_adoption", text: "Runs the release's acceptance tests and records the Adoption Receipt.", built: true },
+  { name: "lemma_claim_refund", text: "Collects the warranty refund of each purchase whose failure the evaluator confirmed. Free, and safe to call again.", built: true },
 ];
 
 const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly fallback: string; readonly later: boolean }> = [
@@ -223,7 +224,7 @@ const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; re
   { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost, in atomic USDC (250000 is 0.25 USDC).", fallback: "none: purchases stay off", later: false },
   { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a rolling day, in atomic USDC.", fallback: "none: purchases stay off", later: false },
   { name: "LEMMA_ALLOWED_PAY_TO", text: "The recipient addresses the buyer will pay, comma-separated.", fallback: "none: purchases stay off", later: false },
-  { name: "LEMMA_REFUND_TO", text: "Where warranty credits are paid. A withdrawal shows this address on chain, so use another one you control to keep your wallet out of it.", fallback: "the buyer's address", later: false },
+  { name: "LEMMA_REFUND_TO", text: "Where warranty credits are paid: an address you control other than the buyer's, since a withdrawal shows it next to the resolution id on chain. Purchases need it.", fallback: "none: purchases stay off", later: false },
 ];
 
 const NEVER: readonly string[] = [

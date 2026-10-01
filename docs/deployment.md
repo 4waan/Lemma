@@ -151,6 +151,25 @@ A key reaches a command only through that command's environment: `PROVIDER_PRIVA
 
 `npm run e2e` ([e2e/README.md](../e2e/README.md)) runs steps 1 and 4 to 10 with the same scripts and settings (the refund with `EVALUATOR_FAILURES=auto` in place of the evaluator's decision) against real contracts on a local anvil posing as Arbitrum Sepolia: Circle's USDC at its Sepolia address, the registry built from `contracts/`, the official ERC-8004 registries, and a Solidity stand-in with the Stylus engine's interface (anvil cannot run Stylus). It checks each command's refusals before anything is sent and that a second run changes nothing, then drives the server and bridges through a pass, a refund, the wash-adoption damper, a crash between a send and its record, and an expiry. The registry's deploy script (step 2) is rehearsed by `npm run contracts:rehearse`; the Stylus deployment (step 3) runs only on Arbitrum Sepolia. CI runs both rehearsals on every change.
 
+## Checking a deployment
+
+`npm run sepolia:check` checks a deployment against the chain without a key and without sending anything (`ops/sepolia/conformance.ts`). Run it after each runbook step from 2 on, after any incident, and before a demo:
+
+```bash
+ARBITRUM_SEPOLIA_RPC_URL=<rpc> npm run sepolia:check -- --roles "$ROLES/roles.json" \
+  [--catalog <catalog root>] [--api <server url>] [--compare-rpc <second rpc>]
+```
+
+It prints one line per check, `ok`, `warn` or `FAIL`, and exits with 1 when a check failed:
+
+- **The registry** at the address `contracts/deployments/arbitrum-sepolia/ResolutionWarrantyRegistry.json` records: its code hash against the record's, Arbitrum Sepolia USDC, its owner and pending owner (against the deployer in `roles.json`), whether it is paused, and whether the USDC it holds covers its bonds and buyer credits.
+- **The engine** the registry names: its code (against `ConfidenceEngine.json` when that record exists), that it records only from this registry, its owner, and how long the Stylus program has before ArbOS needs it activated again (a warning under 60 days).
+- **Each release** of the catalog (`--catalog`, the provisional overlay included; the packaged catalog otherwise): not registered, or registered with the manifest's provider and claim window, the role record's evaluator, and enough bond for one more warranty.
+- **Every registry event** since the deployment block, dated by its block header. A log whose own `blockTimestamp` differs from its header is reported as an endpoint quirk (Arbitrum's public endpoint answers it as `0x0`). Any `EngineRecordFailed` fails the check.
+- **The engine's state:** the finalized outcomes, folded at their header times with `@lemma/confidence`, must equal the engine's `stats()`, and its `confidence()` must equal the same fold scored at the head block.
+- **With `--compare-rpc`,** a second endpoint must agree on every event block's header time, and on the number of logs (a lagging endpoint is a warning).
+- **With `--api`,** the server's status must name the same registry, engine and USDC, and each profile's confidence in its catalog must equal the chain's outcomes folded at the catalog's `generatedAt`.
+
 ## Runtime checks
 
 - The application is reachable only through HTTPS.

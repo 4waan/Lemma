@@ -50,7 +50,7 @@ Lemma needs a cheap, programmable settlement layer because a resolution can cost
 2. Activation of a provider-funded warranty after settlement.
 3. An evaluator-confirmed pass or refundable failure outcome.
 
-The x402 payment path and the warranty outcome pipeline are implemented for Arbitrum Sepolia (testnet) and run end to end on a local chain. The warranty registry and the compatibility engine are written and tested but not deployed; the [deployment runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) puts them on Arbitrum Sepolia in order. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+The x402 payment path and the warranty outcome pipeline run end to end on a local chain (`npm run e2e`) and ran on Arbitrum Sepolia (testnet) on 2026-10-01: the warranty registry and the Stylus compatibility engine are deployed there, and one purchase passed while another was refunded, with every transaction listed in [the deployment record](docs/deployments/arbitrum-sepolia.md). The [deployment runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) gives the steps. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
 
 ## Build status
 
@@ -64,16 +64,16 @@ Lemma is an active MVP build. The compatibility path, the testnet purchase path,
 | Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
 | Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
 | Dashboard views and production bundle checks | Implemented |
-| Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; contract not deployed and no outcomes recorded yet |
+| Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; deployed on Arbitrum Sepolia (testnet) with two demo outcomes recorded |
 | Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
-| x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented for Arbitrum Sepolia; not deployed, and no release is sellable yet |
+| x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented; two testnet purchases settled on Arbitrum Sepolia from a demo release with made-up evidence; no public release is sellable yet |
 | ERC-8004 reputation: registration file, public feedback files, attester, cached pass rates, and opt-in buyer agents | Implemented and tested against the official registries on a local node; no agent registered |
-| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; not deployed |
-| Warranty outcome pipeline: activation, evaluator outcomes, expiry, credit relay, registry indexer, refund tool, and operator scripts | Implemented and run end to end on a local chain (`npm run e2e`); not deployed |
-| Registry and engine deployment on Arbitrum Sepolia | Pending; the runbook is written |
+| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; deployed on Arbitrum Sepolia (testnet), not verified on Arbiscan |
+| Warranty outcome pipeline: activation, evaluator outcomes, expiry, credit relay, registry indexer, refund tool, and operator scripts | Implemented; run end to end on a local chain (`npm run e2e`) and on Arbitrum Sepolia from one machine (one pass, one refund) |
+| Registry and engine deployment on Arbitrum Sepolia | Done on testnet, 2026-10-01 ([record](docs/deployments/arbitrum-sepolia.md)); ERC-8004 registration waits for a hosted server |
 | Public deployment, verified releases, benchmark evidence, and pilot | Pending |
 
-This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, deployed contract, or public revenue claim is made today.
+This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, mainnet contract, or public revenue claim is made today; the Arbitrum Sepolia deployment is a testnet demonstration with made-up evidence.
 
 ## Quickstart
 
@@ -138,8 +138,8 @@ Each workspace README explains how to develop that component. Start with the [do
 The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
 
 1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
-2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase, and a lost response recovered without a second payment.
-3. Run the [Arbitrum Sepolia runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation): deploy the registry and the compatibility engine, and demonstrate one pass and one refunded failure.
+2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase (done on 2026-10-01), and a lost response recovered without a second payment (shown on the local chain only).
+3. Run the [Arbitrum Sepolia runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation): deploy the registry and the compatibility engine, and demonstrate one pass and one refunded failure. Done on 2026-10-01 ([record](docs/deployments/arbitrum-sepolia.md)), except ERC-8004, which waits for a hosted server.
 4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
 5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
 6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.

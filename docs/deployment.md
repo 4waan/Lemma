@@ -1,6 +1,6 @@
 # Deployment
 
-This runbook describes the target Arbitrum Sepolia submission environment. The server, container, x402 paid path, ERC-8004 reputation, warranty registry contract, and warranty outcome pipeline are implemented and rehearsed on a local chain. Public deployment, including the registry's and the engine's, remains pending.
+This runbook describes the target Arbitrum Sepolia submission environment. The server, container, x402 paid path, ERC-8004 reputation, warranty registry contract, and warranty outcome pipeline are implemented and rehearsed on a local chain. The registry and the compatibility engine are deployed on Arbitrum Sepolia (testnet), where one purchase passed and one was refunded on 2026-10-01 ([Arbitrum Sepolia deployment](deployments/arbitrum-sepolia.md)); a hosted, public deployment of the server and ERC-8004 registration remain pending.
 
 ## Target environment
 
@@ -111,7 +111,7 @@ From one funded key to a passing and a refunded purchase on chain, in this order
 Before you start:
 
 - The hosts are reachable: `sepolia-rollup.arbitrum.io` (RPC), `arbitrum-sepolia-rpc.publicnode.com` (the Stylus activation check of step 3, which the official endpoint refuses), `sepolia.arbiscan.io` and `api.etherscan.io` (explorer and verification).
-- One funded key, `ARBITRUM_SEPOLIA_FUNDER_PRIVATE_KEY`: about 0.05 Sepolia ETH and 20 testnet USDC from Circle's faucet. It only funds the roles.
+- One funded key, `ARBITRUM_SEPOLIA_FUNDER_PRIVATE_KEY`: about 0.05 Sepolia ETH and 20 testnet USDC from Circle's faucet. It only funds the roles. In the faucet, choose Arbitrum Sepolia as the network: it may offer Arc testnet first, and USDC sent there does not reach Arbitrum Sepolia. USDC that landed on another testnet comes over with Circle's CCTP: a burn there (`depositForBurn` on TokenMessengerV2, destination domain 3, the funder as recipient), Circle's attestation (`iris-api-sandbox.circle.com`), then `receiveMessage` on Arbitrum Sepolia's MessageTransmitterV2; the 2026-10-01 run did this from Arc testnet.
 - `npm ci`, then `npm run build` (the scripts import the built packages); Foundry 1.7.1, cargo-stylus 0.10.9, and `jq`.
 - `ARBITRUM_SEPOLIA_RPC_URL` set in the shell for every step. The public endpoint (`https://sepolia-rollup.arbitrum.io/rpc`) carries no key; a provider's URL does, so keep it in the environment. Step 3 is the one place an endpoint becomes an argument (`--endpoint`): use a keyless public endpoint there.
 - A private directory outside the repository for the keys, for example `ROLES=~/.lemma/arbitrum-sepolia`.
@@ -129,7 +129,7 @@ A key reaches a command only through that command's environment: `PROVIDER_PRIVA
    ```
 
    The record (`contracts/deployments/arbitrum-sepolia/ResolutionWarrantyRegistry.json`) gives `RESOLUTION_WARRANTY_REGISTRY_ADDRESS` (`address`) and `WARRANTY_REGISTRY_START_BLOCK` (`blockNumber`). Export both for the next steps.
-3. **Engine.** From `contracts/stylus/confidence-contract`, deploy the Stylus engine with its constructor in the same transaction, owned by the deployer and recording only from the registry (see [Deploying](../contracts/README.md#deploying-not-done-yet)):
+3. **Engine.** From `contracts/stylus/confidence-contract`, deploy the Stylus engine with its constructor in the same transaction, owned by the deployer and recording only from the registry (see [Deploying](../contracts/README.md#deploying)):
 
    ```sh
    cargo stylus check --endpoint https://arbitrum-sepolia-rpc.publicnode.com
@@ -137,7 +137,7 @@ A key reaches a command only through that command's environment: `PROVIDER_PRIVA
      --constructor-args "$DEPLOYER_ADDRESS" "$RESOLUTION_WARRANTY_REGISTRY_ADDRESS"
    ```
 
-   Both commands simulate the program's activation first, which the official endpoint refuses (`program activation failed: stylus activations not allowed for this request`, seen on 2026-10-01); publicnode's endpoint, which carries no key either, answers it (so does `https://arbitrum-sepolia.gateway.tenderly.co`). `--constructor-args` takes every argument after it, so `--no-verify` must come before it: placed after, cargo stylus does not see it and tries to build in Docker. Export the deployed address as `ENGINE`. Then measure `record`'s gas against the registry's 300,000 budget, cold and warm, as [Gas for `record`](../contracts/README.md#gas-for-record-not-measured) describes, and cache the program first if the cold figure comes near it.
+   Both commands simulate the program's activation first, which the official endpoint refuses (`program activation failed: stylus activations not allowed for this request`, seen on 2026-10-01); publicnode's endpoint, which carries no key either, answers it (so does `https://arbitrum-sepolia.gateway.tenderly.co`). `--constructor-args` takes every argument after it, so `--no-verify` must come before it: placed after, cargo stylus does not see it and tries to build in Docker. Export the deployed address as `ENGINE`. Then measure `record`'s gas against the registry's 300,000 budget, cold and warm, as [Gas for `record`](../contracts/README.md#gas-for-record) describes, and cache the program first if the cold figure comes near it.
 4. **Engine hook.** `REGISTRY_OWNER_PRIVATE_KEY="$(cat "$ROLES/deployer.key")" npm run warranty:admin -w @lemma/server -- set-engine "$ENGINE"`. It refuses an engine that does not name this registry as the one allowed to record, and a key that is not the registry's owner.
 5. **Releases.** For each release to sell, as the registry's owner, with its roles: `REGISTRY_OWNER_PRIVATE_KEY="$(cat "$ROLES/deployer.key")" PROVIDER_ADDRESS="$(jq -r .roles.provider "$ROLES/roles.json")" EVALUATOR_ADDRESS="$(jq -r .roles.evaluator "$ROLES/roles.json")" npm run warranty:admin -w @lemma/server -- register-release <releaseId@version> --provisional`. The testnet sells the provisional overlay's releases; a public release needs no `--provisional`. The overlay stays empty until the stage-4 probe has priced a release ([Economic gates](economic-gates.md)), so until then a live run sells the demo release that `npx tsx e2e/live/catalog.ts --dir "$ROLES/catalog" --pay-to <provider address>` writes once (made-up evidence labelled `demo-1`, 0.25 testnet USDC, a 72-hour window), and every `warranty:admin` command in steps 5 to 7 takes `--catalog "$ROLES/catalog"` in place of `--provisional`. The claim window is the release's own `warranty.claimWindowHours`, the release must pay `PROVIDER_ADDRESS`, and a digest registers once (running it again reports it registered).
 6. **Bonds.** As the provider: `PROVIDER_PRIVATE_KEY="$(cat "$ROLES/provider.key")" npm run warranty:admin -w @lemma/server -- deposit-bond <releaseId@version> 5000000 --provisional`. Amounts are atomic USDC (5000000 is 5 testnet USDC); each warranty reserves its price, so 5 USDC covers 20 warranties at 0.25. When the registry's allowance is short, it approves exactly the amount; then it deposits.

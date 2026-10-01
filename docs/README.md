@@ -21,6 +21,7 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Bridge Runtime](bridge-runtime.md): repository profiling, the adoption record in previews, purchasing with the buyer signer and spend ledger, resolution selection, atomic apply, crash recovery, dependency installs, acceptance runs, receipt delivery with the opt-in agent id, and warranty refunds.
 - [Server Runtime](server-runtime.md): request handling, persistence, the x402 payment seam and its background jobs, demand privacy, ERC-8004 reputation (the attester and the summary cache), the warranty outcome pipeline (its jobs, outbox, indexer, credit relay route, and operator decisions), startup gates, and operational failures.
 - [Deployment](deployment.md): target environment, role separation, migrations, release checks, enabling paid tools, turning on ERC-8004 reputation, the Arbitrum Sepolia runbook for the warranty, engine, and reputation with its local rehearsal, rollout, rollback, and buyer setup.
+- [Arbitrum Sepolia deployment](deployments/arbitrum-sepolia.md): the testnet deployment of 2026-10-01: contract addresses, roles, every setup and purchase transaction with its gas, the engine's measured `record` gas, and the block-time incident.
 
 ## Produce evidence
 

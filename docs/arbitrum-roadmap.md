@@ -5,7 +5,7 @@ Section 6 of [arbitrum.md](arbitrum.md) analyzes four ways Lemma could use Arbit
 1. **Bounded spending** with ERC-7715 and ERC-7710: the chain, not only the bridge, limits what an agent can spend.
 2. **Zero-knowledge compatibility proofs**: a buyer proves its repository fits a release without revealing the repository's profile.
 
-Everything here is on testnet. Amounts are test USDC and Sepolia ETH, unless a line says Arbitrum One. Facts were read on September 27, 2026 from the sources listed at the end. Numbers marked **estimate** are our own arithmetic from code paths or published figures, not Lemma measurements. Nothing was read on chain, because this build environment cannot reach Arbitrum's RPCs or explorers.
+Everything here is on testnet. Amounts are test USDC and Sepolia ETH, unless a line says Arbitrum One. Facts were read on September 27, 2026 from the sources listed at the end. Numbers marked **estimate** are our own arithmetic from code paths or published figures, not Lemma measurements. Nothing was read on chain on September 27, because this build environment could not reach Arbitrum's RPCs then. The addresses in section 1.3 were read on chain on October 1, 2026.
 
 **How gaps are marked.** Lemma's hard rule is that the MCP experience stays fast and nearly hands-free (the UX rules are in [arbitrum.md, section 6.4](arbitrum.md#64-ux-rules-every-integration-follows)). Every part below that would add a manual blockchain step, a wait inside an agent's tool call, or a heavy install is marked **UX gap: holds implementation**, followed by what would lift it. Section 3 collects them in one table.
 
@@ -52,23 +52,30 @@ What stays the same: `checkPurchase`, the ledger, recovery after a lost answer, 
 
 ### 1.3 MetaMask Delegation Framework on Arbitrum
 
-MetaMask's Delegation Framework v1.3.0 is deployed at the same addresses on Arbitrum One and Arbitrum Sepolia (deterministic deployment with the salt "GATOR") [3]. Its deployment receipts show the first deployments on Arbitrum One on March 28, 2025 and on Arbitrum Sepolia on May 14, 2025 [3]. The v1.3.0 tag ships audit reports by Consensys Diligence (2024 and 2025) and Cyfrin (2025) in its `audits/` folder [3]; which report covers which contract has not been checked yet.
+MetaMask's Delegation Framework v1.3.0 is deployed at the same addresses on Arbitrum One and Arbitrum Sepolia (deterministic deployment with the salt "GATOR") [3]. Its deployment receipts show the first deployments on Arbitrum One on March 28, 2025 and on Arbitrum Sepolia on May 14, 2025 [3]. The v1.3.0 tag ships audit reports by Consensys Diligence (2024 and 2025) and Cyfrin (2025) in its `audits/` folder [3]. The table names, for each contract, the reports whose scope includes it (read October 1, 2026). None names the v1.3.0 tag itself; each reviewed the development commit it names.
 
-| Contract | Address (Arbitrum One and Arbitrum Sepolia) | Role for Lemma |
-| --- | --- | --- |
-| `DelegationManager` | `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3` | Redeems delegations; the facilitator calls it |
-| `EIP7702StatelessDeleGatorImpl` | `0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B` | The code the buyer's account points at after EIP-7702 |
-| `HybridDeleGatorImpl` | `0x48dBe696A4D990079e039489bA2053B36E8FFEC4` | A deployed smart account instead of an upgraded one |
-| `ERC20PeriodTransferEnforcer` | `0x474e3Ae7E169e940607cC624Da8A15Eb120139aB` | The daily cap: an amount per period, only through `transfer` |
-| `ERC20TransferAmountEnforcer` | `0xf100b0819427117EcF76Ed94B358B1A5b5C6D2Fc` | A total cap; used per payment to cap it at the price |
-| `AllowedCalldataEnforcer` | `0xc2b0d624c1c4319760C96503BA27C347F3260f55` | Pins the transfer's recipient to Lemma's payee |
-| `TimestampEnforcer` | `0x1046bb45C8d673d4ea75321280DB34899413c069` | The expiry |
-| `RedeemerEnforcer` | `0xE144b0b2618071B4E56f746313528a669c7E65c5` | Only the named facilitator may redeem |
-| `ValueLteEnforcer` | `0x92Bf12322527cAA612fd31a0e810472BBB106A8F` | No ETH moves (value 0) |
-| `LimitedCallsEnforcer` | `0x04658B29F6b82ed55274221a06Fc97D318E25416` | At most one redemption per delegation (section 1.5) |
-| `NonceEnforcer` | `0xDE4f2FAC4B3D87A1d9953Ca5FC09FCa7F366254f` | Revokes all earlier delegations at once |
+| Contract | Address (Arbitrum One and Arbitrum Sepolia) | Role for Lemma | Audit reports (`audits/` at v1.3.0) |
+| --- | --- | --- | --- |
+| `DelegationManager` | `0xdb9B1e94B5b69Df7e401DDbedE43491141047dB3` | Redeems delegations; the facilitator calls it | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24`, `diligence-9-24` |
+| `EIP7702StatelessDeleGatorImpl` | `0x63c0c19a282a1B52b07dD5a65b58948A07DAE32B` | The code the buyer's account points at after EIP-7702 | `cyfrin-3-25`, `diligence-2-25` |
+| `HybridDeleGatorImpl` | `0x48dBe696A4D990079e039489bA2053B36E8FFEC4` | A deployed smart account instead of an upgraded one | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24`, `diligence-9-24` |
+| `ERC20PeriodTransferEnforcer` | `0x474e3Ae7E169e940607cC624Da8A15Eb120139aB` | The daily cap: an amount per period, only through `transfer` | `cyfrin-4-25` |
+| `ERC20TransferAmountEnforcer` | `0xf100b0819427117EcF76Ed94B358B1A5b5C6D2Fc` | A total cap; used per payment to cap it at the price | `cyfrin-3-25`, `diligence-8-24` |
+| `AllowedCalldataEnforcer` | `0xc2b0d624c1c4319760C96503BA27C347F3260f55` | Pins the transfer's recipient to Lemma's payee | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24` |
+| `TimestampEnforcer` | `0x1046bb45C8d673d4ea75321280DB34899413c069` | The expiry | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24` |
+| `RedeemerEnforcer` | `0xE144b0b2618071B4E56f746313528a669c7E65c5` | Only the named facilitator may redeem | `cyfrin-3-25`, `diligence-8-24` |
+| `ValueLteEnforcer` | `0x92Bf12322527cAA612fd31a0e810472BBB106A8F` | No ETH moves (value 0) | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24` |
+| `LimitedCallsEnforcer` | `0x04658B29F6b82ed55274221a06Fc97D318E25416` | At most one redemption per delegation (section 1.5) | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24` |
+| `NonceEnforcer` | `0xDE4f2FAC4B3D87A1d9953Ca5FC09FCa7F366254f` | Revokes all earlier delegations at once | `cyfrin-3-25`, `diligence-6-24`, `diligence-8-24` |
 
-These addresses come from the framework's deployment document and receipts, not from reading the chain. Check the bytecode on Arbitrum Sepolia before using them (section 1.9).
+The reports: Cyfrin, March 18, 2025 (`cyfrin-3-25`) and April 1, 2025 (`cyfrin-4-25`); Consensys Diligence, June 2024 (`diligence-6-24`), August 2024 (`diligence-8-24`), October 2024 (`diligence-9-24`) and February 2025 (`diligence-2-25`). The other reports in the folder (`diligence-4-25`, `cyfrin-5-25-part1` and `-part2`) review none of these contracts.
+
+**Read on chain on October 1, 2026.**
+- Every address holds code on both chains.
+- The eight enforcers are byte-identical on Arbitrum Sepolia and Arbitrum One.
+- `DelegationManager` and the two DeleGator implementations differ between the chains only in the chain id and the EIP-712 domain separator they store, and all three return `VERSION()` "1.3.0".
+- Both DeleGator implementations point at this `DelegationManager` and at the ERC-4337 EntryPoint v0.7 (`0x0000000071727De22E5E9d8BAf0edAc6f37da032`). `HybridDeleGatorImpl` also links the `SCL_RIP7212` library at `0xCCD3B747F3DBd349fa3af4eBC7d0C31aE6f21dd1`, which has code on both chains.
+- Each contract's compiler metadata hash commits to source files identical to the v1.3.0 tag (solc 0.8.23, 200 optimizer runs). A fresh build of the tag compared byte for byte is still to do (section 1.9).
 
 There is no stock enforcer that caps a single ERC-20 transfer. The per-purchase cap therefore comes from the per-payment delegation the bridge signs (section 1.4), or would need a custom enforcer.
 
@@ -158,9 +165,10 @@ All gas figures in this table are **estimates** from MetaMask's code paths (an x
 
 ### 1.7 Trust points
 
-- **MetaMask's `DelegationManager` can be paused.** It is `Ownable2Step` and `Pausable`, and its owner can pause all redemptions [3]. That stops purchases (liveness), but cannot move funds. The fallback is the main key, which can still sign EIP-3009 transfers through the account.
-- **The account's code.** After EIP-7702, the buyer's account runs `EIP7702StatelessDeleGatorImpl`. A flaw there would affect the account. Record which audit report covers v1.3.0 before relying on it.
+- **MetaMask's `DelegationManager` can be paused.** It is `Ownable2Step` and `Pausable`, and its owner can pause all redemptions [3]. On October 1, 2026 the owner on both chains was an externally owned account (`0xB0403B32f54d0Bd752113f4009e8B534C6669f44`) and the manager was not paused. On Arbitrum One a transfer of ownership to `0xA428CCb39C71CdD0b19888eAca103D92B7384104` had been started but not accepted. A pause stops purchases (liveness), but cannot move funds. The fallback is the main key, which can still sign EIP-3009 transfers through the account.
+- **The account's code.** After EIP-7702, the buyer's account runs `EIP7702StatelessDeleGatorImpl`. A flaw there would affect the account. Cyfrin (March 2025) and Consensys Diligence (February 2025) reviewed it at the commits their reports name (section 1.3).
 - **The per-purchase cap stays in the bridge.** The session key signs each per-payment delegation, so a stolen session key can sign one for up to the remaining daily budget. The daily cap, the token, the payee and the expiry are the chain's guarantees; the per-purchase cap is not.
+- **The period enforcer does not check value.** At v1.3.0, `ERC20PeriodTransferEnforcer` checks the token, the `transfer` selector and the amount, but not that no ETH moves. In its answer to Consensys Diligence's April 2025 finding 4.12, MetaMask says to combine the period enforcers with other caveats for the calldata or the value. So `ValueLteEnforcer` with 0 stays part of every delegation.
 - **The facilitator carries a griefing risk.** A payer can invalidate a delegation between the simulation and the transaction, making the facilitator pay for a failed transaction [9]. The answers are an explicit gas limit, a rate limit per delegator, and an allowlist of the one `DelegationManager` address Lemma accepts (stricter than the spec requires).
 - **What becomes public.** `RedeemedDelegation` logs the full delegation [3], so the buyer's account, its session key, the daily cap and the payee become public. The payer-to-payee link already exists with EIP-3009. The budget is new public information.
 - **Draft standards.** Both ERCs are Drafts. ERC-7715 already renamed its method once.
@@ -177,7 +185,8 @@ Contracts, x402 facilitator code, signing and typed-data layouts belong to the p
 ### 1.9 Checklist for starting
 
 - [x] The plain x402 paid path (EIP-3009) is merged and has settled a real purchase on Arbitrum Sepolia: two on October 1, 2026 ([deployments/arbitrum-sepolia.md](deployments/arbitrum-sepolia.md)).
-- [ ] Read the bytecode at each address in section 1.3 on Arbitrum Sepolia and compare it with the v1.3.0 build. Record which audit report covers each contract Lemma uses.
+- [x] Read the bytecode at each address in section 1.3 on both chains, tie it to the v1.3.0 sources through its metadata, and record which audit report covers each contract (October 1, 2026).
+- [ ] Build the v1.3.0 tag (solc 0.8.23) and compare each contract's runtime code byte for byte, apart from the chain id and domain separator the DeleGators and the manager store.
 - [ ] Measure the gas of one real ERC-7710 x402 payment on Arbitrum Sepolia. Replace the estimates in section 1.6, and the chain cost `g` in `packages/catalog/economics.json` if it changes.
 - [ ] Prove, in a fork test, that a retried payment for the same resolution is refused on chain (derived delegation fields plus `LimitedCallsEnforcer`).
 - [ ] Check whether `@metamask/x402`'s delegation provider accepts a caller-chosen salt and extra caveats. If not, contribute that upstream rather than forking it.

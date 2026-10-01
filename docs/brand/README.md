@@ -22,10 +22,15 @@ The dashboard draws the same geometry inline (`apps/web/src/components/Logo.tsx`
 | Mint (band, highlights, primary button in dark mode) | `#5FE7BB` |
 | Band gradient | `#5FE6BA` to `#44CDA0` to `#17906B` |
 | Link green on white | `#0B7458` |
-| Mist (quiet surfaces) | `#F3F7F5` |
+| Mist (quiet surfaces, the footer) | `#F3F7F5` |
+| Page background (light), with white cards | `#F8FAF9` |
 | Dark background and surface | `#0B1113` and `#121A1C` |
 
 Mint is never used for text on white (1.5:1 contrast). Ink on mint is 12:1, so mint buttons carry ink text.
+
+## Layout
+
+The dashboard's home page uses the common product landing layout: an off-white page with white, 12 px rounded cards; a dark panel (ink in light mode) for a product view such as a session transcript or a live readout; mint for lines, arrows and live markers, never for text on white; and status badges in green (live), amber (testnet) and grey (off). Third-party names (Arbitrum, Stylus, x402, USDC, ERC-8004) appear as plain text under "Built on", with no logo and no link, so nothing implies an affiliation.
 
 ## Rules
 

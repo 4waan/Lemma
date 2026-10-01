@@ -37,7 +37,8 @@
   --font-sans: "Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
 
-  --bg: #ffffff;
+  /* Off-white page, white cards: the cards stand out without heavy borders. */
+  --bg: #f8faf9;
   --surface: #ffffff;
   --surface-2: #f3f7f5;
   --line: #e2e8e6;
@@ -78,8 +79,9 @@
   --mark-stem: #0e1518;
   --mark-tip: #0e1518;
 
-  --radius: 14px;
+  --radius: 12px;
   --radius-sm: 9px;
+  --section-gap: 6rem;
   --shadow: 0 1px 2px rgba(14, 21, 24, 0.06), 0 6px 20px rgba(14, 21, 24, 0.05);
   --max: 75rem;
   --gutter: 16px;
@@ -166,6 +168,12 @@ h4 {
   margin: 0 0 0.5rem;
   letter-spacing: -0.02em;
   font-weight: 600;
+}
+
+/* Headings break into even lines, so no word is left alone on the last one. */
+h1,
+h2 {
+  text-wrap: balance;
 }
 
 h1 {
@@ -339,6 +347,9 @@ ol {
 
 .site-header {
   background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  backdrop-filter: saturate(180%) blur(12px);
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
@@ -478,46 +489,85 @@ main.container {
 .site-footer {
   border-top: 1px solid var(--line);
   background: var(--surface-2);
-  padding: 2.25rem 0 2.75rem;
+  padding: 3.5rem 0 2.5rem;
   color: var(--fg-2);
   font-size: 0.9375rem;
 }
 
-.footer-inner {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 1.5rem 3rem;
-  justify-content: space-between;
-  align-items: flex-start;
+/* The brand and four columns: Product, Explore, Trust, Built on. Two columns on phones. */
+.footer-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) repeat(4, minmax(0, 1fr));
+  gap: 2rem 1.5rem;
+}
+
+@media (max-width: 899px) {
+  .footer-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .footer-brand {
+    grid-column: 1 / -1;
+  }
 }
 
 .footer-brand {
-  max-width: 34rem;
+  max-width: 22rem;
   color: var(--muted);
 }
 
 .footer-brand .lockup {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0.625rem;
 }
 
 .footer-brand p {
   margin: 0;
 }
 
-.footer-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
+.footer-title {
+  font-family: var(--font-sans);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg);
+  margin: 0 0 0.75rem;
 }
 
-.footer-nav a {
+.footer-col ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.footer-col li {
+  color: var(--fg-2);
+}
+
+.footer-col a {
   color: var(--fg-2);
   text-decoration: none;
-  font-weight: 500;
 }
 
-.footer-nav a:hover {
+.footer-col a:hover {
   color: var(--accent);
+}
+
+.footer-base {
+  margin-top: 2.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 2rem;
+}
+
+.footer-base p {
+  margin: 0;
 }
 
 /* ---------- Buttons ---------- */
@@ -639,10 +689,19 @@ main.container {
   margin-top: 1.25rem;
 }
 
-.card {
+/* One surface for every card-like block, so cards, steps, stats, features, prices and releases match. */
+.card,
+.step,
+.stat,
+.feature,
+.price-card,
+.release {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
+}
+
+.card {
   padding: 1.25rem 1.375rem;
 }
 
@@ -739,19 +798,17 @@ main.container {
   }
 }
 
-.session {
+/* A dark product panel (Panel): the example session and the live meter. */
+.panel {
   background: var(--panel-bg);
   color: var(--panel-fg);
   border: 1px solid var(--panel-line);
   border-radius: var(--radius);
   padding: 1rem 1.25rem 1.25rem;
-  font-family: var(--font-mono);
-  font-size: 0.8125rem;
-  line-height: 1.7;
   box-shadow: var(--shadow);
 }
 
-.session-head {
+.panel-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -762,6 +819,12 @@ main.container {
   border-bottom: 1px solid var(--panel-line);
   padding-bottom: 0.625rem;
   margin-bottom: 0.75rem;
+}
+
+.session {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.7;
 }
 
 .session ol {
@@ -816,9 +879,6 @@ main.container {
 
 .step {
   position: relative;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   padding: 1.25rem 1.375rem 1.375rem;
 }
 
@@ -896,8 +956,20 @@ main.container {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  /* The numbers sit in a left gutter, so the line that joins them never crosses the text. */
+  .step {
+    padding-left: 3.75rem;
+  }
+
+  .step-num {
+    position: absolute;
+    left: 1rem;
+    top: 1.25rem;
+    margin: 0;
+  }
+
   .step:not(:last-child)::after {
-    left: calc(1.375rem + 1rem - 1px);
+    left: calc(2rem - 1px);
     right: auto;
     top: 3.25rem;
     width: 2px;
@@ -905,15 +977,15 @@ main.container {
   }
 
   .step:not(:first-child)::before {
-    left: calc(1.375rem + 1rem - 1px);
+    left: calc(2rem - 1px);
     top: 0;
     width: 2px;
     height: 1.25rem;
   }
 
   .step:last-child::before {
-    left: calc(1.375rem + 1rem - 7px);
-    top: 0.35rem;
+    left: calc(2rem - 7px);
+    top: 0;
     width: 0;
     height: 0;
     border-left: 7px solid transparent;
@@ -967,6 +1039,16 @@ main.container {
   position: absolute;
   right: 1rem;
   top: 1rem;
+}
+
+/* On phones the chart's caption takes the full width, so the badge sits above it. */
+@media (max-width: 599px) {
+  .stat-chart .example {
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 0.5rem;
+  }
 }
 
 .band {
@@ -1047,9 +1129,6 @@ main.container {
 }
 
 .stat {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   padding: 1rem 1.125rem;
 }
 
@@ -1088,23 +1167,6 @@ main.container {
 
 .stat.danger dd {
   color: var(--danger);
-}
-
-.stats.compact {
-  gap: 0;
-  background: var(--surface-2);
-  border-radius: var(--radius);
-  padding: 0.5rem 0.75rem;
-}
-
-.stats.compact .stat {
-  background: transparent;
-  border: 0;
-  padding: 0.75rem 1rem;
-}
-
-.stats.compact .stat dd {
-  font-size: 1.25rem;
 }
 
 /* ---------- Badges, chips and callouts ---------- */
@@ -1523,9 +1585,6 @@ pre code {
 /* ---------- Catalog ---------- */
 
 .release {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
   padding: 1.25rem 1.375rem;
 }
 
@@ -2143,6 +2202,446 @@ td.num .platform-deps {
   font-size: 0.9375rem;
 }
 
+/* ---------- Home: Polar-style sections ---------- */
+
+/* The home page breathes more than the explorer pages: its sections sit further apart. */
+.home > .section {
+  margin-top: var(--section-gap);
+}
+
+.home > .cta-band {
+  margin-top: var(--section-gap);
+}
+
+.section-head .eyebrow {
+  margin-bottom: 0.5rem;
+}
+
+.section-head h2 + p {
+  margin-top: 0.25rem;
+}
+
+.section-head.centered {
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+/* The announcement link above the hero's headline. */
+.announce {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  max-width: 100%;
+  padding: 0.3rem 0.875rem 0.3rem 0.375rem;
+  margin-bottom: 1.25rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--fg-2);
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-decoration: none;
+}
+
+.announce:hover {
+  color: var(--fg);
+  border-color: var(--fg-2);
+}
+
+.announce > span:not(.badge) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.announce svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* Building blocks: three across, two on tablets, one on phones. */
+.feature-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 959px) {
+  .feature-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 599px) {
+  .feature-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.feature {
+  padding: 1.375rem 1.375rem 1.5rem;
+  transition: border-color 0.15s ease;
+}
+
+.feature:hover {
+  border-color: var(--mint-deep);
+}
+
+.feature-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.feature-icon,
+.flow-icon,
+.own-icon {
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.feature h3 {
+  margin-bottom: 0.375rem;
+}
+
+.feature p {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 0.9375rem;
+}
+
+/* Live evidence: the flow beside the meter, stacked on phones. */
+.evidence-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+@media (max-width: 899px) {
+  .evidence-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2rem;
+  }
+}
+
+.flow {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1.5rem;
+}
+
+.flow-step {
+  position: relative;
+  display: flex;
+  gap: 1rem;
+}
+
+/* A mint line joins each step's icon to the next, ending in an arrowhead. */
+.flow-step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: calc(1.125rem - 1px);
+  top: 2.75rem;
+  bottom: -1.125rem;
+  width: 2px;
+  background: var(--mint);
+}
+
+.flow-step:not(:last-child)::before {
+  content: "";
+  position: absolute;
+  left: calc(1.125rem - 6px);
+  bottom: -1.375rem;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 9px solid var(--mint);
+}
+
+.flow-body {
+  min-width: 0;
+}
+
+.flow-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.625rem;
+}
+
+.flow-head h3 {
+  margin: 0;
+}
+
+.flow-where {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0.125rem 0 0.375rem;
+}
+
+.flow-step p {
+  margin: 0;
+  color: var(--fg-2);
+  font-size: 0.9375rem;
+}
+
+/* The live meter: one large figure, three small ones, and where they come from. */
+.meter {
+  font-size: 0.9375rem;
+}
+
+.live-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--panel-mint);
+  font-weight: 600;
+}
+
+.live-dot::before {
+  content: "";
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--panel-mint);
+  animation: live-pulse 2s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.meter-wait {
+  color: var(--panel-muted);
+  margin: 0.5rem 0;
+}
+
+.meter-figure {
+  margin: 0.5rem 0 1.25rem;
+}
+
+.meter-value {
+  display: block;
+  font-family: var(--font-heading);
+  font-size: clamp(2.75rem, 2rem + 3vw, 4rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--panel-mint);
+}
+
+.meter-caption {
+  display: block;
+  margin-top: 0.5rem;
+  color: var(--panel-muted);
+}
+
+.meter-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+  padding: 0.875rem 0;
+  border-top: 1px solid var(--panel-line);
+  border-bottom: 1px solid var(--panel-line);
+}
+
+.meter-stats dt {
+  color: var(--panel-muted);
+  font-size: 0.8125rem;
+}
+
+.meter-stats dd {
+  margin: 0.125rem 0 0;
+  font-family: var(--font-heading);
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--panel-fg);
+}
+
+.meter-basis,
+.meter-foot {
+  color: var(--panel-muted);
+  overflow-wrap: anywhere;
+}
+
+.meter-basis code {
+  color: var(--panel-fg);
+}
+
+.meter-foot {
+  font-size: 0.8125rem;
+  margin: 0.5rem 0 0;
+}
+
+.meter a {
+  color: var(--panel-mint);
+}
+
+/* Pricing: three plans, the paid one raised. */
+.price-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: stretch;
+}
+
+@media (max-width: 899px) {
+  .price-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.price-card {
+  padding: 1.5rem 1.5rem 1.625rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.price-card.featured {
+  border: 2px solid var(--mint-deep);
+  box-shadow: var(--shadow);
+}
+
+.price-card h3 {
+  color: var(--fg-2);
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.price {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.5rem;
+  margin: 0 0 1.25rem;
+}
+
+.price-figure {
+  font-family: var(--font-heading);
+  font-size: 2.25rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  color: var(--fg);
+}
+
+.price-unit {
+  color: var(--muted);
+  font-size: 0.9375rem;
+}
+
+.price-items {
+  list-style: none;
+  margin: 0;
+  padding: 1.25rem 0 0;
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0.625rem;
+}
+
+.price-items li {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  color: var(--fg-2);
+  font-size: 0.9375rem;
+}
+
+.price-items svg {
+  flex-shrink: 0;
+  margin-top: 0.2rem;
+  color: var(--accent);
+}
+
+/* Verify it yourself: the contracts beside the read-only check. */
+.verify-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+@media (max-width: 899px) {
+  .verify-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.verify-grid .card-title {
+  margin-bottom: 0.75rem;
+}
+
+.verify-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.verify-list li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.25rem 1rem;
+  padding: 0.625rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.9375rem;
+}
+
+.verify-list li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+
+/* Run your own Lemma: one row with an icon, the text and a button. */
+.own {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 1.5rem 1.75rem;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.own h2 {
+  font-size: 1.375rem;
+  margin-bottom: 0.25rem;
+}
+
+.own p {
+  margin: 0;
+  color: var(--fg-2);
+}
+
+@media (max-width: 759px) {
+  .own {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 /* ---------- Motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {
@@ -2152,7 +2651,12 @@ td.num .platform-deps {
     transition: none;
   }
 
-  .mark-loading {
+  .mark-loading,
+  .live-dot::before {
     animation: none;
+  }
+
+  .feature {
+    transition: none;
   }
 }

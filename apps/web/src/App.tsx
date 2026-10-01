@@ -5,7 +5,7 @@ import { type Loaded, useView } from "./api.js";
 import { Icon } from "./components/Icon.js";
 import { Logo, MarkMono } from "./components/Logo.js";
 import { Callout, EmptyState } from "./components/ui.js";
-import { FOOTER_NAV, NAV, type Route, parseRoute, titleFor } from "./routes.js";
+import { BUILT_ON, FOOTER_COLUMNS, NAV, type Route, isCurrent, parseRoute, titleFor } from "./routes.js";
 import { Catalog } from "./views/Catalog.js";
 import { Demand } from "./views/Demand.js";
 import { Evidence } from "./views/Evidence.js";
@@ -14,7 +14,7 @@ import { Resolution, ResolutionLookup } from "./views/Resolution.js";
 import { Setup } from "./views/Setup.js";
 import { Status } from "./views/Status.js";
 
-/** The dashboard shell: the header and its navigation, the view the URL fragment names, and the footer with the explorer pages. */
+/** The dashboard shell: the header and its navigation, the view the URL fragment names, and the footer with its link columns. */
 export function App({ initialHash = typeof window === "undefined" ? "" : window.location.hash }: { initialHash?: string }) {
   const [route, setRoute] = useState<Route>(() => parseRoute(initialHash));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -38,12 +38,12 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
       </a>
       <header className="site-header">
         <div className="container header-inner">
-          <a className="brand" href="#/" aria-label="Lemma home">
+          <a className="brand" href="#/" aria-label="Lemma home" aria-current={route.view === "overview" && route.anchor === null ? "page" : undefined}>
             <Logo />
           </a>
           <nav id="site-nav" className={menuOpen ? "site-nav open" : "site-nav"} aria-label="Main">
             {NAV.map((item) => (
-              <a key={item.href} href={item.href} aria-current={item.view === route.view ? "page" : undefined}>
+              <a key={item.href} href={item.href} aria-current={isCurrent(item, route) ? "page" : undefined}>
                 {item.label}
               </a>
             ))}
@@ -66,21 +66,40 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
         <RouteView route={route} />
       </main>
       <footer className="site-footer">
-        <div className="container footer-inner">
-          <div className="footer-brand">
-            <span className="lockup small-lockup">
-              <MarkMono size={20} />
-              <span className="wordmark">Lemma</span>
-            </span>
-            <p className="small muted">Testnet only: every amount is test USDC on Arbitrum Sepolia. This read-only dashboard holds no keys and cannot sign or change anything.</p>
-          </div>
-          <nav className="footer-nav" aria-label="More">
-            {FOOTER_NAV.map((item) => (
-              <a key={item.href} href={item.href}>
-                {item.label}
-              </a>
+        <div className="container">
+          <div className="footer-grid">
+            <div className="footer-brand">
+              <span className="lockup small-lockup">
+                <MarkMono size={20} />
+                <span className="wordmark">Lemma</span>
+              </span>
+              <p className="small">Verified integrations for coding agents, previewed for free and paid in USDC through x402.</p>
+            </div>
+            {FOOTER_COLUMNS.map((column) => (
+              <nav className="footer-col" key={column.title} aria-label={column.title}>
+                <h2 className="footer-title">{column.title}</h2>
+                <ul>
+                  {column.items.map((item) => (
+                    <li key={item.href}>
+                      <a href={item.href}>{item.label}</a>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
             ))}
-          </nav>
+            <div className="footer-col">
+              <h2 className="footer-title">Built on</h2>
+              <ul>
+                {BUILT_ON.map((name) => (
+                  <li key={name}>{name}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <div className="footer-base">
+            <p className="small">Testnet only: every amount is test USDC on Arbitrum Sepolia. This read-only dashboard holds no keys and cannot sign or change anything.</p>
+            <p className="small">The names under Built on belong to their owners, and Lemma is not affiliated with them.</p>
+          </div>
         </div>
       </footer>
     </>

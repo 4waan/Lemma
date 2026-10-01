@@ -86,3 +86,74 @@ export function EmptyState({ title, children }: { title: string; children: React
 export function Built({ built }: { built: boolean }) {
   return built ? <Badge tone="ok">Built</Badge> : <Badge tone="warn">In progress</Badge>;
 }
+
+/** Cards in a grid, as a list so they are counted and read in order. */
+export function FeatureGrid({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <ul className="feature-grid" aria-label={label}>
+      {children}
+    </ul>
+  );
+}
+
+/** One building block in a `FeatureGrid`: an icon, its state on this server, a title and one sentence. */
+export function FeatureCard({ icon, title, state, children }: { icon: IconName; title: string; state?: ReactNode; children: ReactNode }) {
+  return (
+    <li className="feature">
+      <div className="feature-head">
+        <span className="feature-icon" aria-hidden="true">
+          <Icon name={icon} size={18} />
+        </span>
+        {state}
+      </div>
+      <h3>{title}</h3>
+      <p>{children}</p>
+    </li>
+  );
+}
+
+/** A plan in the pricing section: its price, the unit the price is in, and what it includes. */
+export function PricingCard({
+  name,
+  price,
+  unit,
+  featured = false,
+  items,
+}: {
+  name: string;
+  price: ReactNode;
+  unit?: ReactNode;
+  featured?: boolean | undefined;
+  items: ReadonlyArray<readonly [key: string, content: ReactNode]>;
+}) {
+  return (
+    <div className={featured ? "price-card featured" : "price-card"}>
+      <h3>{name}</h3>
+      <p className="price">
+        <span className="price-figure">{price}</span>
+        {unit === undefined ? null : <span className="price-unit">{unit}</span>}
+      </p>
+      <ul className="price-items">
+        {items.map(([key, content]) => (
+          <li key={key}>
+            <Icon name="check" size={16} />
+            <span>{content}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** A dark product panel with a title bar, for a session transcript or a live readout. */
+export function Panel({ title, badge, label, className, children }: { title: string; badge?: ReactNode; label: string; className?: string | undefined; children: ReactNode }) {
+  return (
+    <aside className={className === undefined ? "panel" : `panel ${className}`} aria-label={label}>
+      <div className="panel-head">
+        <span>{title}</span>
+        {badge}
+      </div>
+      {children}
+    </aside>
+  );
+}

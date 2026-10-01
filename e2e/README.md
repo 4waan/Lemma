@@ -34,3 +34,17 @@
 ## When it fails
 
 The failing assertion names the step. The tail of the server's log (JSON lines, with the run's keys and claim secrets masked) follows on stderr; `LEMMA_E2E_SERVER_LOG=<file>` writes the whole log. Nothing survives the run: anvil stops and the temporary directory (keys, workspaces, catalog) is deleted.
+
+## Live run on Arbitrum Sepolia
+
+`e2e/live/` holds the commands for step 10 of the [Arbitrum Sepolia runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) when no hosted server exists yet: everything runs on one machine against the real chain, with the run's role keys in `$ROLES` (`npm run sepolia:roles`). Run them with `npx tsx` from the repository root after `npm run build`. None of them takes a key as an argument or prints one; run data stays outside the repository.
+
+| Command | What it does |
+| --- | --- |
+| `e2e/live/catalog.ts --dir <dir> --pay-to <provider>` | Writes the demo catalog once: one payment-gating release with made-up evidence labelled `demo-1`, 0.25 testnet USDC to the provider, a 72-hour warranty window. The public catalog has nothing to sell before frozen evidence, nor the provisional overlay before the stage-4 probe. The `warranty:admin` commands read it with `--catalog <dir>`. |
+| `e2e/live/serve.ts --catalog <dir>` | The server as `e2e/lib/server.ts` assembles it (the app and every job main.ts runs) on that catalog, with Postgres at `DATABASE_URL` (migrated first) and the runbook's step 9 settings in its environment; jobs every few seconds; JSON log lines on stdout. |
+| `e2e/live/agent.ts adopt pass\|fail --dir <dir> --api <url> --signer-socket <path> --pay-to <provider> [--refund-to <address>]` | Plays the agent: the shipped `lemma-mcp` on a fixture repository the release fits (its test passes or fails once applied), buying through a running `lemma-signer serve`. Previews, buys, waits for the warranty to be active, applies and verifies, and prints each answer, the resolution id and, with `ARBITRUM_SEPOLIA_RPC_URL` set, the settlement transaction. |
+| `e2e/live/agent.ts refund --dir <dir> ...` | Asks `lemma_claim_refund` for that bridge's claims, once the evaluator has decided a failure (`npm run evaluator -w @lemma/server -- decide <id> failed`); run it again until it answers `refunded`. |
+| `e2e/live/local-chain.ts chain\|engine --rpc <local anvil> ...` | Rehearsal only: makes a local anvil pose as Arbitrum Sepolia (USDC, the ERC-8004 registries, a funded funder key file) and deploys the engine's stand-in, so the whole runbook can be run with these commands before any testnet funds are spent. It refuses a non-local RPC. |
+
+A rehearsal on anvil runs the runbook's own commands in order: `local-chain.ts chain`, `npm run sepolia:roles`, the two steps of `DeployRegistry.s.sol`, `local-chain.ts engine` in place of the Stylus deployment, `catalog.ts`, `warranty:admin` (`set-engine`, `register-release`, `deposit-bond`, `set-priors`, `status`), `agent:register` (with `ERC8004_IDENTITY_REGISTRY` from `chain`), then `serve.ts` (with both `ERC8004_*_REGISTRY` overrides and `EXPLORER_BASE_URL` empty), `lemma-signer serve`, and `agent.ts`. Delete `contracts/broadcast/DeployRegistry.s.sol/421614/` afterwards: the real deployment's `record()` step reads that directory. A Unix socket's path holds at most 103 bytes, so give `lemma-signer` a short `LEMMA_SIGNER_SOCKET` when the state directory is deep.

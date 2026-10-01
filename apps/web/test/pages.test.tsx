@@ -210,11 +210,13 @@ describe("formatting, links and routes", () => {
 });
 
 describe("pages", () => {
-  it("explains the product in one screen and marks what is still being built", () => {
+  it("explains the product in one screen and marks what runs on the testnet only", () => {
     const html = renderToStaticMarkup(<Overview />);
     for (const text of ["already proven", "Example session", "How it works", "Why Arbitrum", "Try it in your agent", 'id="how-it-works"']) expect(html).toContain(text);
     expect(html).toContain("Live");
-    expect(html).toContain("Coming soon");
+    // Buying is built and settles in test USDC: it says testnet, never "coming soon".
+    expect(html).toContain("Testnet");
+    expect(html.toLowerCase()).not.toContain("coming soon");
     // The example session uses the worked example's numbers and says it is illustrative.
     expect(html).toContain("Illustrative");
     expect(html).toContain(`price ${WORKED_EXAMPLE.price} USDC`);
@@ -255,6 +257,11 @@ describe("pages", () => {
     for (const name of ["LEMMA_SIGNER_SOCKET", "LEMMA_MAX_USDC_PER_RESOLUTION", "LEMMA_DAILY_USDC_CAP", "LEMMA_ALLOWED_PAY_TO"]) expect(html).toContain(name);
     expect(html).toContain("250000 is 0.25 USDC");
     expect(html).not.toContain("ARBITRUM_SEPOLIA_RPC_URL");
+    // Every tool the bridge registers is listed, the refund tool included.
+    for (const tool of ["lemma_preview", "lemma_buy_resolution", "lemma_apply_resolution", "lemma_verify_adoption", "lemma_claim_refund"]) expect(html).toContain(tool);
+    // Purchases need a refund address other than the buyer's: there is no default to fall back on.
+    expect(html).toContain("other than the buyer&#x27;s");
+    expect(html).not.toContain("the buyer&#x27;s address</td>");
   });
 
   it("lists LEMMA_AGENT_ID, says what it publishes, and does not claim the bridge sends no environment value", () => {
@@ -379,6 +386,9 @@ describe("pages", () => {
     expect(html).toContain(`https://sepolia.arbiscan.io/address/${ARBITRUM_SEPOLIA_USDC}`);
     for (const why of ["not used: this server runs no warranty pipeline", "not used: no provider agent is configured", "not used: the attester is off", "none configured"]) expect(html).toContain(why);
     expect(html).toContain("Previews only");
+    // The paid path is built: a server without it has it turned off, not "coming".
+    expect(html).toContain("the paid tools are off on this server");
+    expect(html).not.toContain("not registered yet");
     expect(html).toContain("placeholder: nothing can be sold");
 
     const contracts = {
@@ -391,6 +401,7 @@ describe("pages", () => {
     const on = renderToStaticMarkup(<Status view={full} />);
     for (const address of [ARBITRUM_SEPOLIA_USDC, ...Object.values(contracts)]) expect(on).toContain(`href="https://sepolia.arbiscan.io/address/${address}"`);
     expect(on).toContain("ERC-8004 agent <code>42</code>");
+    expect(on).toContain("x402 paid tools are registered");
     expect(on).toContain("provider bonds back purchases on the warranty registry");
     expect(on).toContain('aria-label="View the warranty registry address on Arbiscan (opens in a new tab)"');
     expect(on).not.toContain("not used:");

@@ -57,7 +57,7 @@ export function Status({ view }: { view: StatusView }) {
           tone={view.status === "ok" ? "ok" : "danger"}
           note={view.status === "ok" ? "the store answers" : "degraded: the database is not answering, so offers and resolutions may fail"}
         />
-        <Stat label="Purchases" value={view.paidTools ? "Enabled" : "Previews only"} note={view.paidTools ? "x402 paid tools are registered" : "the paid tools are not registered yet"} />
+        <Stat label="Purchases" value={view.paidTools ? "Enabled" : "Previews only"} note={view.paidTools ? "x402 paid tools are registered" : "the paid tools are off on this server"} />
         <Stat
           label="Warranties"
           value={warranty ? "On" : "Off"}

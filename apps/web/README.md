@@ -19,7 +19,7 @@ Set `LEMMA_API_URL` when the development server should proxy to an address other
 
 | Fragment | Shows | Read model |
 | --- | --- | --- |
-| `#/` | Home: what Lemma does with an example session, the three steps (check, buy, apply) marked live or coming soon, why it pays (the worked example's cost chart), why Arbitrum, and live figures from this server. | `CatalogView`, `StatusView` |
+| `#/` | Home: what Lemma does with an example session, the three steps (check, buy, apply) marked live or testnet, why it pays (the worked example's cost chart), why Arbitrum, and live figures from this server. | `CatalogView`, `StatusView` |
 | `#/how-it-works` | Home, scrolled to the three steps. | as above |
 | `#/catalog` | One card per release: what it fits, price, warranty, source, expiry and its public adoption record (the ERC-8004 pass rate and count with the distinct buyers behind it, or "no public record yet"), with the digest and the per-profile table under Details, including each profile's compatibility confidence, what it rests on, and the distinct buyers behind its outcomes. Buyer counts show from three up; below that the page says "fewer than 3 buyers". A capability without a release shows its free build answer. | `CatalogView` |
 | `#/evidence` | Proof: the two-arm benchmark and its fixed parameters, every evidenced profile with its numbers and cost chart, compatibility confidence per profile with what it rests on ("benchmark prior, no outcomes yet" until outcomes exist, and "provisional probe prior" when the evidence is provisional) and the distinct buyers behind its outcomes, the pricing rule with a calculator, and what to trust, including the evaluator's role and the known receipt gap. | `CatalogView` |

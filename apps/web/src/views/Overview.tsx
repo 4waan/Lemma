@@ -11,8 +11,8 @@ import { networkName, shortHex } from "../format.js";
 /**
  * The home page: one sentence and an example session, the three steps, why
  * it pays, why Arbitrum, live figures from this server, and the call to
- * action. It states only what the repository implements and marks the rest
- * as coming soon.
+ * action. It states only what the repository implements, and marks what runs
+ * on the testnet only (buying, which settles in test USDC on Arbitrum Sepolia).
  */
 export function Overview() {
   const catalog = useView<CatalogView>("/api/v1/catalog", CatalogView);
@@ -83,7 +83,7 @@ function ExampleSession() {
         </li>
         <li>
           <div className="session-call">
-            lemma_buy_resolution <span className="pill">coming soon</span>
+            lemma_buy_resolution <span className="pill">testnet</span>
           </div>
           <div className="session-out">pays {WORKED_EXAMPLE.price} USDC on Arbitrum Sepolia, within your spending caps</div>
         </li>
@@ -102,10 +102,10 @@ function ExampleSession() {
   );
 }
 
-const STEPS: ReadonlyArray<{ readonly title: string; readonly live: boolean; readonly text: string }> = [
-  { title: "Check", live: true, text: "The bridge sends a small profile of your repository, never code. Lemma answers reuse, adapt, build or decline. Always free." },
-  { title: "Buy", live: false, text: "For a match, the agent pays cents in USDC through x402 on Arbitrum. Its spending caps are checked in code before it signs." },
-  { title: "Apply", live: true, text: "The patch is applied all or nothing, and the release's own tests run. The outcome becomes a signed adoption receipt." },
+const STEPS: ReadonlyArray<{ readonly title: string; readonly status: "live" | "testnet"; readonly text: string }> = [
+  { title: "Check", status: "live", text: "The bridge sends a small profile of your repository, never code. Lemma answers reuse, adapt, build or decline. Always free." },
+  { title: "Buy", status: "testnet", text: "For a match, the agent pays cents in USDC through x402 on Arbitrum. Its spending caps are checked in code before it signs." },
+  { title: "Apply", status: "live", text: "The patch is applied all or nothing, and the release's own tests run. The outcome becomes a signed adoption receipt." },
 ];
 
 function Steps() {
@@ -123,7 +123,7 @@ function Steps() {
             </span>
             <div className="step-head">
               <h3>{step.title}</h3>
-              {step.live ? <Badge tone="ok">Live</Badge> : <Badge tone="warn">Coming soon</Badge>}
+              {step.status === "live" ? <Badge tone="ok">Live</Badge> : <Badge tone="warn">Testnet</Badge>}
             </div>
             <p>{step.text}</p>
           </li>
@@ -209,7 +209,7 @@ function LiveFigures({ catalog, status }: { catalog: Loaded<CatalogView>; status
         <Stat
           label="Purchases"
           value={status.state === "ready" ? (status.data.paidTools ? "Enabled" : "Previews only") : waiting(status)}
-          note={status.state === "ready" && !status.data.paidTools ? "the paid path is coming" : "x402 paid tools"}
+          note={status.state === "ready" && !status.data.paidTools ? "payments are off on this server" : "x402 paid tools, test USDC"}
         />
       </dl>
       {catalog.state === "error" || status.state === "error" ? (

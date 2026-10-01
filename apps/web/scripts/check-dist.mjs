@@ -1,6 +1,7 @@
 // Fails the bundle if the built dashboard needs anything the server's CSP
 // refuses (inline scripts, styles or handlers, data: URIs, other origins),
-// references a file the server will not serve, or ships source maps.
+// references a file the server will not serve, or ships source maps or
+// WebAssembly (the compatibility engine is server-only).
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -34,9 +35,12 @@ export function checkDist(dist) {
   }
   if (/<style\b/i.test(html)) problems.push("inline style element");
 
+  // The compatibility engine (@lemma/confidence) is server-only: no wasm module, file or inlined, reaches the browser.
+  for (const file of files.filter((f) => f.endsWith(".wasm"))) problems.push(`wasm shipped: ${file}`);
   for (const file of files.filter((f) => f.endsWith(".js") || f.endsWith(".css"))) {
     const text = readFileSync(join(dist, file), "utf8");
     if (/sourceMappingURL\s*=/.test(text)) problems.push(`source map reference in ${file}`);
+    if (file.endsWith(".js") && (/\bWebAssembly\s*\./.test(text) || text.includes("AGFzbQ"))) problems.push(`wasm loaded or inlined in ${file}`);
     if (file.endsWith(".css")) {
       if (/@import\b/i.test(text)) problems.push(`@import in ${file}`);
       for (const [, raw] of text.matchAll(/url\(\s*([^)]*?)\s*\)/gi)) {
@@ -54,5 +58,5 @@ if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.a
     console.error(problems.join("\n"));
     process.exit(1);
   }
-  console.log("dist: no inline code or handlers, only served /assets/ references, no source maps");
+  console.log("dist: no inline code or handlers, only served /assets/ references, no source maps, no wasm");
 }

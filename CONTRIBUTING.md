@@ -29,11 +29,13 @@ Do not duplicate a schema independently across applications.
 2. Create a local `.env` only when a task requires it.
 3. Add or update tests with every behavior change.
 4. Run `npm run verify` (type checking, tests, and the production build) and the relevant Foundry checks.
-5. Review logs and generated artifacts for secrets before committing. The pre-commit hook runs gitleaks on staged changes when it is installed locally, `npm run secrets:scan` scans your history, and CI scans every commit.
+5. `npm test` runs from a fresh clone, before any build: tests that start a child process run it with `node --conditions=source --import tsx`, and each workspace's `source` export condition points that child at `src/`, never at a stale `dist/`.
+6. Linux is the reference platform, and CI runs every test there. On macOS or in a sandbox, tests that need Linux (`/proc`, network and pid namespaces, `unshare` and `ip` for offline acceptance, byte file names the filesystem refuses, or a `ps` that can see other processes) are skipped with a comment saying why; variables the OS adds to every process (macOS `__CF_USER_TEXT_ENCODING`) are ignored in exact environment checks.
+7. Review logs and generated artifacts for secrets before committing. The pre-commit hook runs gitleaks on staged changes when it is installed locally, `npm run secrets:scan` scans your history, and CI scans every commit.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. It has three jobs: `verify` (typecheck, tests, build on the Node version in `.nvmrc`), `contracts` (`forge build` and `forge test`), and `secrets` (gitleaks over full history with `.gitleaks.toml`). Third-party actions are pinned to commit SHAs, and gitleaks is pinned by version and checksum. Update a pin only in a dedicated change.
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`. Its jobs are `verify` (typecheck, tests, build on the Node version in `.nvmrc`), `macos` (the same `npm run verify` on macOS, where the tests that need Linux skip), `postgres` (the store's race and migration tests against Postgres), `contracts` (`forge build`, `forge test`, the ABI check and a deploy rehearsal), `stylus` (the Stylus engine's tests, ABI and reproducible wasm), `e2e` (`npm run e2e` on anvil), and `secrets` (gitleaks over full history with `.gitleaks.toml`). Third-party actions are pinned to commit SHAs, and gitleaks is pinned by version and checksum. Update a pin only in a dedicated change.
 
 ## Branches and pull requests
 

@@ -1,6 +1,8 @@
 import {
   ARBITRUM_SEPOLIA,
   ARBITRUM_SEPOLIA_USDC,
+  type AdoptionEvidence,
+  type AdoptionFeedbackFile,
   type AdoptionReceipt,
   type CapabilityRelease,
   type PatchBundle,
@@ -11,6 +13,9 @@ import {
   type RunRecord,
   type SpendingPolicy,
   type TaskRequest,
+  type WarrantyOutcome,
+  type WarrantyVoucher,
+  acceptanceRecipeDigest,
   deriveResolutionId,
 } from "../src/index.js";
 
@@ -179,4 +184,67 @@ export const runRecord: RunRecord = {
   humanInterventions: 0,
   acceptance: { passed: true, exitCode: 0 },
   payment: { amountUsdc: "250000", gasCostMicroUsd: "10000", transaction: hex32("7a") },
+};
+
+/** The evidence file for `receipt`'s outcome, once the warranty registry finalized it as passed. */
+export const adoptionEvidence: AdoptionEvidence = {
+  schemaVersion: "1",
+  kind: "lemma.adoption-evidence",
+  resolutionId: resolution.resolutionId,
+  release: matched,
+  capability: "mcp-server.add-payment-gating",
+  acceptanceRecipeDigest: acceptanceRecipeDigest(release.acceptanceRecipe),
+  acceptance: receipt.acceptance,
+  verdict: "passed",
+  finalizedAt: "2026-09-24T13:00:00.000Z",
+  registry: { chainId: 421614, address: "0x00000000000000000000000000000000000000e1" },
+};
+
+/** Lemma's attester (the client of every feedback) in the examples. */
+export const ATTESTER = "0x00000000000000000000000000000000000000f1";
+
+/**
+ * The feedback file behind the provider agent's (agent 7's) feedback on that outcome: ERC-8004's fields, equal to
+ * the `giveFeedback` call that points at it, and the evidence under `lemma`.
+ */
+export const adoptionFeedbackFile: AdoptionFeedbackFile = {
+  agentRegistry: "eip155:421614:0x8004a818bfb912233c491871b3d84c89a494bd9e",
+  agentId: 7,
+  clientAddress: `eip155:421614:${ATTESTER}`,
+  createdAt: "2026-09-24T13:00:00.000Z",
+  value: 100,
+  valueDecimals: 0,
+  tag1: "lemma.adoption",
+  tag2: "mcp-server.add-payment-gating",
+  endpoint: "",
+  lemma: adoptionEvidence,
+};
+
+/**
+ * The warranty registry's own cross-language vector inputs (contracts/test/Vectors.t.sol): a registry at a
+ * fixed address on Arbitrum Sepolia, the claim hash of (0x11..11, 0x22..22, 0x33..33), and a voucher and an
+ * outcome for resolution 0x11..11. The registry checks the same typed-data hashes against its own.
+ */
+export const WARRANTY_VECTOR_REGISTRY = { chainId: 421614, registry: "0x4c454d4d41000000000000000000000000000001" } as const;
+
+export const WARRANTY_VECTOR_CLAIM_HASH = "0xefe737cca6b5574d334f88508fb3149002c12c771f7bdeec10267e5cf8fa21eb";
+
+export const warrantyVectorVoucher: WarrantyVoucher = {
+  schemaVersion: "1",
+  resolutionId: hex32("11"),
+  releaseDigest: hex32("44"),
+  profileIndex: 2,
+  amount: "250000",
+  paymentRef: hex32("55"),
+  claimHash: WARRANTY_VECTOR_CLAIM_HASH,
+  activateBy: 1_790_000_000,
+};
+
+export const warrantyVectorOutcome: WarrantyOutcome = {
+  schemaVersion: "1",
+  resolutionId: hex32("11"),
+  verdict: "failed",
+  weightBps: 10_000,
+  evidenceHash: hex32("66"),
+  validUntil: 1_790_003_600,
 };

@@ -33,9 +33,10 @@ Lemma is a compatibility and reuse layer for coding agents. A free `lemma_previe
 ## Workflow
 
 - One branch per PR, named `<area>/<topic>`, based on `main`. Use the PR template.
+- Every pull request has a description. Fill in each section of the PR template in plain, simple language; never open a pull request with an empty body.
 - When a public interface changes, update the owning README and the relevant `docs/` file in the same change.
 - Economic claims name their evidence source and measurement date. Label testnet amounts as testnet.
 
 ## Project skills
 
-`.claude/skills/` holds vetted, commit-pinned skills: `mcp-builder` and `build-mcp-server` (MCP server and bridge design), `hono` (the server's HTTP layer), `property-based-testing` (fast-check invariants for schemas and amounts), and `gha-security-review` (workflow changes). `SOURCES.md` records each skill's upstream commit, license and local edits. Add or update a skill only by the steps in that file.
+`.claude/skills/` holds vetted, commit-pinned skills: `mcp-builder` and `build-mcp-server` (MCP server and bridge design), `hono` (the server's HTTP layer), `property-based-testing` (fast-check invariants for schemas and amounts), `gha-security-review` (workflow changes), and three Trail of Bits smart-contract skills for `contracts/`: `secure-workflow-guide` (Slither triage, security properties and manual review before a contract change lands), `guidelines-advisor` (design, upgradeability, events, dependencies and tests), and `token-integration-analyzer` (safe USDC handling and weird-ERC20 risks). `SOURCES.md` records each skill's upstream commit, license and local edits. Add or update a skill only by the steps in that file.

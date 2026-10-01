@@ -1,7 +1,9 @@
 # Vendored Claude Code skills: sources, licenses, vetting
 
 Everything under `.claude/skills/` except this file is third-party content, copied from the
-upstream commits below and vetted on 2026-09-24. Each skill directory carries its upstream
+upstream commits below. The first five skills were vetted on 2026-09-24; the three Trail of Bits
+smart-contract skills (`token-integration-analyzer`, `guidelines-advisor`,
+`secure-workflow-guide`) were vetted on 2026-09-27. Each skill directory carries its upstream
 license file. Two files were modified during vetting (see "Modifications"); every other file is
 byte-identical to upstream at the pinned commit.
 
@@ -12,8 +14,11 @@ byte-identical to upstream at the pinned commit.
 | `mcp-builder` | [anthropics/skills](https://github.com/anthropics/skills) | `33375500bcea98d610eb30ce10ac4e59b89c390d` | `skills/mcp-builder` | Apache-2.0 (`LICENSE.txt`, from the skill directory) | `SKILL.md`, `LICENSE.txt`, `reference/evaluation.md`, `reference/mcp_best_practices.md`, `reference/node_mcp_server.md`, `reference/python_mcp_server.md` (6 files) | `scripts/evaluation.py`, `scripts/connections.py`, `scripts/example_evaluation.xml`, `scripts/requirements.txt`: the evaluation harness needs `ANTHROPIC_API_KEY`, pip-installs `anthropic` and `mcp`, and defaults to the retired model `claude-3-7-sonnet-20250219`. `SKILL.md` (Phase 4 list) and the "Running Evaluations" section of `reference/evaluation.md` still describe these scripts; they are not present here, so treat that section as not applicable. | 0 findings |
 | `build-mcp-server` | [anthropics/claude-plugins-official](https://github.com/anthropics/claude-plugins-official) | `e225b998a17e06ac87787165f2a1b5c1cac7edc2` | `plugins/mcp-server-dev/skills/build-mcp-server` | Apache-2.0 (`LICENSE`, copied from `plugins/mcp-server-dev/LICENSE`) | `SKILL.md`, `LICENSE`, `references/{auth,deploy-cloudflare-workers,elicitation,remote-http-scaffold,resources-and-prompts,server-capabilities,tool-design,versions}.md` (10 files) | Nothing omitted from the skill directory. The sibling skills `build-mcp-app` and `build-mcpb` (same plugin) were not requested, so hand-offs to them in `SKILL.md`, and citations of `build-mcpb/references/local-security.md` in `tool-design.md` and `server-capabilities.md`, point at skills that are not installed. | 0 findings |
 | `hono` | [honojs/skills](https://github.com/honojs/skills) | `8b1938be37331c68a02c3b75896b2ea3839d7d09` | `skills/hono` | MIT (`LICENSE`, copied from repo root, Copyright (c) 2026 Yusuke Wada) | `SKILL.md` (**modified**), `LICENSE` (2 files) | The "Hono CLI" section of `SKILL.md` (29 lines) was **stripped**; see "Modifications". The sibling skill `hono-jsx` was not requested; the JSX section's pointer to it dangles. | 0 findings (before and after the edit) |
-| `property-based-testing` | [trailofbits/skills](https://github.com/trailofbits/skills) | `32e34f8173796e3566a51aee877dc96bc5191f64` | `plugins/property-based-testing/skills/property-based-testing` | CC-BY-SA-4.0 (`LICENSE`, copied from repo root) | `SKILL.md`, `LICENSE`, `references/{generating,interpreting-failures,libraries,refactoring,reviewing}.md` (7 files) | `README.md` (maintainer notes on design history and eval results, not agent instructions); `agents/openai.yaml` (OpenAI/Codex UI metadata); `assets/trail-of-bits-mark.svg` (logo referenced only by `openai.yaml`); plugin-level `evals/` and `evals-extra/` (eval fixtures). Only `SKILL.md` and its reference docs were in scope. | 0 findings |
+| `property-based-testing` | [trailofbits/skills](https://github.com/trailofbits/skills) | `0cc1c73a5e96749ab32d7ea5e14892fafa6972ae` | `plugins/property-based-testing/skills/property-based-testing` | CC-BY-SA-4.0 (`LICENSE`, copied from repo root) | `SKILL.md`, `LICENSE`, `references/{generating,interpreting-failures,libraries,refactoring,reviewing}.md` (7 files) | `README.md` (maintainer notes on design history and eval results, not agent instructions); `agents/openai.yaml` (OpenAI/Codex UI metadata); `assets/trail-of-bits-mark.svg` (logo referenced only by `openai.yaml`); plugin-level `evals/` and `evals-extra/` (eval fixtures). Only `SKILL.md` and its reference docs were in scope. | 0 findings |
 | `gha-security-review` | [getsentry/skills](https://github.com/getsentry/skills) | `c2f99a5b04b4cd992ec3022d7c2c3e23e938d241` | `skills/gha-security-review` | Apache-2.0 (`LICENSE`, copied from repo root, Copyright 2025 Functional Software, Inc. dba Sentry) | `SKILL.md` (**modified**), `LICENSE`, `references/{ai-prompt-injection-via-ci,comment-triggered-commands,credential-escalation,expression-injection,permissions-and-secrets,pwn-request,real-world-attacks,runner-infrastructure,supply-chain}.md` (11 files) | Nothing omitted. `Bash` was **removed from `allowed-tools`**; see "Modifications". | 0 findings (before and after the edit) |
+| `token-integration-analyzer` | [trailofbits/skills](https://github.com/trailofbits/skills) | `0cc1c73a5e96749ab32d7ea5e14892fafa6972ae` | `plugins/building-secure-contracts/skills/token-integration-analyzer` | CC-BY-SA-4.0 (`LICENSE`, copied from repo root) | `SKILL.md`, `LICENSE`, `resources/{ASSESSMENT_CATEGORIES,REPORT_TEMPLATES}.md` (4 files) | `agents/openai.yaml` (OpenAI/Codex UI metadata: display name, short description, icon and brand colour, not agent guidance); `assets/trail-of-bits-mark.svg` (logo referenced only by `openai.yaml`; it holds no script, event handler or link). The plugin's `README.md` and `.claude-plugin/plugin.json` sit outside the skill directory (catalogue notes and plugin metadata). Only `SKILL.md` and its reference docs were in scope; the `resources/` folder keeps its upstream name so the links in `SKILL.md` resolve. | 0 findings (upstream and installed); the scanner does not read `resources/`, see below |
+| `guidelines-advisor` | [trailofbits/skills](https://github.com/trailofbits/skills) | `0cc1c73a5e96749ab32d7ea5e14892fafa6972ae` | `plugins/building-secure-contracts/skills/guidelines-advisor` | CC-BY-SA-4.0 (`LICENSE`, copied from repo root) | `SKILL.md`, `LICENSE`, `resources/{ASSESSMENT_AREAS,DELIVERABLES,EXAMPLE_REPORT}.md` (5 files) | `agents/openai.yaml` and `assets/trail-of-bits-mark.svg`, for the same reasons as `token-integration-analyzer`. | 0 findings (upstream and installed); the scanner does not read `resources/`, see below |
+| `secure-workflow-guide` | [trailofbits/skills](https://github.com/trailofbits/skills) | `0cc1c73a5e96749ab32d7ea5e14892fafa6972ae` | `plugins/building-secure-contracts/skills/secure-workflow-guide` | CC-BY-SA-4.0 (`LICENSE`, copied from repo root) | `SKILL.md`, `LICENSE`, `resources/{EXAMPLE_REPORT,WORKFLOW_STEPS}.md` (4 files) | `agents/openai.yaml` and `assets/trail-of-bits-mark.svg`, for the same reasons as `token-integration-analyzer`. Its Step 2 hands token work to `token-integration-analyzer`, which is installed; none of the three points at a sibling skill that is missing. | 0 findings (upstream and installed); one URL outside the scanner's trusted list (`meetings.hubspot.com`, Trail of Bits office hours), which is not a finding |
 
 "Scanner result" is the output of `scripts/scan_skill.py` from
 [getsentry/skills `skills/skill-scanner`](https://github.com/getsentry/skills/tree/c2f99a5b04b4cd992ec3022d7c2c3e23e938d241/skills/skill-scanner)
@@ -21,23 +26,57 @@ at the same pinned commit. It was run with `uv run` against each upstream skill 
 again against the final copies in this folder. The skill-scanner itself is **not** installed here.
 
 That script only reads `SKILL.md`, `references/*.md` and `scripts/*`, so it would miss
-`mcp-builder/reference/` (singular), `LICENSE` files and the omitted extras. A second pass
-therefore applied the scanner's own prompt-injection, obfuscation, secret and dangerous-code
-checks to **every** file, and added checks for `` !`cmd` `` load-time commands, `allowed-tools`,
-and `curl | sh` pipes. That pass found no hits outside `gha-security-review/references/`. Its 13
+`mcp-builder/reference/` (singular), the `resources/` folders of the three Trail of Bits
+smart-contract skills (their reference docs: 7 of their 10 Markdown files), `LICENSE` files and
+the omitted extras. A second pass therefore applied the scanner's own prompt-injection,
+obfuscation, secret and dangerous-code checks to **every** file, and added checks for
+`` !`cmd` `` load-time commands, `allowed-tools`, and `curl | sh` pipes. For the three
+smart-contract skills it ran over every upstream file (including the omitted `agents/openai.yaml`
+and logo) and again over the installed copies, after a positive control confirmed that it flags
+each of those patterns. That pass found no hits outside `gha-security-review/references/`. Its 13
 `curl ... | bash` hits there are documented attack payloads inside code blocks labelled
 `VULNERABLE` or "Attacker's …", which describe threats for the reviewer to recognise; nothing
 tells the agent to run them.
+
+**Repeating the second pass.** The checker that ran it was a scratch script and is not kept, so
+these are its exact checks, as run on 2026-09-27. Load
+`skills/skill-scanner/scripts/scan_skill.py` from a getsentry/skills checkout at the pinned
+commit as a Python module. Walk every file under the skill directory (report any symlink as a
+hit), decode it as UTF-8 (report a file that does not decode) and apply:
+
+- to the whole text, the scanner's `check_prompt_injection`, `check_obfuscation` and
+  `check_secrets`;
+- to each line, the scanner's `DANGEROUS_SCRIPT_PATTERNS` (first match per line);
+- to each line, three Python regular expressions: load-time command `` !`[^`]+` ``; pipe to a
+  shell `(?i)\b(curl|wget)\b[^\n|]*\|\s*(sudo\s+)?(ba|z|da)?sh\b`; pre-approved tools
+  `(?im)^\s*allowed-tools\s*:`;
+- to each line, a wider invisible-character set than the scanner's own: U+00AD, U+034F, U+061C,
+  U+115F, U+1160, U+17B4, U+17B5, U+180B-U+180E, U+200B-U+200F, U+202A-U+202E, U+2060-U+2064,
+  U+2066-U+206F, U+3164, U+FE00-U+FE0E, U+FEFF, U+FFA0 and U+E0000-U+E007F.
+
+Then check that the scanner's `parse_frontmatter` of `SKILL.md` gives a string `name` equal to
+the directory name, a non-empty `description` and no `hooks`, that every `.yaml`/`.yml` file
+parses with `yaml.safe_load`, and list every non-ASCII character by code point. Before trusting
+a clean result, run the checker on a throwaway positive-control skill whose `SKILL.md` has
+`allowed-tools`, an "ignore all previous instructions" line, a `curl ... | bash` line, a
+`` !`cmd` `` line, a zero-width space, a right-to-left override and a fake token built to match
+a scanner secret pattern, and confirm each one is flagged. Keep the control in a scratch
+directory, never in the repo.
 
 Structural checks across all installed files found none of the following: symlinks, scripts,
 `package.json`, test files, frontmatter `hooks`, `` !`cmd` `` lines, zero-width, bidi or
 Unicode-tag characters, or real credentials. Every `SKILL.md` has YAML frontmatter that
 `yaml.safe_load` parses, with a string `name` equal to the directory name and a non-empty
-`description`.
+`description`. The only non-ASCII characters in the three smart-contract skills are check marks,
+crosses, warning signs, ballot boxes, box-drawing lines, arrows, `≠`, one `🎯` emoji and the
+curly quotes of the license text. `gitleaks dir --no-banner --redact --config .gitleaks.toml
+.claude/skills` reported no leaks on 2026-09-27.
 
 ## Modifications
 
-Both changes remove behaviour. They add nothing new and change no guidance.
+Both changes remove behaviour. They add nothing new and change no guidance. The three
+smart-contract skills (`token-integration-analyzer`, `guidelines-advisor`,
+`secure-workflow-guide`) are **unmodified**: vetting found nothing that had to be removed.
 
 1. **`hono/SKILL.md`** (MIT)
    - Removed the entire `## Hono CLI` section. It told the agent to run
@@ -87,6 +126,37 @@ network access, so Claude Code's normal permission prompts apply to each one.
   requires `Origin` validation.
 - `property-based-testing` frontmatter carries `effort: low` (an upstream hint, not a permission).
   `build-mcp-server` carries `version: 0.1.0`.
+- **Local analysis commands in the smart-contract skills:** all three describe running the
+  Slither suite (`slither . --exclude-dependencies`; `slither --print` with `human-summary`,
+  `contract-summary`, `inheritance-graph`, `function-summary` or `vars-and-auth`;
+  `slither-check-erc`, `slither-check-upgradeability`, `slither-prop`). These read local sources
+  only, and each one still needs a Bash permission prompt. The `secure-workflow-guide`
+  rationalization table says "Install and run Slither, or document why it's blocked": use an
+  already installed, version-pinned Slither rather than an ad hoc unpinned install.
+- **Testing tools the skills suggest:** `secure-workflow-guide` Step 4 sets up Echidna and
+  Manticore. Manticore's latest PyPI release is 0.3.7 from 2022-02-17 (checked 2026-09-27). For
+  Lemma's Foundry project, prefer Foundry fuzz and invariant tests, and Echidna or Medusa as the
+  `property-based-testing` skill describes.
+- **On-chain queries:** `token-integration-analyzer` (Phase 4 and "On-chain Analysis Integration"
+  in `resources/ASSESSMENT_CATEGORIES.md`) queries a deployed token with web3.js
+  (`new Web3('RPC_URL')`), and only when the user supplies an address and an RPC endpoint. In
+  Lemma use viem, the repo's EVM library, and read the RPC URL from the environment: a provider
+  RPC URL often carries an API key in its path, so it must never go into a prompt, a
+  command-line argument or a committed file (the `rpc-endpoint-with-key` gitleaks rule).
+- **External links, read-only:** `secure-workflow-guide` ends with "Getting Help", linking Trail
+  of Bits office hours (`meetings.hubspot.com`) and naming the Empire Hacking Slack. The plugin
+  `README.md`, which is not installed, also carries a Slack invite link. Nothing tells the agent
+  to fetch or join them.
+- **Example reports are fictional samples:** the `EXAMPLE_REPORT.md` and `SKILL.md` examples
+  (a "MultiToken DEX", an "NFT Marketplace", a "DeFi Staking Contract", dated March 15, 2024) show
+  the output format only. They use placeholders (`security@project.com`, truncated addresses such
+  as `0x1234...` and `0xdac17f9...`, an Echidna `deployer: "0x10000"`) and say nothing about
+  Lemma. Their versions (`@openzeppelin/contracts@4.9.0`, Solidity 0.8.19 and 0.8.20) are older
+  than Lemma's toolchain. For the compiler, follow `contracts/foundry.toml` (solc 0.8.30). For
+  libraries, follow the pins in `contracts/README.md`: OpenZeppelin Contracts `v5.6.1` and
+  forge-std `v1.16.2`, git submodules under `contracts/lib`. Do not take the examples'
+  OpenZeppelin version as a pin. The token checklist's USDC facts (upgradeable, blocklist,
+  pausable, 6 decimals) do apply to the USDC that Lemma settles in.
 
 ## License and attribution notes
 
@@ -96,16 +166,36 @@ network access, so Claude Code's normal permission prompts apply to each one.
 - **MIT** (`hono`): keep `hono/LICENSE` with its copyright notice.
 - **CC-BY-SA-4.0** (`property-based-testing`): "Property-Based Testing" skill by Henrik Brodin,
   Trail of Bits (`opensource@trailofbits.com`), from
-  <https://github.com/trailofbits/skills/tree/32e34f8173796e3566a51aee877dc96bc5191f64/plugins/property-based-testing/skills/property-based-testing>,
+  <https://github.com/trailofbits/skills/tree/0cc1c73a5e96749ab32d7ea5e14892fafa6972ae/plugins/property-based-testing/skills/property-based-testing>,
   licensed under CC BY-SA 4.0 (<https://creativecommons.org/licenses/by-sa/4.0/>). It is included
   **unmodified**. This content must keep this attribution and ship with its `LICENSE`. If any of
   it is modified, the change must be indicated and the modified version must stay under
-  CC BY-SA 4.0 (ShareAlike). Do not relicense it under the repo's own license.
+  CC BY-SA 4.0 (ShareAlike). Do not relicense it under the repo's own license. It was first
+  vetted at `32e34f8`; its pin moved to `0cc1c73`, the smart-contract skills' commit, after all
+  seven installed files were compared byte for byte with that commit and found identical
+  (2026-09-27), so the earlier scan and second pass still describe exactly these bytes. All Trail
+  of Bits skills now share one pinned commit.
+- **CC-BY-SA-4.0** (`token-integration-analyzer`, `guidelines-advisor`, `secure-workflow-guide`):
+  the "Token Integration Analyzer", "Guidelines Advisor" and "Secure Workflow Guide" skills of the
+  `building-secure-contracts` plugin (version 1.2.2) by Omar Inuwa and Paweł Płatek, Trail of
+  Bits (`opensource@trailofbits.com`), as named in the plugin's `.claude-plugin/plugin.json`,
+  from
+  <https://github.com/trailofbits/skills/tree/0cc1c73a5e96749ab32d7ea5e14892fafa6972ae/plugins/building-secure-contracts/skills>
+  (subdirectories `token-integration-analyzer`, `guidelines-advisor` and
+  `secure-workflow-guide`), licensed under CC BY-SA 4.0
+  (<https://creativecommons.org/licenses/by-sa/4.0/>). The plugin builds on Trail of Bits'
+  [Building Secure Contracts](https://github.com/crytic/building-secure-contracts). All three are
+  included **unmodified**, each with the repository's `LICENSE`. The same obligations apply: keep
+  this attribution, indicate any change in the file and under "Modifications", keep modified
+  versions under CC BY-SA 4.0, and never relicense them under the repo's own license.
 
 ## Updating a skill
 
 Fetch the new commit into a scratch directory, not into the repo. Run
 `uv run skills/skill-scanner/scripts/scan_skill.py <skill-dir>` from a checkout of
-getsentry/skills, then read every changed file. Reapply the two modifications above if they
-still apply, update the commit and file list in the table, and run
-`gitleaks dir --no-banner --config .gitleaks.toml .claude/skills` before committing.
+getsentry/skills, then read every changed file. The scanner skips any folder other than
+`references/` and `scripts/` (such as `reference/` or `resources/`), so repeat the second pass
+over every file, using the exact checks listed under "Repeating the second pass" above.
+Reapply the two modifications above if they still apply, update the commit and file list in the
+table, and run `gitleaks dir --no-banner --redact --config .gitleaks.toml .claude/skills` before
+committing.

@@ -1,11 +1,17 @@
 export * from "./acceptance.js";
+export * from "./confine.js";
 export * from "./adoption.js";
 export * from "./apply.js";
 export * from "./bridge.js";
+export * from "./buyer-pass.js";
+export * from "./buy.js";
 export * from "./drift.js";
 export * from "./inbox.js";
 export * from "./install.js";
+export * from "./ledger.js";
+export * from "./payments.js";
 export * from "./recovery.js";
+export * from "./refund.js";
 export * from "./remote.js";
 export * from "./rule.js";
 export * from "./scan/cache.js";
@@ -13,6 +19,7 @@ export * from "./scan/files.js";
 export * from "./scan/lockfiles.js";
 export * from "./scan/profile.js";
 export * from "./secrets.js";
+export * from "./signer/index.js";
 export * from "./text.js";
 export * from "./trace.js";
 

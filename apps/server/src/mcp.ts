@@ -1,12 +1,13 @@
 import type { CatalogIndex } from "@lemma/catalog";
 import { resolve } from "@lemma/catalog";
-import { type Hex32, LEMMA_TOOLS, type Preview, PreviewInput, PreviewResult, RecoverInput, ResolutionDelivery } from "@lemma/core";
+import { ClaimBuyerPassInput, ClaimBuyerPassResult, type Hex32, LEMMA_TOOLS, type Preview, PreviewInput, PreviewResult, REPUTATION_META_KEY, RecoverInput, ResolutionDelivery } from "@lemma/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { ServerConfig } from "./config.js";
 import type { DemandRecorder } from "./demand.js";
 import { describeError } from "./errors.js";
 import type { Logger } from "./log.js";
+import type { ReputationReader } from "./reputation/summary.js";
 import type { ResolutionService } from "./service.js";
 import type { PreviewStore, ResolutionReader } from "./store.js";
 
@@ -32,6 +33,8 @@ export interface McpDeps {
   readonly registerPaidTools?: PaidToolRegistrar | undefined;
   /** The request's parsed JSON-RPC message, for the paid-tool registrar. */
   readonly request?: unknown;
+  /** Cached ERC-8004 adoption records, read without waiting on the chain; absent while reputation is off. */
+  readonly reputation?: ReputationReader | undefined;
 }
 
 export const SERVER_INFO = { name: "lemma", version: "0.1.0" } as const;
@@ -43,7 +46,7 @@ const failure = (text: string) => ({ isError: true, content: [{ type: "text" as 
 
 /**
  * One MCP server per request (stateless Streamable HTTP; the SDK refuses to
- * reuse a stateless transport). Registration is cheap: two free tools, plus the
+ * reuse a stateless transport). Registration is cheap: three free tools, plus the
  * paid tools when enabled, awaited so an async registrar (one that quotes the
  * named preview first) has registered them before the request is dispatched.
  *
@@ -77,9 +80,15 @@ export async function buildMcpServer(deps: McpDeps): Promise<McpServer> {
           return failure("The preview could not be stored, so its offer cannot be honored. Try again.");
         }
       }
-      await deps.demand?.record(preview, input.task.capability, input.profile, now, deps.source ?? "unknown");
+      await deps.demand?.record(preview, input.task.capability, input.profile, now, deps.source ?? "unknown", input.buyerPass);
       deps.logger.log("info", "preview", { decision: preview.decision, reasons: preview.reasons, offer: "offer" in preview && preview.offer !== null });
-      return { content: [{ type: "text", text: summarize(preview) }], structuredContent: { preview } };
+      // A matched release's public adoption record, from the cache only: the preview never waits on the chain.
+      const record = "release" in preview ? (deps.reputation?.current(input.task.capability) ?? null) : null;
+      return {
+        content: [{ type: "text", text: summarize(preview) }],
+        structuredContent: { preview },
+        ...(record === null ? {} : { _meta: { [REPUTATION_META_KEY]: record } }),
+      };
     },
   );
 
@@ -102,6 +111,29 @@ export async function buildMcpServer(deps: McpDeps): Promise<McpServer> {
       if (found === "NOT_FOUND") return failure("NOT_FOUND: no settled resolution for this preview and buyer.");
       if (found === "IN_FLIGHT") return failure("IN_FLIGHT: the payment is not settled yet. Retry after it settles or expires.");
       return { content: [{ type: "text", text: `resolution ${found.resolution.resolutionId}` }], structuredContent: found };
+    },
+  );
+
+  server.registerTool(
+    LEMMA_TOOLS.claimBuyerPass,
+    {
+      description: "Free buyer pass for a settled purchase, sent with later previews so demand counts bridges that have bought. Needs the preview id and the buyer that paid.",
+      inputSchema: ClaimBuyerPassInput,
+      outputSchema: ClaimBuyerPassResult,
+      annotations: { readOnlyHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    async ({ previewId, buyer }) => {
+      if (deps.demand === undefined) return failure("UNAVAILABLE: this server does not count demand.");
+      try {
+        const found = await deps.resolutions.recover(previewId, buyer);
+        if (found === "NOT_FOUND") return failure("NOT_FOUND: no settled resolution for this preview and buyer.");
+        if (found === "IN_FLIGHT") return failure("IN_FLIGHT: the payment is not settled yet. Retry after it settles or expires.");
+        const buyerPass = await deps.demand.issuePass(found.resolution.resolutionId);
+        return { content: [{ type: "text", text: "buyer pass issued" }], structuredContent: { buyerPass } };
+      } catch (error) {
+        deps.logger.log("error", "buyer_pass.failed", { error: describeError(error) });
+        return failure("UNAVAILABLE: buyer passes are temporarily unavailable. Retry later.");
+      }
     },
   );
 

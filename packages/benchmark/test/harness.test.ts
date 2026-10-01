@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve as resolvePath } from "node:path";
@@ -59,6 +60,10 @@ const temp = (prefix: string) => {
 afterEach(() => {
   for (const dir of temps.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
+
+/** Variables the operating system adds to every process it starts (macOS: `__CF_USER_TEXT_ENCODING`), whatever environment the parent passed. */
+const OS_ADDED = new Set(["__CF_USER_TEXT_ENCODING"]);
+const ownKeys = (keys: readonly string[]) => keys.filter((k) => !OS_ADDED.has(k));
 
 const usage = { inputTokens: 1000, outputTokens: 300, cacheReadTokens: 50, cacheWriteTokens: 20, totalTokens: 1370, reasoningTokens: 100 };
 const hex = (b: string) => `0x${b.repeat(32)}`;
@@ -275,7 +280,7 @@ describe("runSlot", () => {
     });
     expect(adapter.requests[0]?.mcpServers).toEqual({});
     const seen = JSON.parse(readFileSync(join(adapter.requests[0]?.cwd as string, "env-seen.json"), "utf8")) as string[];
-    expect(seen).toEqual(["CI", "HOME", "LANG", "PATH", "TMPDIR", "TZ"]);
+    expect(ownKeys(seen)).toEqual(["CI", "HOME", "LANG", "PATH", "TMPDIR", "TZ"]);
     delete process.env["CURSOR_API_KEY"];
   });
 
@@ -770,7 +775,8 @@ describe("process environment", () => {
     expect(secretVariables({ ...secrets, ...harmless })).toEqual(Object.keys(secrets).sort());
   });
 
-  it("finds credentials in the environment an ancestor started with, which env -u leaves behind", async () => {
+  // Reading another process's start environment needs /proc (Linux): elsewhere there is none to read, and CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/environ"))("finds credentials in the environment an ancestor started with, which env -u leaves behind", async () => {
     const { spawn } = await import("node:child_process");
     const sh = spawn("sh", ["-c", "env -u DEMO_TOKEN sleep 5; true"], { env: { ...process.env, DEMO_TOKEN: "x" }, stdio: "ignore" });
     try {
@@ -795,6 +801,12 @@ function running(pid: number): boolean {
   try {
     return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0] !== "Z";
   } catch {
+    // No /proc here (macOS): ps tells a zombie from a running process, which signal 0 cannot.
+    const ps = spawnSync("ps", ["-o", "stat=", "-p", String(pid)], { encoding: "utf8", timeout: 5_000 });
+    if (ps.error === undefined) {
+      const stat = ps.stdout.trim();
+      return stat !== "" && !stat.startsWith("Z");
+    }
     try {
       process.kill(pid, 0);
       return true;
@@ -804,9 +816,21 @@ function running(pid: number): boolean {
   }
 }
 
-describe("CursorAdapter process boundary", () => {
+/**
+ * Waits up to two seconds for a killed process to stop running. SIGKILL takes
+ * effect only once the kernel schedules the process, which on a busy machine
+ * can come well after the kill call returned.
+ */
+async function waitUntilGone(pid: number): Promise<void> {
+  for (let i = 0; i < 40 && running(pid); i++) await new Promise((r) => setTimeout(r, 50));
+}
+
+// Spawning and killing processes slows down a lot on a busy machine; the tests'
+// own time assertions, not Vitest's 5-second default, decide what is too slow.
+describe("CursorAdapter process boundary", { timeout: 20_000 }, () => {
   const child = (body: string) => {
-    const dir = temp("lemma-child-");
+    // A real path, like every run directory prepareRunBase makes: macOS keeps its temporary directory behind the /var symlink, and the child's cwd is the resolved one.
+    const dir = realpathSync(temp("lemma-child-"));
     const script = join(dir, "child.mjs");
     writeFileSync(script, `import { writeSync } from "node:fs";\nconst emit = (e) => writeSync(3, JSON.stringify(e) + "\\n");\nlet input = "";\nfor await (const c of process.stdin) input += c;\nconst { apiKey, request } = JSON.parse(input);\n${body}\n`);
     mkdirSync(join(dir, "home", "tmp"), { recursive: true });
@@ -818,7 +842,8 @@ describe("CursorAdapter process boundary", () => {
   it("passes the API key through stdin, never the environment, and reads the result from fd 3", async () => {
     const { script, request, dir } = child(outcomeLine(`JSON.stringify({ keyInEnv: Object.values(process.env).includes(apiKey), keyReceived: apiKey === "secret-key", envKeys: Object.keys(process.env).sort(), cwdOk: process.cwd() === request.cwd })`));
     const outcome = await new CursorAdapter("secret-key", script, quick).run(request);
-    expect(JSON.parse(outcome.error as string)).toEqual({ keyInEnv: false, keyReceived: true, envKeys: ["CI", "HOME", "LANG", "PATH", "TMPDIR", "TZ"], cwdOk: true });
+    const seen = JSON.parse(outcome.error as string) as { envKeys: string[] };
+    expect({ ...seen, envKeys: ownKeys(seen.envKeys) }).toEqual({ keyInEnv: false, keyReceived: true, envKeys: ["CI", "HOME", "LANG", "PATH", "TMPDIR", "TZ"], cwdOk: true });
     expect(existsSync(join(dir, "home"))).toBe(true);
   });
 
@@ -840,36 +865,38 @@ describe("CursorAdapter process boundary", () => {
     expect(outcome).toMatchObject({ status: "timeout", agentId: "agent-10" });
     expect(Date.now() - started).toBeLessThan(5000);
     const pid = Number(readFileSync(join(dir, "grandchild.pid"), "utf8"));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 
-  it("kills what the agent detached, even after the child that started it exited", async () => {
+  // A process detached into a session of its own is found only by the home it carries, read from /proc (Linux); elsewhere it escapes, as the README says, and CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/environ"))("kills what the agent detached, even after the child that started it exited", async () => {
     const { script, request, dir } = child(`import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst orphan = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });\norphan.unref();\nwriteFileSync("orphan.pid", String(orphan.pid));\nemit({ type: "started", agentId: "agent-11" });\nprocess.exit(1);`);
     const outcome = await new CursorAdapter("k", script, quick).run(request);
     expect(outcome).toMatchObject({ agentId: "agent-11" });
     const pid = Number(readFileSync(join(dir, "orphan.pid"), "utf8"));
-    for (let i = 0; i < 20 && running(pid); i++) await new Promise((r) => setTimeout(r, 50));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 
   it("reports the SDK child's own fatal error without the key", async () => {
-    const { spawnSync } = await import("node:child_process");
     const key = ["crsr", "Example", "0123456789"].join("_");
     // Loaded in this node process (not through the tsx CLI, which does not pass fd 3 on).
-    const result = spawnSync(process.execPath, ["--import", "tsx", join(BENCHMARK_ROOT, "src", "cursor-child.ts")], { input: `{"apiKey":"${key}", broken`, stdio: ["pipe", "pipe", "pipe", "pipe"], encoding: "utf8", timeout: 30_000 });
+    const result = spawnSync(process.execPath, ["--conditions=source", "--import", "tsx", join(BENCHMARK_ROOT, "src", "cursor-child.ts")], { input: `{"apiKey":"${key}", broken`, stdio: ["pipe", "pipe", "pipe", "pipe"], encoding: "utf8", timeout: 30_000 });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("malformed request");
     expect(result.stderr).not.toContain(key);
     expect(String(result.output[3] ?? "")).toContain("startup-error");
   });
 
-  it("kills every process carrying a run's home", async () => {
+  // Start environments are read from /proc (Linux); CI runs this on Linux.
+  it.skipIf(!existsSync("/proc/self/environ"))("kills every process carrying a run's home", async () => {
     const { spawn } = await import("node:child_process");
     const home = temp("lemma-home-");
     const p = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { env: { ...process.env, HOME: home }, detached: true, stdio: "ignore" });
     p.unref();
     killByHome(home);
-    for (let i = 0; i < 20 && running(p.pid as number); i++) await new Promise((r) => setTimeout(r, 50));
+    await waitUntilGone(p.pid as number);
     expect(running(p.pid as number)).toBe(false);
   });
 
@@ -880,6 +907,7 @@ describe("CursorAdapter process boundary", () => {
     expect(outcome).toMatchObject({ status: "finished", agentId: "child" });
     expect(Date.now() - started).toBeLessThan(5000);
     const pid = Number(readFileSync(join(dir, "server.pid"), "utf8"));
+    await waitUntilGone(pid);
     expect(running(pid)).toBe(false);
   });
 });

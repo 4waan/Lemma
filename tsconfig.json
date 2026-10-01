@@ -2,6 +2,7 @@
   "files": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/confidence" },
     { "path": "./packages/catalog" },
     { "path": "./packages/benchmark" },
     { "path": "./apps/server" },

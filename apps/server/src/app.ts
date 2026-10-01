@@ -1,5 +1,5 @@
 import { type CatalogIndex } from "@lemma/catalog";
-import { type CatalogView, DemandKey, type DemandView, Hex32, ResolutionView, type StatusView, summarizeRelease } from "@lemma/core";
+import { type CatalogView, type ChainView, DemandKey, type DemandView, Hex32, ResolutionView, type StatusView, summarizeRelease } from "@lemma/core";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { type Context, Hono } from "hono";
@@ -10,15 +10,22 @@ import { secureHeaders } from "hono/secure-headers";
 import { timeout } from "hono/timeout";
 
 import { clientAddress } from "./client.js";
+import { CompatibilityReader, NO_OUTCOMES, type OutcomeSource } from "./compatibility.js";
 import type { ServerConfig } from "./config.js";
 import type { Logger } from "./log.js";
 import { type PaidToolRegistrar, buildMcpServer } from "./mcp.js";
 import { TokenBuckets } from "./rate-limit.js";
 import { DEMAND_MIN_PROFILES, DemandRecorder } from "./demand.js";
-import { DASHBOARD_CSP, serveDashboard } from "./dashboard.js";
+import { DASHBOARD_CSP, dashboardIconPath, serveDashboard } from "./dashboard.js";
 import type { LemmaStore } from "./persistence.js";
 import { describeError } from "./errors.js";
+import type { FedBuyers } from "./reputation/feed.js";
+import { WELL_KNOWN_REGISTRATION_PATH } from "./reputation/registration.js";
+import { registerReputationRoutes } from "./reputation/routes.js";
+import type { ReputationReader } from "./reputation/summary.js";
 import { ReceiptSubmission, type ResolutionService } from "./service.js";
+import { registerWarrantyRoutes } from "./warranty/routes.js";
+import type { WarrantyReads } from "./warranty/view.js";
 
 export const MAX_BODY_BYTES = 256 * 1024;
 export const REQUEST_TIMEOUT_MS = 15_000;
@@ -43,6 +50,19 @@ export interface AppDeps {
   readonly storeKind?: "postgres" | "memory";
   /** The built dashboard (apps/web/dist); when absent, no dashboard is served. */
   readonly webRoot?: string | undefined;
+  /** Finalized adoption outcomes for the catalog's compatibility confidence, read from memory. Absent: none yet. */
+  readonly outcomes?: OutcomeSource | undefined;
+  /** Cached ERC-8004 adoption records for previews and the catalog (src/reputation); absent while reputation is off. */
+  readonly reputation?: ReputationReader | undefined;
+  /** Distinct buyers behind the outcomes fed to the attester, per capability, read from memory. Absent: every count is null. */
+  readonly reputationBuyers?: FedBuyers | undefined;
+  /**
+   * The warranty pipeline's reads (src/warranty): each resolution's warranty
+   * view and the engine in force. Absent while the pipeline is off: every
+   * `ResolutionView.warranty` is null and the withdrawal route answers
+   * `WARRANTY_OFF`.
+   */
+  readonly warranty?: WarrantyReads | undefined;
 }
 
 /**
@@ -53,7 +73,8 @@ export interface AppDeps {
  *   server and transport per request; `GET` and `DELETE` are 405, so no idle
  *   SSE stream is ever held. Requests that carry an `Origin` header come from a
  *   browser, which never has a reason to call it, and are refused.
- * - `/api/v1/*`: read-only catalog data for the bridge and the dashboard.
+ * - `/api/v1/*`: read-only catalog data for the bridge and the dashboard,
+ *   and the bridge's two writes: adoption receipts and warranty withdrawals.
  * - `/healthz`.
  * - `/` and `/assets/*`: the built dashboard, under a CSP that allows only
  *   this origin's scripts, styles and API.
@@ -62,6 +83,7 @@ export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
   const economics = deps.economics ?? { status: "placeholder" as const, chainCostAtomic: "0", priceFloorAtomic: "0" };
   const buckets = new TokenBuckets(deps.config.rateLimitPerMinute);
+  const compatibility = new CompatibilityReader(deps.outcomes ?? NO_OUTCOMES, deps.logger);
   const mcpDeps = {
     config: deps.config,
     index: deps.index,
@@ -73,6 +95,7 @@ export function createApp(deps: AppDeps): Hono {
     newPreviewId: deps.newPreviewId,
     logger: deps.logger,
     registerPaidTools: deps.registerPaidTools,
+    reputation: deps.reputation,
   };
 
   app.onError((error, c) => {
@@ -126,6 +149,7 @@ export function createApp(deps: AppDeps): Hono {
   );
   app.use("/mcp", limit);
   app.use("/api/v1/*", limit);
+  app.use(WELL_KNOWN_REGISTRATION_PATH, limit);
   app.use("/api/v1/*", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "request body too large" }, 413) }));
 
   app.post(
@@ -217,11 +241,13 @@ export function createApp(deps: AppDeps): Hono {
     if (!id.success) return c.json({ error: "expected a resolution id" }, 400);
     const view = await deps.service.publicResolution(id.data);
     if (view === undefined) return c.json({ error: "unknown resolution" }, 404);
+    const warranty = deps.warranty === undefined ? null : await deps.warranty.forResolution(id.data);
     c.header("Cache-Control", "no-store");
-    return c.json(ResolutionView.parse(view));
+    return c.json(ResolutionView.parse({ ...view, warranty }));
   });
 
-  // Read models for the dashboard (core read.ts): computed at request time, because sellability changes with time.
+  // Read models for the dashboard (core read.ts): computed at request time, because sellability and
+  // compatibility confidence change with time. Confidence comes from @lemma/confidence over in-memory outcomes.
   app.get("/api/v1/catalog", (c) => {
     const now = deps.clock();
     const view: CatalogView = {
@@ -230,7 +256,20 @@ export function createApp(deps: AppDeps): Hono {
       generatedAt: now.toISOString(),
       economics: { status: economics.status, chainCostUsdc: economics.chainCostAtomic, priceFloorUsdc: economics.priceFloorAtomic },
       releases: deps.index.releases.map((r) =>
-        summarizeRelease({ release: r.release, releaseDigest: r.releaseDigest, baseReleaseDigest: r.baseReleaseDigest, provisional: r.source === "provisional" }, { chainCostAtomic: BigInt(economics.chainCostAtomic) }, now),
+        summarizeRelease(
+          {
+            release: r.release,
+            releaseDigest: r.releaseDigest,
+            baseReleaseDigest: r.baseReleaseDigest,
+            provisional: r.source === "provisional",
+            // Cached only: the catalog never waits on the chain.
+            reputation: deps.reputation?.current(r.release.capability) ?? null,
+            reputationBuyers: deps.reputationBuyers?.buyersFor(r.release.capability) ?? 0,
+          },
+          { chainCostAtomic: BigInt(economics.chainCostAtomic) },
+          now,
+          compatibility.forRelease(r.release, r.releaseDigest, now),
+        ),
       ),
     };
     c.header("Cache-Control", "public, max-age=60");
@@ -250,6 +289,7 @@ export function createApp(deps: AppDeps): Hono {
       provisionalEvidence: deps.index.releases.some((r) => r.source === "provisional"),
       store: deps.storeKind ?? "memory",
       economics: economics.status,
+      chain: chainView(deps),
     };
     c.header("Cache-Control", storeOk ? "public, max-age=60" : "no-store");
     return c.json(view);
@@ -265,7 +305,7 @@ export function createApp(deps: AppDeps): Hono {
       return c.json({ error: "expected a JSON receipt submission" }, 400);
     }
     const submission = ReceiptSubmission.safeParse(body);
-    if (!submission.success) return c.json({ error: "expected { receipt: AdoptionReceipt, previewId }" }, 400);
+    if (!submission.success) return c.json({ error: "expected { receipt: AdoptionReceipt, previewId, agentId? }" }, 400);
     // A store failure is not the client's fault: it reaches onError, is logged, and answers 500 so the bridge retries.
     const result = await deps.service.acceptReceipt(submission.data);
     const status = { ACCEPTED: 201, DUPLICATE: 409, NOT_SETTLED: 409, TOO_EARLY: 425, UNKNOWN_RESOLUTION: 404, MISMATCH: 422 } as const;
@@ -278,7 +318,7 @@ export function createApp(deps: AppDeps): Hono {
     for (const b of await deps.store.demandBuckets(DEMAND_MIN_PROFILES)) {
       // A bucket key this build cannot read (written by another version) is left out rather than guessed at.
       const key = DemandKey.safeParse(safeJson(b.bucket));
-      if (key.success) buckets.push({ day: b.day, profiles: b.profiles, sources: b.sources, key: key.data });
+      if (key.success) buckets.push({ day: b.day, profiles: b.profiles, sources: b.sources, buyers: b.buyers, key: key.data });
     }
     const view: DemandView = { minProfiles: DEMAND_MIN_PROFILES, buckets };
     // Set only once the answer exists, so a failure is never cached.
@@ -286,8 +326,39 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(view);
   });
 
+  // The warranty pipeline's credit relay: the buyer's bridge posts its claim; the evaluator pays the gas.
+  registerWarrantyRoutes(app, { enabled: deps.warranty !== undefined, store: deps.store, clock: deps.clock, logger: deps.logger });
+
+  // ERC-8004: the agent registration file and the evidence file behind each feedback.
+  registerReputationRoutes(app, {
+    config: deps.config.reputation,
+    paidTools: deps.config.paidTools && deps.registerPaidTools !== undefined,
+    store: deps.store,
+    imagePath: deps.webRoot === undefined ? undefined : dashboardIconPath(deps.webRoot),
+  });
+
   if (deps.webRoot !== undefined) serveDashboard(app, deps.webRoot);
   return app;
+}
+
+/**
+ * The status view's chain section, from configuration: the explorer, USDC,
+ * the warranty registry and the engine it records into (as last indexed), and
+ * the ERC-8004 registries and provider agent the server uses (null where it
+ * uses none).
+ */
+function chainView(deps: AppDeps): ChainView {
+  const { config } = deps;
+  const agentId = config.reputation.agentId ?? null;
+  return {
+    explorer: config.explorerBaseUrl,
+    usdc: config.payment.asset,
+    registry: config.warranty?.registry ?? null,
+    engine: deps.warranty?.engine() ?? null,
+    identityRegistry: agentId === null ? null : config.reputation.identityRegistry,
+    reputationRegistry: config.reputation.attester === undefined ? null : config.reputation.reputationRegistry,
+    providerAgentId: agentId,
+  };
 }
 
 function safeJson(text: string): unknown {

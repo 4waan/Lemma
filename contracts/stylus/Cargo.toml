@@ -1,0 +1,32 @@
+[workspace]
+resolver = "3"
+members = ["lemma-confidence", "confidence-wasm", "confidence-contract"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.94"
+license = "MIT"
+publish = false
+
+[workspace.dependencies]
+lemma-confidence = { path = "lemma-confidence" }
+# The same 256-bit integer type alloy-primitives re-exports as U256, without alloy's
+# allocator requirement, so the engine stays no_std and allocation-free. The range
+# matches what stylus-sdk 0.10 accepts, so the contract links one copy.
+ruint = { version = ">=1.16, <1.17", default-features = false }
+stylus-sdk = { version = "=0.10.9", default-features = false }
+alloy-primitives = { version = "1.5.7", default-features = false }
+alloy-sol-types = { version = "1.5.7", default-features = false }
+
+# One release profile for the Node wasm and the Stylus contract: small, no unwinding,
+# no symbols. Tests ignore panic = "abort". opt-level "s" compresses the contract
+# smaller than "z" here (about 19 KB against 24 KB with brotli 11).
+[profile.release]
+codegen-units = 1
+debug = false
+incremental = false
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

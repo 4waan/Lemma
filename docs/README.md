@@ -7,6 +7,7 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Root README](../README.md): product, current implementation, quickstart, repository map, and submission roadmap.
 - [Economics](economics.md): what Lemma sells, why a resolution has value, pricing, warranties, and the business model.
 - [Demo Script](demo-script.md): the final three-minute narrative and claims that require evidence.
+- [Business model](business-model.md) ([PDF](business-model.pdf)): the revenue model and monetization strategy: who can pay, comparables with sources, the option space including the compatibility intelligence layer, modeled unit economics (every table comes from [business-model/unit-econ.mjs](business-model/unit-econ.mjs)), experiments and a 90-day validation plan.
 
 ## Understand the system
 

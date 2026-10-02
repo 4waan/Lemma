@@ -17,13 +17,18 @@ The built executable is `lemma-mcp` at `dist/main.js`.
 
 Start a Lemma server first, then configure the agent to launch the bridge from the target repository. `LEMMA_WORKSPACE` defaults to the bridge's working directory.
 
-Install the small Cursor rule that prompts an agent to preview before rebuilding a supported capability:
+Install the small rule that prompts an agent to preview before rebuilding a supported capability:
 
 ```bash
-lemma-mcp install-rule /path/to/repository
+lemma-mcp install-rule [--agent cursor|claude|agents|all] /path/to/repository
 ```
 
-This writes `rules/lemma.mdc` under the repository's `.cursor/rules` directory without following links. The benchmark treatment arm uses the same rule.
+- `cursor` (the default) writes `rules/lemma.mdc` as it is to `.cursor/rules/lemma.mdc`. The benchmark treatment arm uses the same rule.
+- `claude` writes the rule's body, without Cursor's frontmatter, to `.claude/rules/lemma.md`, which Claude Code loads at the start of every session. The project's own `CLAUDE.md` is never edited.
+- `agents` keeps the same body inside a marked block (`<!-- lemma:begin -->` to `<!-- lemma:end -->`) in `AGENTS.md`, the file many coding agents read. The file is created if missing, an existing block is replaced, text outside the block is left alone, and a half-open block is refused.
+- `all` installs every target.
+
+Nothing is written through a link. Writes go through a temporary file and a rename, and an unchanged file is left untouched, so running the command again changes nothing.
 
 ## MCP tools
 

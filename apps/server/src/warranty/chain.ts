@@ -216,7 +216,6 @@ export interface RawLog {
   readonly logIndex: Hex | null;
   readonly transactionHash: Hex | null;
   readonly removed?: boolean;
-  readonly blockTimestamp?: Hex | undefined;
 }
 
 /**
@@ -356,17 +355,13 @@ export function viemWarrantyChain(options: ViemWarrantyChainOptions): WarrantyCh
         method: "eth_getLogs",
         params: [{ address: registry as Hex, topics: [EVENT_TOPICS], fromBlock: numberToHex(fromBlock), toBlock: numberToHex(toBlock) }],
       })) as unknown as readonly RawLog[];
-      // Block timestamps: from the log when the node includes them, else read once per block.
+      // Block times come from the block headers, read once per block, never from a log's own
+      // `blockTimestamp`: that field is not part of the JSON-RPC spec, and Arbitrum's public
+      // endpoint answers it as 0x0, which would date every event 1970-01-01.
       const times = new Map<bigint, Date>();
-      const missing: bigint[] = [];
-      for (const log of raw) {
-        if (log.blockNumber === null) continue;
-        const n = BigInt(log.blockNumber);
-        if (log.blockTimestamp !== undefined) times.set(n, new Date(Number(BigInt(log.blockTimestamp)) * 1000));
-        else if (!times.has(n) && !missing.includes(n)) missing.push(n);
-      }
-      for (let i = 0; i < missing.length; i += concurrency) {
-        const blocks = await Promise.all(missing.slice(i, i + concurrency).map((blockNumber) => publicClient.getBlock({ blockNumber })));
+      const blockNumbers = [...new Set(raw.flatMap((log) => (log.blockNumber === null ? [] : [BigInt(log.blockNumber)])))];
+      for (let i = 0; i < blockNumbers.length; i += concurrency) {
+        const blocks = await Promise.all(blockNumbers.slice(i, i + concurrency).map((blockNumber) => publicClient.getBlock({ blockNumber })));
         for (const block of blocks) times.set(block.number, new Date(Number(block.timestamp) * 1000));
       }
       const logs: RegistryLog[] = [];

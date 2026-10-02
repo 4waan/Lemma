@@ -216,9 +216,9 @@ node scripts/contract-size.mjs
 
 The script strips custom sections, compresses with brotli 11 as cargo stylus does, checks the imports and the entry point, and refuses any floating-point or SIMD instruction. Measured on 2026-09-27: 72,406 bytes of wasm and 19,722 bytes compressed, one fragment under the 24 KiB fragment size (96 KiB is the hard limit). `cargo stylus check` itself reports about 19.5 KB (19,441 to 19,490 bytes) before it contacts the endpoint. That figure moves slightly with the checkout location, because cargo stylus hashes the project's file paths and contents into the module.
 
-### Gas for `record` (not measured)
+### Gas for `record`
 
-The warranty registry calls `record` with a fixed budget of 300,000 gas (`ENGINE_GAS_LIMIT`) inside try/catch. If `record` runs out of gas, finalization still succeeds, the registry emits `EngineRecordFailed`, and the outcome never reaches the on-chain sums. `TestVM` does not charge gas, and no Arbitrum RPC was reachable from the build environment, so nobody has measured `record` yet. Offline estimates from ArbOS's default Stylus pricing (read 2026-09-27): about 15,000 gas for the 17 memory pages the module declares (Rust's default 1 MiB stack), at least 8,832 gas of program init while the program is not cached, and up to about 46,000 gas of storage and the log for a key's first record. Measure `record` on Arbitrum Sepolia, cold and warm, before the registry points at this contract. Cache the program through ArbOS's CacheManager if the cold figure comes near the budget.
+The warranty registry calls `record` with a fixed budget of 300,000 gas (`ENGINE_GAS_LIMIT`) inside try/catch. If `record` runs out of gas, finalization still succeeds, the registry emits `EngineRecordFailed`, and the outcome never reaches the on-chain sums. `TestVM` does not charge gas, so `record` was measured on the [Arbitrum Sepolia deployment](../docs/deployments/arbitrum-sepolia.md) on 2026-10-01 with `eth_estimateGas` from the registry's address, less the 21,000 intrinsic gas and the calldata: about 90,100 gas for a key's first record with the program not cached, and about 63,000 for a key that already holds outcomes (testnet). Both are well inside the budget, so the program is not cached through ArbOS's CacheManager; cache it if a later version comes near the budget. The offline estimates this section held before (17 memory pages, at least 8,832 gas of program init uncached, up to about 46,000 gas of storage and log) were in the same range.
 
 ### Commands
 
@@ -231,12 +231,14 @@ cargo run --locked --quiet -p confidence-contract --features export-abi -- abi
 
 The first runs the engine, wasm-export and contract tests (`npm run stylus:test` from the root). The second prints the Solidity interface, byte for byte what `cargo stylus export-abi` prints. After an engine change, run `npm run confidence:wasm` from the root and commit the rebuilt module.
 
-### Deploying (not done yet)
+### Deploying
 
-Deployment needs a reachable Arbitrum Sepolia RPC and a deployer with about 0.001 testnet ETH. Run `cargo stylus check --endpoint <rpc>` first. Then, from `contracts/stylus/confidence-contract`:
+The engine is deployed on Arbitrum Sepolia at `0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6` ([record](deployments/arbitrum-sepolia/ConfidenceEngine.json), [deployment](../docs/deployments/arbitrum-sepolia.md)). Deployment needs a reachable Arbitrum Sepolia RPC and a deployer with about 0.001 testnet ETH; that deployment cost 0.000437 testnet ETH, 0.000122 of it the activation data fee. Run `cargo stylus check --endpoint <rpc>` first. Both commands simulate the activation, which the official endpoint (`https://sepolia-rollup.arbitrum.io/rpc`) refuses with `stylus activations not allowed for this request` (seen on 2026-10-01); a keyless public endpoint such as `https://arbitrum-sepolia-rpc.publicnode.com` answers it (the check there on that day: 19.4 KB compressed, activation data fee 0.000122 ETH with the 20% bump). Then, from `contracts/stylus/confidence-contract`:
 
 ```bash
-cargo stylus deploy --endpoint <rpc> --private-key-path <key file, mode 0600> --constructor-args <owner> <registry> --no-verify
+cargo stylus deploy --endpoint <rpc> --private-key-path <key file, mode 0600> --no-verify --constructor-args <owner> <registry>
 ```
+
+`--constructor-args` takes every argument after it, so `--no-verify` (build locally, without Docker) must come before it. `cargo stylus deploy --estimate-gas` with the same arguments only estimates; its figures mean nothing for an unfunded deployer.
 
 This deploys, activates and runs the constructor in one transaction. Never run the constructor in a separate transaction: it runs once, for whoever calls it first. Never pass `--private-key`, which exposes the key in shell history and process listings. After deployment, call `setRegistry` if the registry was deployed later, call `setPrior` for each benchmarked profile from frozen evidence only, and measure `record`'s gas before the registry calls `setEngine` with this contract. `npm run warranty:admin -w @lemma/server -- set-priors` calls `setPrior` from each profile's frozen evidence, and `-- set-engine` points the registry at the contract; the [runbook](../docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) gives the order. A Stylus program must be reactivated every 365 days.

@@ -1,0 +1,24 @@
+{
+  "address": "0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14",
+  "blockNumber": 314699714,
+  "chainId": 421614,
+  "compiler": {
+    "bytecodeHash": "none",
+    "evmVersion": "cancun",
+    "optimizer": true,
+    "optimizerRuns": 200,
+    "version": "0.8.30+commit.73712a01"
+  },
+  "constructorArgs": {
+    "initialOwner": "0xa12fD2FB08aCd9993b5f209Cd7BF4D47cDd31658",
+    "usdc": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d"
+  },
+  "contract": "ResolutionWarrantyRegistry",
+  "deployer": "0xa12fD2FB08aCd9993b5f209Cd7BF4D47cDd31658",
+  "eip712Name": "Lemma Warranty Registry",
+  "eip712Version": "1",
+  "runtimeCodeHash": "0x7131a3af590c2ae3618e8744c206d7459bad01cc4c0078c6987d1e74689bc5c7",
+  "schema": "lemma.contracts.deployment.v1",
+  "sourceCommit": "de5223ad8396ea87e0d3d647b9de485ba3fcc085",
+  "transactionHash": "0xe3eaa9166b61e1e570e659359e7c3dbcac6dc7b44e83e6cdc3536bf1cc18eddf"
+}

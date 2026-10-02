@@ -13,8 +13,9 @@ import { type Hex, encodeDeployData, getAddress, keccak256, parseEventLogs } fro
 import { privateKeyToAccount } from "viem/accounts";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 
+import { initSignerKey, startAgentProcess, startSignerProcess } from "./lib/agent.js";
 import { type Bridge, inProcessSigner, startBridge } from "./lib/bridge.js";
-import { CAPABILITY, type E2eCatalog, writeCatalog } from "./lib/catalog.js";
+import { CAPABILITY, type E2eCatalog, writeCatalog, writeWorkspace } from "./lib/catalog.js";
 import { type LocalChain, type LocalUsdc, deployErc8004, engineAbi, installUsdc, localChain, registryReadAbi, runtimeKey } from "./lib/chain.js";
 import { type RunningServer, crashableStore, recordingJsonLogger, startServer } from "./lib/server.js";
 import { type Anvil, ROOT, type ScriptResult, forgeArtifact, freePort, runScript, startAnvil, until } from "./lib/tools.js";
@@ -27,7 +28,9 @@ import { type Anvil, ROOT, type ScriptResult, forgeArtifact, freePort, runScript
  * ERC-8004 registries. Roles, releases, bonds, the engine and its priors, and
  * the provider's agent are set up with the runbook's own scripts; then the
  * real server app and its jobs, and real bridges buying through their
- * in-process signers, run the five scenarios. Every key is made at run time.
+ * in-process signers, run the scenarios; the last purchase goes through the
+ * shipped lemma-signer and lemma-mcp programs as processes. Every key is made
+ * at run time.
  *
  * The scenarios run in order on one chain. Expiry runs last: it moves the
  * chain's clock an hour ahead, and x402 authorizations are timed by the wall
@@ -152,7 +155,7 @@ describe("the outcome pipeline on a local chain", () => {
     return b;
   };
   /** An agent's purchase through its bridge: preview, then buy; the resolution id from the stored delivery. */
-  const purchase = async (bridge: Bridge): Promise<Hex32> => {
+  const purchase = async (bridge: Pick<Bridge, "call" | "inbox">): Promise<Hex32> => {
     const preview = await bridge.call("lemma_preview", { capability: CAPABILITY });
     expect(preview.text, preview.text).toContain("lemma_buy_resolution");
     const bought = await bridge.call("lemma_buy_resolution", { capability: CAPABILITY });
@@ -166,7 +169,7 @@ describe("the outcome pipeline on a local chain", () => {
     return resolution.resolutionId as Hex32;
   };
   /** The agent applies the resolution and runs its acceptance tests; the bridge signs and posts the receipt, which the server verifies. */
-  const adopt = async (bridge: Bridge, id: Hex32, outcome: "passed" | "failed") => {
+  const adopt = async (bridge: Pick<Bridge, "call">, id: Hex32, outcome: "passed" | "failed") => {
     const applied = await bridge.call("lemma_apply_resolution", { capability: CAPABILITY, mode: "apply" });
     expect(applied.text, applied.text).toContain("applied 1 file changes");
     const verified = await bridge.call("lemma_verify_adoption", { capability: CAPABILITY });
@@ -558,6 +561,42 @@ describe("the outcome pipeline on a local chain", () => {
     expect(await engineCalls()).toBe(6);
   });
 
+  it("scenario 6, the shipped programs: lemma-signer and lemma-mcp, run as a buyer runs them, buy and adopt over stdio", async () => {
+    // The buyer's setup from the bridge's README: lemma-signer init makes the key file, and the address it prints is funded.
+    const signerState = mkdtempSync(join(tmp, "signer-state-"));
+    const key = await initSignerKey(signerState);
+    outputs.push(key.output);
+    secrets.push(readKeyFile(key.keyFile));
+    hidden.push(key.address);
+    await usdc.mint(key.address, 1_000_000n);
+    const signer = await startSignerProcess({ stateDir: signerState, provider: roles.provider.address });
+    const refundTo = runtimeKey().address;
+    hidden.push(refundTo);
+    const agent = await startAgentProcess({
+      apiUrl: server.url,
+      workspace: writeWorkspace(mkdtempSync(join(tmp, "workspace-")), "pass"),
+      stateDir: mkdtempSync(join(tmp, "state-")),
+      signerSocket: signer.socket,
+      provider: roles.provider.address,
+      refundTo,
+    });
+    try {
+      expect(await agent.tools()).toEqual(expect.arrayContaining(["lemma_preview", "lemma_buy_resolution", "lemma_apply_resolution", "lemma_verify_adoption", "lemma_claim_refund"]));
+      const id = await purchase(agent);
+      await warrantyIn(id, "active");
+      await adopt(agent, id, "passed");
+      await warrantyIn(id, "passed");
+      expect(await engineCalls()).toBe(7);
+      // The buyer paid the price in USDC and no gas; its key stayed in the signer's key file.
+      expect(await usdc.balanceOf(key.address)).toBe(1_000_000n - PRICE);
+      expect(await chain.publicClient.getBalance({ address: key.address as Hex })).toBe(0n);
+    } finally {
+      await agent.close();
+      await signer.stop();
+      outputs.push(agent.stderr(), signer.output());
+    }
+  });
+
   it("scenario 3, expiry: a warranty without a receipt expires once the chain passes its claim deadline", async () => {
     const e = await buyer(1_000_000n);
     const bridge = await bridgeFor(e.key, "pass");
@@ -576,7 +615,7 @@ describe("the outcome pipeline on a local chain", () => {
     expect(toAddress(expiryTx.from)).toBe(roles.provider.address);
     expect((await release()).reserved).toBe(0n);
     // Nothing was recorded or posted for it.
-    expect(await engineCalls()).toBe(6);
+    expect(await engineCalls()).toBe(7);
     expect(expired.warranty?.feedback).toBeNull();
   });
 

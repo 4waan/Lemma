@@ -1,0 +1,25 @@
+{
+  "schema": "lemma.contracts.deployment.v1",
+  "contract": "CompatibilityConfidence (Stylus)",
+  "chainId": 421614,
+  "address": "0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6",
+  "deployer": "0xa12fD2FB08aCd9993b5f209Cd7BF4D47cDd31658",
+  "via": "0xcEcba2F1DC234f70Dd89F2041029807F8D03A990",
+  "transactionHash": "0x1a184d072e29b839fa25d2f038ce01d9610fc415131b6d945411615ee0bcf975",
+  "blockNumber": 314700229,
+  "constructorArgs": {
+    "owner": "0xa12fD2FB08aCd9993b5f209Cd7BF4D47cDd31658",
+    "registry": "0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14"
+  },
+  "runtimeCodeHash": "0x6bdfb8b5b906495168e4a0274ab8b156b802541ffbe5bf78d473d59bba3416a2",
+  "compressedSizeBytes": 19441,
+  "activationDataFeeWei": "122431897577112",
+  "compiler": {
+    "rust": "1.94.1",
+    "stylusSdk": "0.10.9",
+    "cargoStylus": "0.10.9",
+    "reproducibleBuild": false
+  },
+  "sourceTree": "c087dfacacecb46f0f44415eecd82c353a7514a7",
+  "sourceCommit": "de5223ad8396ea87e0d3d647b9de485ba3fcc085"
+}

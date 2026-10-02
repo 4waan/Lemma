@@ -20,6 +20,7 @@
     "verify": "npm run typecheck && npm run typecheck:tests && npm test && npm run build",
     "e2e": "tsx e2e/prepare.ts && vitest run --config e2e/vitest.config.ts",
     "sepolia:roles": "tsx ops/sepolia/setup-roles.ts",
+    "sepolia:check": "tsx ops/sepolia/conformance.ts",
     "secrets:scan": "gitleaks git --no-banner --redact --config .gitleaks.toml .",
     "hooks:install": "git config core.hooksPath .githooks",
     "dev:server": "npm run dev -w @lemma/server",

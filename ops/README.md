@@ -61,6 +61,8 @@ With `ARBITRUM_SEPOLIA_RPC_URL` and `ARBITRUM_SEPOLIA_FUNDER_PRIVATE_KEY` in its
 
 The server refuses to start when two of the facilitator, provider, evaluator, and attester keys are one account.
 
+Once deployed, `npm run sepolia:check` checks the contracts, their wiring and roles, the releases, the engine's state and, with `--api`, a running server against the chain, read-only ([Checking a deployment](../docs/deployment.md#checking-a-deployment)).
+
 ## Running the warranty pipeline
 
 - **Gas.** The provider, evaluator, facilitator, and attester each pay their own gas. The server warns at startup when one has no ETH (`warranty.sender_unfunded`, `payments.facilitator_unfunded`); a send that fails for gas is retried with backoff (`warranty.attempt_failed`, `reputation.attempt_failed`).

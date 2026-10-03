@@ -21,7 +21,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 
 1. Show a TypeScript MCP fixture and ask the agent to add x402 on Arbitrum Sepolia.
 2. The agent calls `lemma_preview` before writing code. It is free and sends no source code.
-3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms. On the Catalog page, show the release's compatibility confidence (the benchmark prior, then real outcomes, with how many distinct buyers are behind them once there are three) and its public pass rate from ERC-8004. The calculator on the Proof page shows why the price is allowed.
+3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms. On the Catalog page, show the release's card and, under Details, its score (compatibility confidence: the benchmark's starting score, then real results, with how many distinct buyers are behind them once there are three) and its public record from ERC-8004. The calculator on the Proof page shows why the price is allowed.
 4. Show the local bridge checking drift, spend policy, network, asset, recipient, and authorization window.
 5. The agent calls `lemma_buy_resolution`, and the signer signs one USDC authorization. The agent never holds ETH; the facilitator pays the gas. Open the Arbitrum Sepolia settlement transaction.
 6. Deliberately lose the paid response, then recover the same resolution without a second payment.
@@ -32,6 +32,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 11. Switch to the failing fixture: buy, apply, and verify. The failed receipt waits for the evaluator: `npm run evaluator -w @lemma/server -- list`, then `-- decide <resolutionId> failed`. The page shows the warranty failed with its credit.
 12. The agent calls `lemma_claim_refund`. The evaluator relays the withdrawal, the page shows the warranty refunded with the withdrawal transaction, and the refund address holds the price.
 13. End with the frozen control and treatment benchmark and its raw evidence references on the dashboard's Proof page.
+14. Close on the home page's On Arbitrum Sepolia section: the gas each step of a purchase used, each linked to its transaction, and the deployed contracts. Say what each part does today, then the future scope below.
 
 ## The local rehearsal instead
 
@@ -66,3 +67,21 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 - Do not hide the manual evaluator trust assumption (the evaluator is a team key, and it decides failures) or an intervention.
 - Do not present the pass rate as independent review: it counts only Lemma's attester.
 - Do not say the Stylus engine ran in the local rehearsal: anvil cannot run Stylus.
+
+## Future scope
+
+Where a goal is not met yet, say what works today, then what comes next. Each row names its source.
+
+| Goal | What works today | Next |
+| --- | --- | --- |
+| Sell a release | Every release can be previewed for free, and the price rules are code that the catalog check enforces ([Economic gates](economic-gates.md)). | Run the stage-4 probe and the frozen benchmark, so releases carry a measured saving and go on sale. |
+| A measured chain cost | Gas per step is measured on Arbitrum Sepolia: 91,275 to pay, 216,065 to start the warranty, 146,896 to record a result, 84,009 to refund ([deployment record](deployments/arbitrum-sepolia.md)). | Set `g` and the price floor in `packages/catalog/economics.json` from those receipts, through the protocol lane. |
+| Public reputation (ERC-8004) | The attester and the outcome feed are built, and the local-chain e2e posts feedback to the official registries. | Register the provider's agent and post feedback once the server has a public https URL. |
+| A hosted service | One machine ran the server, Postgres and the agent against the live chain on 2026-10-01. | Host the server at a public URL with the dashboard, so anyone can use it. |
+| Verified contracts | Both contracts are deployed and read back; `npm run sepolia:check` checks their code hashes and recomputes every score. | Verify the registry on Arbiscan, and redeploy the engine from a reproducible `cargo stylus` build. |
+| An installable bridge | The bridge builds from a checkout and installs its rule for Cursor, Claude Code and AGENTS.md. | Publish `lemma-mcp` and `lemma-signer` as packages. |
+| More providers and capabilities | One first-party provider and two releases; agents asking for the facilitator get a free build answer, counted in Demand. | Add third-party providers, and build the most-asked capability next. |
+| Independent evaluation | A team evaluator signs every pass, failure and refund; the wash-adoption damper limits any one buyer's weight. | Add independent evaluators, and run acceptance tests out of the signer's reach by default. |
+| Pay only after tests pass | A bond-backed warranty refunds a confirmed failure. | Check whether x402's escrow scheme can hold a payment until the tests pass. |
+| Mainnet | Everything runs on Arbitrum Sepolia. | Audit the contracts, then deploy to Arbitrum One. |
+

@@ -18,7 +18,7 @@ export interface PricingInput {
 
 export type PricingField = keyof PricingInput;
 
-/** The worked example in docs/economic-gates.md: illustrative assumptions, not measurements. */
+/** The worked example in docs/economic-gates.md: example values, not measurements. */
 export const WORKED_EXAMPLE: PricingInput = { control: "2.50", saving: "1.30", price: "0.39", gas: "0.01" };
 
 /** Why a price is or is not acceptable, in the order the checks apply. */
@@ -78,8 +78,8 @@ export function evaluatePricing(input: PricingInput): PricingResult {
 }
 
 export const VERDICT_TEXT: Readonly<Record<PricingVerdict, string>> = {
-  ok: "Sellable. The price is within 30% of the saving, and the buyer still spends at least 25% less after price and gas.",
-  "zero-price": "Not sold. A zero price is never offered.",
-  "breaks-sale-rule": "Not sellable. The price is above 30% of the measured saving.",
-  "misses-target": "Refused by the catalog check. The 30% rule holds, but the buyer would save less than 25% after price and gas.",
+  ok: "Sellable. The price is at most 30% of the saving, and the buyer still spends at least 25% less.",
+  "zero-price": "Not sold. A price of zero is never offered.",
+  "breaks-sale-rule": "Not sellable. The price is above 30% of the saving.",
+  "misses-target": "Refused. The price fits the 30% rule, but the buyer would save less than 25% after price and gas.",
 };

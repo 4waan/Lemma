@@ -1,34 +1,34 @@
 import type { CatalogView, ProfileSummary, ReleaseSummary } from "@lemma/core";
 
-import { BUYERS_EXPLAINED, COMPATIBILITY_EXPLAINED, compatibilityBasis } from "../components/Compatibility.js";
+import { BUYERS_EXPLAINED, compatibilityBasis } from "../components/Compatibility.js";
 import { CostComparison } from "../components/CostChart.js";
 import { Hash } from "../components/copy.js";
-import { Icon } from "../components/Icon.js";
-import { Badge, Callout, EmptyState, PageHead, Section, Stat } from "../components/ui.js";
-import { percent, thousandths, usdc, when } from "../format.js";
+import { Icon, type IconName } from "../components/Icon.js";
+import { Badge, Callout, PageHead, Section, Stat } from "../components/ui.js";
+import { EVIDENCE_LABEL, percent, thousandths, usdc, when } from "../format.js";
 import { PricingCalculator } from "./PricingCalculator.js";
 
-/** The proof page: how savings are measured, every profile that carries evidence, compatibility confidence, the pricing math, and what to trust. */
+/** The proof page: how savings are measured, every profile that carries evidence, the score, the pricing math, and what each guarantee covers. */
 export function Evidence({ view }: { view: CatalogView }) {
   const rows = view.releases.flatMap((r) => r.profiles.filter((p) => p.evidence !== null).map((p) => ({ release: r, profile: p })));
-  const confident = view.releases.flatMap((r) => r.profiles.filter((p) => p.compatibility !== null).map((p) => ({ release: r, profile: p })));
+  const scored = view.releases.flatMap((r) => r.profiles.filter((p) => p.compatibility !== null).map((p) => ({ release: r, profile: p })));
   return (
     <>
       <PageHead eyebrow="Proof" title="Measured, not promised">
-        <p className="lead">A release is sold only when a frozen, paired benchmark shows it lowers the cost of reaching passing tests. This is how that is measured, and what has been measured.</p>
+        <p className="lead">A release is sold only after a benchmark shows it saves money. Here is how that is measured.</p>
       </PageHead>
 
-      <Section title="The benchmark" intro="Two arms run the same task on the same model and fixture. The only difference is Lemma.">
+      <Section title="The benchmark" intro="The same task, model and starting project, run twice. The only difference is Lemma.">
         <div className="arms">
           <div className="arm">
             <h3>
               <Icon name="x" size={18} />
-              Control: the agent alone
+              Without Lemma
             </h3>
             <ol>
-              <li>Gets the task and the fixture repository.</li>
-              <li>Builds the integration itself.</li>
-              <li>Its model cost to passing tests is recorded.</li>
+              <li>Gets the task and the starting project.</li>
+              <li>Writes the integration itself.</li>
+              <li>We record its model cost to passing tests.</li>
             </ol>
           </div>
           <div className="arm-vs" aria-hidden="true">
@@ -37,86 +37,83 @@ export function Evidence({ view }: { view: CatalogView }) {
           <div className="arm treatment">
             <h3>
               <Icon name="check" size={18} />
-              Treatment: the agent with Lemma
+              With Lemma
             </h3>
             <ol>
               <li>Gets the same task, plus the Lemma rule and bridge.</li>
-              <li>Checks Lemma, then buys and applies the patch.</li>
-              <li>Its model cost, price and chain cost are recorded.</li>
+              <li>Checks Lemma, buys the patch and applies it.</li>
+              <li>We record its model cost, the price and the gas.</li>
             </ol>
           </div>
         </div>
         <dl className="stats">
-          <Stat label="Paired runs" value="20" note="3 tasks × 2 arms × 3 repetitions, plus a no-match task in both arms" />
-          <Stat label="Success target" value="25% lower" note="median all-in cost and total tokens, same acceptance results" />
-          <Stat label="Saving sold on" value="Lower quartile" note="of the paired savings, not the average" />
-          <Stat label="No-match spend" value="0 USDC" note="the treatment arm must pay nothing when nothing fits" />
+          <Stat label="Paired runs" value="20" note="3 tasks, each run 3 times both ways, plus one task with no match" />
+          <Stat label="Target" value="25% cheaper" note="in total cost and tokens, with the same test results" />
+          <Stat label="Saving we price from" value="The low end" note="the lower quartile of the paired savings, not the average" />
+          <Stat label="Spend when nothing fits" value="0 USDC" note="no match, no charge" />
         </dl>
       </Section>
 
-      <Section title="Measured profiles">
-        {rows.some(({ profile }) => profile.label === "provisional") ? (
-          <Callout tone="warn" title="Provisional evidence is loaded">
-            <p>
-              Rows marked probe are testnet-only provisional evidence: a few exploratory control runs and one treatment run with the patch applied by hand. Their saving is
-              optimistic and was not measured by the frozen benchmark.
-            </p>
-          </Callout>
-        ) : null}
-        {rows.length === 0 ? (
-          <EmptyState title="No frozen benchmark has run yet">
-            <p>No profile carries evidence yet, so nothing is sold. When a benchmark runs, each measured profile appears here with its numbers and the run set they came from.</p>
-          </EmptyState>
-        ) : (
+      {rows.length === 0 ? null : (
+        <Section title="Measured profiles">
+          {rows.some(({ profile }) => profile.label === "provisional") ? (
+            <Callout title="Early estimates are loaded">
+              <p>An early estimate comes from a short probe: a few runs without Lemma and one with the patch applied by hand. It is more optimistic than the full benchmark.</p>
+            </Callout>
+          ) : null}
+          <div className="grid grid-2">
+            {rows.map(({ release, profile }) => (
+              <EvidenceCard key={`${release.releaseDigest}-${profile.profileIndex}`} release={release} profile={profile} chainCost={BigInt(view.economics.chainCostUsdc)} />
+            ))}
+          </div>
+          <h3 className="table-title">All numbers</h3>
+          <EvidenceTable rows={rows} />
+        </Section>
+      )}
+
+      <Section title="The score" intro="A cautious estimate (the 90% lower bound) of how often a release's tests pass on a project like yours.">
+        <ol className="score-steps">
+          {SCORE_STEPS.map((step) => (
+            <li key={step.title}>
+              <span className="feature-icon" aria-hidden="true">
+                <Icon name={step.icon} size={18} />
+              </span>
+              <strong>{step.title}</strong>
+              <span>{step.text}</span>
+            </li>
+          ))}
+        </ol>
+        {scored.length === 0 ? null : (
           <>
-            <div className="grid grid-2">
-              {rows.map(({ release, profile }) => (
-                <EvidenceCard key={`${release.releaseDigest}-${profile.profileIndex}`} release={release} profile={profile} chainCost={BigInt(view.economics.chainCostUsdc)} />
-              ))}
-            </div>
-            <h3 className="table-title">All numbers</h3>
-            <EvidenceTable rows={rows} />
+            <CompatibilityTable rows={scored} />
+            <p className="small muted">{BUYERS_EXPLAINED}</p>
           </>
         )}
       </Section>
 
-      <Section title="Compatibility confidence" intro={COMPATIBILITY_EXPLAINED}>
-        {confident.length === 0 ? (
-          <EmptyState title="Nothing to be confident about yet">
-            <p>No profile has benchmark evidence or a finalized adoption outcome yet. Each one that does appears here with its confidence and what it rests on.</p>
-          </EmptyState>
-        ) : (
-          <CompatibilityTable rows={confident} />
-        )}
-        <p className="small muted">
-          {BUYERS_EXPLAINED} The same integer engine is built as a Stylus contract for Arbitrum, where the warranty registry records each finalized outcome, so once it is deployed
-          anyone can recompute these numbers on chain.
-        </p>
-      </Section>
-
-      <Section title="Try the pricing math" intro="Both rules are code in the shared core package, and the catalog check refuses any price that breaks them.">
+      <Section title="Try the pricing math" intro="Both rules are checked in code. Change a number to see the result.">
         <div className="rules">
           <div className="rule">
             <strong>At most 30% of the saving</strong>
-            <span>The price is capped at 30% of the conservative model-cost saving the benchmark measured.</span>
+            <span>The price can't go above 30% of the saving the benchmark measured.</span>
           </div>
           <div className="rule">
-            <strong>At least 25% cheaper all-in</strong>
-            <span>After the price and chain cost, the buyer still spends a quarter less than building it alone.</span>
+            <strong>At least 25% cheaper</strong>
+            <span>With the price and gas paid, you still spend at least 25% less than building it.</span>
           </div>
           <div className="rule">
-            <strong>Free when it does not fit</strong>
-            <span>A build or decline answer never carries a price, and an unbenchmarked profile is never sold.</span>
+            <strong>Free when nothing fits</strong>
+            <span>No match means no price. A patch without a benchmark is never sold.</span>
           </div>
         </div>
         <PricingCalculator />
       </Section>
 
-      <Section id="what-to-trust" title="What to trust" intro="This is a hackathon MVP that demonstrates an economic mechanism. These limits are stated wherever they apply.">
-        <ul className="check-list warn">
+      <Section id="what-to-trust" title="What to trust" intro="What each guarantee covers, in plain words.">
+        <ul className="check-list">
           {TRUST.map((item) => (
             <li key={item}>
-              <Icon name="alert" />
+              <Icon name="info" />
               <span>{item}</span>
             </li>
           ))}
@@ -126,13 +123,19 @@ export function Evidence({ view }: { view: CatalogView }) {
   );
 }
 
+/** How a score is built, as three steps instead of a paragraph. */
+const SCORE_STEPS: ReadonlyArray<{ readonly icon: IconName; readonly title: string; readonly text: string }> = [
+  { icon: "gauge", title: "Starts from the benchmark", text: "The runs with Lemma set the starting score." },
+  { icon: "receipt", title: "Moves with each result", text: "Every final pass or failure updates it, on chain." },
+  { icon: "clock", title: "Stays current", text: "A result counts half as much every 30 days." },
+];
+
 const TRUST: readonly string[] = [
-  "Everything runs on Arbitrum Sepolia. Amounts are test USDC, not revenue.",
-  "Evidence marked provisional comes from an exploratory probe, not the frozen benchmark, and exists only on testnet.",
-  "The server, the provider and the outcome evaluator are operated by the Lemma team, and every pass, failure and refund needs the evaluator's signature. This demonstrates an economic mechanism, not trustless software correctness.",
-  "A provider bond backs a purchase only when the server runs the warranty pipeline against a deployed registry. The Status page names the registry this server uses, if any.",
-  "Compatibility confidence counts only the outcomes the warranty registry recorded into its engine. Without any, it is the benchmark prior alone.",
-  "A release's acceptance tests run as the buyer's own user, so they could reach the buyer's signer and the bridge's state and post a signed passing receipt before the bridge does. Until the bridge runs them out of that reach, failures and disputes rely on the evaluator.",
+  "Lemma runs the server and the evaluator. Every pass, failure and refund carries the evaluator's signature.",
+  "A provider bond backs a purchase when the server uses the warranty contract. The Status page names it.",
+  "A score counts only results the warranty contract recorded. Before the first one, it is the benchmark's starting score.",
+  "An early estimate comes from a short probe, not the full benchmark.",
+  "A release's tests run as your user, so they could reach your signer. Disputes go to the evaluator. Running the signer as another user keeps it out of reach.",
 ];
 
 function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary; profile: ProfileSummary; chainCost: bigint }) {
@@ -146,15 +149,14 @@ function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary
         <h3>
           {release.releaseId}@{release.version} #{profile.profileIndex}
         </h3>
-        {profile.label === "provisional" ? <Badge tone="warn">probe (provisional, testnet only)</Badge> : <Badge tone="accent">benchmarked</Badge>}
+        <Badge tone={profile.label === "provisional" ? "warn" : "accent"}>{EVIDENCE_LABEL[profile.label]}</Badge>
       </div>
       <p className="small muted">
-        {e.benchmarkVersion} · {e.model} · measured {when(e.measuredAt)} · all-in reduction at list price{" "}
-        {profile.allInReductionBps === null ? "–" : percent(profile.allInReductionBps)}
+        {e.benchmarkVersion} · {e.model} · measured {when(e.measuredAt)} · {profile.allInReductionBps === null ? "–" : percent(profile.allInReductionBps)} cheaper at list price
         {profile.compatibility === null ? null : (
           <>
             {" "}
-            · compatibility confidence {percent(BigInt(profile.compatibility.confidenceBps))} ({compatibilityBasis(profile.compatibility, profile.label)})
+            · score {percent(BigInt(profile.compatibility.confidenceBps))} ({compatibilityBasis(profile.compatibility, profile.label)})
           </>
         )}
       </p>
@@ -163,7 +165,7 @@ function EvidenceCard({ release, profile, chainCost }: { release: ReleaseSummary
         residual={control - saving}
         price={BigInt(release.priceUsdc)}
         gas={chainCost}
-        caption="Expected cost to reach passing tests, from the conservative saving"
+        caption="Expected cost to reach passing tests, from the measured saving"
       />
     </article>
   );
@@ -179,7 +181,7 @@ function EvidenceTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary
             <th scope="col">Benchmark</th>
             <th scope="col">Runs passed</th>
             <th scope="col" className="num">
-              Control median cost
+              Cost without Lemma
             </th>
             <th scope="col" className="num">
               Expected saving
@@ -187,7 +189,7 @@ function EvidenceTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary
             <th scope="col" className="num">
               Tokens saved
             </th>
-            <th scope="col">Measured / stale after</th>
+            <th scope="col">Measured / good until</th>
           </tr>
         </thead>
         <tbody>
@@ -201,7 +203,7 @@ function EvidenceTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary
                   {profile.label === "provisional" ? (
                     <>
                       {" "}
-                      <Badge tone="warn">probe (provisional, testnet only)</Badge>
+                      <Badge tone="warn">{EVIDENCE_LABEL.provisional}</Badge>
                     </>
                   ) : null}
                 </td>
@@ -212,7 +214,7 @@ function EvidenceTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSummary
                   </div>
                 </td>
                 <td>
-                  control {e.passed.control}/{e.runs.control}, treatment {e.passed.treatment}/{e.runs.treatment}
+                  without {e.passed.control}/{e.runs.control}, with {e.passed.treatment}/{e.runs.treatment}
                 </td>
                 <td className="num">{usdc(e.controlMedianCostUsdc)}</td>
                 <td className="num">{usdc(e.expectedRawSavingUsdc)}</td>
@@ -238,15 +240,15 @@ function CompatibilityTable({ rows }: { rows: ReadonlyArray<{ release: ReleaseSu
           <tr>
             <th scope="col">Release and profile</th>
             <th scope="col" className="num">
-              Confidence
+              Score
             </th>
             <th scope="col" className="num">
-              Effective sample
+              Sample size
             </th>
             <th scope="col" className="num">
-              Outcomes
+              Results
             </th>
-            <th scope="col">Built from</th>
+            <th scope="col">Based on</th>
           </tr>
         </thead>
         <tbody>

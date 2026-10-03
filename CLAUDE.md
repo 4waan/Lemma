@@ -35,7 +35,7 @@ Lemma is a compatibility and reuse layer for coding agents. A free `lemma_previe
 - One branch per PR, named `<area>/<topic>`, based on `main`. Use the PR template.
 - Every pull request has a description. Fill in each section of the PR template in plain, simple language; never open a pull request with an empty body.
 - When a public interface changes, update the owning README and the relevant `docs/` file in the same change.
-- Economic claims name their evidence source and measurement date. Label testnet amounts as testnet.
+- Economic claims name their evidence source and measurement date. Label testnet amounts as testnet. On the dashboard one label covers every page: the Arbitrum Sepolia badge in the header and the home page's On Arbitrum Sepolia section. Its pages say "USDC" and never "testnet" or "demo" (a test in `apps/web/test` holds this).
 
 ## Project skills
 

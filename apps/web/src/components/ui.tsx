@@ -82,36 +82,6 @@ export function EmptyState({ title, children }: { title: string; children: React
   );
 }
 
-/** Marks a pipeline step as shipped or still being built, so the page never implies more than exists. */
-export function Built({ built }: { built: boolean }) {
-  return built ? <Badge tone="ok">Built</Badge> : <Badge tone="warn">In progress</Badge>;
-}
-
-/** Cards in a grid, as a list so they are counted and read in order. */
-export function FeatureGrid({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <ul className="feature-grid" aria-label={label}>
-      {children}
-    </ul>
-  );
-}
-
-/** One building block in a `FeatureGrid`: an icon, its state on this server, a title and one sentence. */
-export function FeatureCard({ icon, title, state, children }: { icon: IconName; title: string; state?: ReactNode; children: ReactNode }) {
-  return (
-    <li className="feature">
-      <div className="feature-head">
-        <span className="feature-icon" aria-hidden="true">
-          <Icon name={icon} size={18} />
-        </span>
-        {state}
-      </div>
-      <h3>{title}</h3>
-      <p>{children}</p>
-    </li>
-  );
-}
-
 /** A plan in the pricing section: its price, the unit the price is in, and what it includes. */
 export function PricingCard({
   name,

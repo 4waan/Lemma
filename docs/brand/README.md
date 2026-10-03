@@ -30,7 +30,7 @@ Mint is never used for text on white (1.5:1 contrast). Ink on mint is 12:1, so m
 
 ## Layout
 
-The dashboard's home page uses the common product landing layout: an off-white page with white, 12 px rounded cards; a dark panel (ink in light mode) for a product view such as a session transcript or a live readout; mint for lines, arrows and live markers, never for text on white; and status badges in green (live), amber (testnet) and grey (off). Third-party names (Arbitrum, Stylus, x402, USDC, ERC-8004) appear as plain text under "Built on", with no logo and no link, so nothing implies an affiliation.
+The dashboard's home page uses the common product landing layout: an off-white page with white, 12 px rounded cards; a dark panel (ink in light mode) for a product view such as a session transcript or a live readout; mint for lines, arrows and live markers, never for text on white; and badges in green (live, for sale), amber (early estimate) and grey (free preview). The page names its network once, in the header badge, and never says testnet or demo. A header switch picks light or dark; both themes use the same tokens. Third-party names (Arbitrum, Stylus, x402, USDC, ERC-8004) appear as plain text under "Built on", with no logo and no link, so nothing implies an affiliation.
 
 ## Rules
 

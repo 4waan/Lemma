@@ -5,7 +5,8 @@ import { type Loaded, useView } from "./api.js";
 import { Icon } from "./components/Icon.js";
 import { Logo, MarkMono } from "./components/Logo.js";
 import { Callout, EmptyState } from "./components/ui.js";
-import { BUILT_ON, FOOTER_COLUMNS, NAV, type Route, isCurrent, parseRoute, titleFor } from "./routes.js";
+import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, type Route, isCurrent, parseRoute, titleFor } from "./routes.js";
+import { useTheme } from "./theme.js";
 import { Catalog } from "./views/Catalog.js";
 import { Demand } from "./views/Demand.js";
 import { Evidence } from "./views/Evidence.js";
@@ -47,11 +48,13 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
                 {item.label}
               </a>
             ))}
-            <span className="pill testnet" title="Every amount is test USDC on Arbitrum Sepolia">
-              Testnet
-            </span>
+            <a className="pill network" href="#/arbitrum" title={`Every amount on this site is on ${NETWORK_LABEL}`}>
+              <span className="network-dot" aria-hidden="true" />
+              {NETWORK_LABEL}
+            </a>
           </nav>
           <div className="header-actions">
+            <ThemeButton />
             <a className="btn btn-primary btn-sm" href="#/setup" aria-current={route.view === "setup" ? "page" : undefined}>
               Get started
             </a>
@@ -73,7 +76,7 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
                 <MarkMono size={20} />
                 <span className="wordmark">Lemma</span>
               </span>
-              <p className="small">Verified integrations for coding agents, previewed for free and paid in USDC through x402.</p>
+              <p className="small">Tested integrations for coding agents. Free to check, cents to buy.</p>
             </div>
             {FOOTER_COLUMNS.map((column) => (
               <nav className="footer-col" key={column.title} aria-label={column.title}>
@@ -97,8 +100,8 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
             </div>
           </div>
           <div className="footer-base">
-            <p className="small">Testnet only: every amount is test USDC on Arbitrum Sepolia. This read-only dashboard holds no keys and cannot sign or change anything.</p>
-            <p className="small">The names under Built on belong to their owners, and Lemma is not affiliated with them.</p>
+            <p className="small">This site only reads. It holds no keys and cannot sign anything.</p>
+            <p className="small">The names under Built on belong to their owners. Lemma is not affiliated with them.</p>
           </div>
         </div>
       </footer>
@@ -115,11 +118,11 @@ function RouteView({ route }: { route: Route }) {
     case "catalog":
       return <View name="catalog" path="/api/v1/catalog" schema={CatalogView} render={(v) => <Catalog view={v} />} />;
     case "evidence":
-      return <View name="evidence" path="/api/v1/catalog" schema={CatalogView} render={(v) => <Evidence view={v} />} />;
+      return <View name="evidence" path="/api/v1/catalog" schema={CatalogView} anchor={route.anchor} render={(v) => <Evidence view={v} />} />;
     case "demand":
       return <View name="demand" path="/api/v1/demand" schema={DemandView} render={(v) => <Demand view={v} />} />;
     case "status":
-      return <View name="status" path="/api/v1/status" schema={StatusView} render={(v) => <Status view={v} />} />;
+      return <View name="status" path="/api/v1/status" schema={StatusView} anchor={route.anchor} render={(v) => <Status view={v} />} />;
     case "resolution":
       return route.id === null ? <ResolutionLookup /> : <ResolutionPage key={route.id} id={route.id} />;
     case "not-found":
@@ -144,16 +147,20 @@ function ResolutionPage({ id }: { id: string }) {
   return <Remote path={`/api/v1/resolutions/${id}`} schema={ResolutionView} render={(v) => <Resolution view={v} explorer={explorer} />} />;
 }
 
-function Remote<T>({ path, schema, render }: { path: string; schema: Parameters<typeof useView<T>>[1]; render: (view: T) => ReactNode }) {
-  return <Shown loaded={useView(path, schema)} render={render} />;
+function Remote<T>({ path, schema, render, anchor = null }: { path: string; schema: Parameters<typeof useView<T>>[1]; render: (view: T) => ReactNode; anchor?: string | null }) {
+  return <Shown loaded={useView(path, schema)} render={render} anchor={anchor} />;
 }
 
 /** One Remote per view, so React never reuses one view's loader for another. */
-function View<T>(props: { path: string; schema: Parameters<typeof useView<T>>[1]; render: (view: T) => ReactNode; name: string }) {
-  return <Remote key={`${props.name}:${props.path}`} path={props.path} schema={props.schema} render={props.render} />;
+function View<T>(props: { path: string; schema: Parameters<typeof useView<T>>[1]; render: (view: T) => ReactNode; name: string; anchor?: string | null }) {
+  return <Remote key={`${props.name}:${props.path}`} path={props.path} schema={props.schema} render={props.render} anchor={props.anchor ?? null} />;
 }
 
-export function Shown<T>({ loaded, render }: { loaded: Loaded<T>; render: (view: T) => ReactNode }) {
+/** A loaded view, scrolled to `anchor` once it is on the page: the section did not exist when the route changed. */
+export function Shown<T>({ loaded, render, anchor = null }: { loaded: Loaded<T>; render: (view: T) => ReactNode; anchor?: string | null }) {
+  useEffect(() => {
+    if (loaded.state === "ready" && anchor !== null) document.getElementById(anchor)?.scrollIntoView();
+  }, [loaded.state, anchor]);
   if (loaded.state === "loading") return <Loading />;
   if (loaded.state === "error")
     return (
@@ -162,6 +169,17 @@ export function Shown<T>({ loaded, render }: { loaded: Loaded<T>; render: (view:
       </Callout>
     );
   return <>{render(loaded.data)}</>;
+}
+
+/** Switches between the light and dark theme. It names what it switches to, and shows that theme's icon. */
+function ThemeButton() {
+  const [theme, toggle] = useTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  return (
+    <button type="button" className="theme-btn" onClick={toggle} aria-label={`Switch to ${next} mode`} title={`Switch to ${next} mode`}>
+      <Icon name={next === "dark" ? "moon" : "sun"} size={18} />
+    </button>
+  );
 }
 
 /** The mark, nudging down like its arrow, while a view loads. */

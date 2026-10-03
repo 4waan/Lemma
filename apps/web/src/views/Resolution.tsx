@@ -45,7 +45,7 @@ export function ResolutionLookup() {
   return (
     <>
       <PageHead eyebrow="Resolutions" title="Look up a resolution">
-        <p className="lead">Every purchase has a public id. Its page shows what was bought, on which terms, and what happened after. Never the buyer, and never the patch.</p>
+        <p className="lead">Every purchase has a public id. Its page shows what was bought, on what terms, and what happened next. Never the buyer, and never the patch.</p>
       </PageHead>
       <div className="card">
         <div className="lookup">
@@ -65,7 +65,7 @@ export function ResolutionLookup() {
               />
             </div>
             <span id="resolution-id-note" className="field-hint">
-              A 0x-prefixed 32-byte hex id, as the bridge reports it after a purchase.
+              The 0x id the bridge reports after a purchase.
             </span>
           </div>
           {valid ? (
@@ -92,18 +92,18 @@ export function Resolution({ view, explorer }: { view: ResolutionView; explorer:
   const provisional = PROVISIONAL.test(view.release.version);
   const payment: { mark: Mark; title: string; text: string } =
     view.state === "settled"
-      ? { mark: "done", title: "Paid and delivered", text: "The x402 settlement was recorded and the patch bundle delivered to the buyer's bridge." }
+      ? { mark: "done", title: "Paid and delivered", text: "The payment settled and the patch went to the buyer's bridge." }
       : view.state === "prepared"
-        ? { mark: "wait", title: "Payment in flight", text: "The payment authorization has not settled yet. A lost response is recovered without paying twice." }
-        : { mark: "fail", title: "Payment never settled", text: "The authorization window closed without settlement. No patch was delivered and nothing was charged." };
+        ? { mark: "wait", title: "Payment in flight", text: "The payment has not settled yet. A lost answer is recovered without paying twice." }
+        : { mark: "fail", title: "Payment never settled", text: "The payment window closed. Nothing was charged and no patch was sent." };
   const receipt = view.receipt;
   const adoption: { mark: Mark; title: string; text: string } =
     receipt === null
-      ? { mark: "todo", title: "No adoption receipt yet", text: "The buyer's bridge sends one after it applies the patch and runs the release's acceptance tests." }
+      ? { mark: "todo", title: "Waiting for the test result", text: "The buyer's bridge sends it after applying the patch and running its tests." }
       : {
           mark: receipt.outcome === "passed" ? "done" : receipt.outcome === "failed" ? "fail" : "wait",
-          title: `Acceptance tests ${receipt.outcome}`,
-          text: receipt.verified ? "The receipt's signature is verified." : "The receipt is unverified: it counts for nothing until its signature is checked.",
+          title: `Tests ${receipt.outcome}`,
+          text: receipt.verified ? "The result's signature is verified." : "The signature is not checked yet, so the result does not count yet.",
         };
   const warranty = warrantyStep(view);
   return (
@@ -112,7 +112,7 @@ export function Resolution({ view, explorer }: { view: ResolutionView; explorer:
         <p className="meta-line">
           <Badge tone={STATE_TONE[view.state]}>{STATE_TEXT[view.state]}</Badge>
           {view.warranty === null ? null : <Badge tone={WARRANTY[view.warranty.state].tone}>{WARRANTY[view.warranty.state].badge}</Badge>}
-          {provisional ? <Badge tone="warn">provisional (testnet only)</Badge> : null}
+          {provisional ? <Badge tone="warn">Early estimate</Badge> : null}
           <span>created on {view.createdOn} (UTC)</span>
         </p>
       </PageHead>
@@ -120,7 +120,7 @@ export function Resolution({ view, explorer }: { view: ResolutionView; explorer:
         <section className="card">
           <h2 className="h3">Lifecycle</h2>
           <ol className="timeline">
-            <Step mark="done" title="Offer quoted" text={`${usdc(view.terms.amount)} on ${networkName(view.terms.network)}, after a free preview matched the buyer's profile.`} />
+            <Step mark="done" title="Offer made" text={`${usdc(view.terms.amount)}, after a free check matched the buyer's project.`} />
             <Step mark={payment.mark} title={payment.title} text={payment.text} />
             <Step
               mark={adoption.mark}
@@ -162,28 +162,28 @@ export function Resolution({ view, explorer }: { view: ResolutionView; explorer:
 function warrantyStep(view: ResolutionView): { mark: Mark; title: string; text: string } {
   const w = view.warranty;
   if (w === null) {
-    return { mark: "todo", title: "No warranty pipeline", text: "This server does not run the warranty pipeline, so no provider bond on the warranty registry backs this resolution here." };
+    return { mark: "todo", title: "Sold without a warranty", text: "This server does not use the warranty contract." };
   }
   const mark = WARRANTY[w.state].mark;
   switch (w.state) {
     case "none":
-      if (view.state === "prepared") return { mark, title: "Warranty follows settlement", text: "Once the payment settles, the provider activates the warranty on the registry." };
+      if (view.state === "prepared") return { mark, title: "Warranty follows the payment", text: "Once the payment settles, the provider starts the warranty." };
       if (view.state === "expired") return { mark, title: "No warranty", text: "The payment never settled, so there is nothing to warrant." };
-      return { mark, title: "No warranty", text: "It was bought without a warranty claim, its release has no active warranty on the registry, or the activation gave up." };
+      return { mark, title: "No warranty", text: "Bought without a warranty claim, or its release has no active warranty." };
     case "pending":
-      return { mark, title: "Warranty activation pending", text: "The provider activates it on the registry after a short random delay, so the activation is not timed with the payment." };
+      return { mark, title: "Warranty starting", text: "The provider starts it after a short random delay, so its timing does not point to the payment." };
     case "active":
-      return { mark, title: "Warranty active", text: "The evaluator finalizes it from the buyer's verified adoption receipt before the claim deadline. Without one, it expires." };
+      return { mark, title: "Warranty active", text: "The evaluator settles it from the buyer's verified result before the deadline. Without one, it expires." };
     case "passed":
-      return { mark, title: "Warranty passed", text: "The evaluator finalized a pass, and the reserved bond went back to the provider." };
+      return { mark, title: "Warranty passed", text: "The tests passed, and the reserved bond went back to the provider." };
     case "failed":
-      return { mark, title: "Refund due", text: "The evaluator confirmed an eligible failure. The credit waits on the registry until the buyer's bridge claims it (lemma_claim_refund)." };
+      return { mark, title: "Refund due", text: "The failure was confirmed. The refund waits until the buyer's bridge claims it (lemma_claim_refund)." };
     case "refunded":
-      return { mark, title: "Refunded", text: "The evaluator confirmed an eligible failure, and the credit was paid to the buyer's refund address." };
+      return { mark, title: "Refunded", text: "The failure was confirmed, and the refund went to the buyer's refund address." };
     case "void":
-      return { mark, title: "Warranty void", text: "The outcome was ineligible or abandoned. The bond went back to the provider, and nothing was recorded." };
+      return { mark, title: "Warranty void", text: "The result could not count. The bond went back to the provider." };
     case "expired":
-      return { mark, title: "Warranty expired", text: "The claim window closed without a finalized outcome, and the reserved bond went back to the provider." };
+      return { mark, title: "Warranty expired", text: "The claim window closed without a result, and the bond went back to the provider." };
   }
 }
 
@@ -203,9 +203,7 @@ function Warranty({ warranty: w, explorer }: { warranty: WarrantyView | null; ex
     if (w.amount !== null) {
       items.push([
         "Amount",
-        <span key="amount">
-          {usdc(w.amount)} <span className="muted">(testnet)</span>
-        </span>,
+        <span key="amount">{usdc(w.amount)}</span>,
       ]);
     }
     if (w.claimDeadline !== null) items.push(["Claim deadline", when(w.claimDeadline)]);
@@ -221,18 +219,18 @@ function Warranty({ warranty: w, explorer }: { warranty: WarrantyView | null; ex
         {w === null ? null : <Badge tone={WARRANTY[w.state].tone}>{WARRANTY[w.state].badge}</Badge>}
       </div>
       {w === null ? (
-        <p className="muted">Nothing to show: this server does not run the warranty pipeline.</p>
+        <p className="muted">This server sells without a warranty.</p>
       ) : items.length === 0 ? (
         <p className="muted">
-          {w.state === "pending" ? "The amount, the claim deadline and each transaction appear here once the warranty is active on the registry." : "No warranty was activated for this resolution."}
+          {w.state === "pending" ? "The amount, the deadline and each transaction appear here once the warranty starts." : "This purchase has no warranty."}
         </p>
       ) : (
         <KeyValue items={items} />
       )}
       {w === null ? null : (
         <p className="small muted card-note">
-          From the registry's own events, as this server indexed them, so an action anyone relayed shows up too.
-          {w.state === "active" ? " A pause of the registry moves the claim deadline later by as long as it lasts." : ""}
+          Read from the warranty contract's own events.
+          {w.state === "active" ? " If the contract is paused, the deadline moves later by as long as the pause." : ""}
         </p>
       )}
     </section>

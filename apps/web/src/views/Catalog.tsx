@@ -1,78 +1,77 @@
 import { CAPABILITY_IDS, type CapabilityId, type CatalogView, type ProfileSummary, type ReleaseSummary } from "@lemma/core";
 import { useState } from "react";
 
-import { BUYERS_EXPLAINED, COMPATIBILITY_EXPLAINED, ConfidenceCell, buyersText } from "../components/Compatibility.js";
+import { COMPATIBILITY_EXPLAINED, buyersText, compatibilityBasis } from "../components/Compatibility.js";
 import { Hash } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
-import { Badge, Callout, KeyValue, PageHead } from "../components/ui.js";
-import { CAPABILITY_TEXT, percent, reasonText, usdc, when } from "../format.js";
+import { Badge, KeyValue, PageHead } from "../components/ui.js";
+import { CAPABILITY_SHORT, CAPABILITY_TEXT, EVIDENCE_LABEL, percent, usdc, when } from "../format.js";
 import { sourceUrl } from "../links.js";
 
+/**
+ * The catalog: one compact card per release, with what a buyer decides on
+ * first (what it does, its price, what it fits, the warranty, its record and
+ * its source) and everything else folded under Details.
+ */
 export function Catalog({ view }: { view: CatalogView }) {
   const [filter, setFilter] = useState<CapabilityId | "all">("all");
-  const sellable = view.releases.flatMap((r) => r.profiles).filter((p) => p.blocker === null).length;
   const capabilities = CAPABILITY_IDS.filter((c) => filter === "all" || c === filter);
+  const releases = capabilities.flatMap((c) => view.releases.filter((r) => r.capability === c));
+  const unmet = capabilities.filter((c) => !view.releases.some((r) => r.capability === c));
   return (
     <>
       <PageHead eyebrow="Catalog" title="What your agent can reuse">
-        <p className="lead">Each release is a curated integration, proven on the repository profiles it fits. A release is sold only when benchmark evidence supports its price.</p>
+        <p className="lead">Tested integrations, and the projects each one fits.</p>
         <p className="meta-line">
           <span>
-            Catalog <Hash value={view.catalogDigest} what="catalog digest" />
+            {view.releases.length} {view.releases.length === 1 ? "release" : "releases"}
           </span>
-          <span>as of {when(view.generatedAt)}</span>
-          <span>
-            chain cost {usdc(view.economics.chainCostUsdc)} per resolution
-            {view.economics.status === "placeholder" ? " (a placeholder: not measured yet)" : ""}
-          </span>
+          <span>updated {when(view.generatedAt)}</span>
         </p>
       </PageHead>
-      {sellable === 0 ? (
-        <Callout tone="warn" title="Nothing is for sale yet">
-          <p>
-            Every release can be previewed for free. A release becomes purchasable once a frozen benchmark measures its saving and the price passes both pricing rules. See{" "}
-            <a href="#/evidence">Proof</a>.
-          </p>
-        </Callout>
-      ) : null}
-      <div className="filters" role="group" aria-label="Filter by capability">
+      <div className="filters" role="group" aria-label="Filter by integration">
         <button type="button" className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
           All
         </button>
         {CAPABILITY_IDS.map((c) => (
           <button type="button" key={c} className="chip" aria-pressed={filter === c} onClick={() => setFilter(c)}>
-            {CAPABILITY_TEXT[c]}
+            {CAPABILITY_SHORT[c]}
           </button>
         ))}
       </div>
-      {capabilities.map((capability) => {
-        const releases = view.releases.filter((r) => r.capability === capability);
-        return releases.length === 0 ? <NoRelease key={capability} capability={capability} /> : releases.map((r) => <Release key={r.releaseDigest} release={r} />);
-      })}
+      <div className="release-grid">
+        {releases.map((r) => (
+          <Release key={r.releaseDigest} release={r} />
+        ))}
+        {unmet.map((c) => (
+          <Requested key={c} capability={c} />
+        ))}
+      </div>
     </>
   );
 }
 
-function NoRelease({ capability }: { capability: CapabilityId }) {
+/** A capability with no release: what an agent asking for it gets today. */
+function Requested({ capability }: { capability: CapabilityId }) {
   return (
-    <article className="capability-empty">
-      <h3>{CAPABILITY_TEXT[capability]}</h3>
-      <p>
-        No release yet. An agent asking for this gets a free build answer ({reasonText("NO_RELEASE_FOR_CAPABILITY")}), and the request is counted in{" "}
-        <a href="#/demand">unmet demand</a>.
+    <article className="release requested">
+      <h3>{CAPABILITY_SHORT[capability]}</h3>
+      <p className="release-what">{CAPABILITY_TEXT[capability]}</p>
+      <p className="release-note">
+        Agents asking for this get a free answer to build it themselves. Each request is counted in <a href="#/demand">Demand</a>.
       </p>
     </article>
   );
 }
 
-/** The platforms a release fits, as short chips: one entry per distinct value across its profiles. */
-function fitChips(release: ReleaseSummary): string[] {
+/** What a release fits, as short chips: one entry per distinct value across its profiles. */
+export function fitChips(release: ReleaseSummary): string[] {
   const chips = new Set<string>();
   for (const p of release.profiles) {
-    for (const language of p.platform.languages) chips.add(language);
+    for (const language of p.platform.languages) chips.add(language === "typescript" ? "TypeScript" : language === "javascript" ? "JavaScript" : language);
     chips.add(p.platform.nodeMajor.min === p.platform.nodeMajor.max ? `Node ${p.platform.nodeMajor.min}` : `Node ${p.platform.nodeMajor.min}–${p.platform.nodeMajor.max}`);
     for (const pm of p.platform.packageManagers) chips.add(pm);
-    for (const ms of p.platform.moduleSystems) chips.add(ms);
+    for (const ms of p.platform.moduleSystems) chips.add(ms === "esm" ? "ESM" : ms === "cjs" ? "CommonJS" : ms);
     for (const fw of p.platform.frameworks) chips.add(fw);
     for (const name of Object.keys(p.platform.dependencies)) chips.add(name);
   }
@@ -82,60 +81,41 @@ function fitChips(release: ReleaseSummary): string[] {
 function Release({ release }: { release: ReleaseSummary }) {
   const source = sourceUrl(release.provenance);
   const sellable = release.profiles.some((p) => p.blocker === null);
+  const record = release.reputation;
   return (
     <article className="release">
       <div className="release-head">
-        <h3>{CAPABILITY_TEXT[release.capability]}</h3>
-        <div className="badges">
-          {sellable ? <Badge tone="ok">For sale</Badge> : <Badge>Preview only</Badge>}
-          {release.provisional ? <Badge tone="warn">provisional (testnet only)</Badge> : null}
-        </div>
+        <h3>{CAPABILITY_SHORT[release.capability]}</h3>
+        {sellable ? <Badge tone="ok">{usdc(release.priceUsdc)}</Badge> : <Badge>Free preview</Badge>}
       </div>
-      <p>{release.title}</p>
-      <div className="fits">
-        <span className="fits-label">Fits</span>
-        <ul className="chips" aria-label="Fits">
-          {fitChips(release).map((chip) => (
-            <li key={chip}>{chip}</li>
-          ))}
-        </ul>
-      </div>
+      <p className="release-what">{CAPABILITY_TEXT[release.capability]}</p>
+      <ul className="chips" aria-label="Fits">
+        {fitChips(release).map((chip) => (
+          <li key={chip}>{chip}</li>
+        ))}
+      </ul>
       <dl className="release-facts">
         <div>
-          <dt>Price</dt>
-          <dd>{release.priceUsdc === "0" ? "not for sale yet" : usdc(release.priceUsdc)}</dd>
-        </div>
-        <div>
           <dt>Warranty</dt>
-          <dd>{release.warrantyHours} h claim window</dd>
+          <dd>{release.warrantyHours} h to claim</dd>
         </div>
+        {record === null ? null : (
+          <div>
+            <dt>Record</dt>
+            <dd>
+              {percent(BigInt(record.passBps))} passed · {record.count} {record.count === 1 ? "result" : "results"} · {buyersText(record.buyers)}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Source</dt>
           <dd>
             {source === null ? (
-              "unavailable"
+              <span className="muted">{release.provenance.spdxLicense}</span>
             ) : (
               <a href={source} rel="noopener noreferrer nofollow" target="_blank">
                 {release.provenance.repository.replace("https://github.com/", "")}
               </a>
-            )}{" "}
-            <span className="muted">({release.provenance.spdxLicense})</span>
-          </dd>
-        </div>
-        <div>
-          <dt>Expires</dt>
-          <dd>{when(release.expiresAt)}</dd>
-        </div>
-        <div>
-          <dt>Adoption record</dt>
-          <dd>
-            {release.reputation === null ? (
-              <span className="muted">no public record yet</span>
-            ) : (
-              <>
-                pass {percent(BigInt(release.reputation.passBps))}, n {release.reputation.count}, {buyersText(release.reputation.buyers)}{" "}
-                <span className="muted">(ERC-8004, testnet)</span>
-              </>
             )}
           </dd>
         </div>
@@ -153,44 +133,20 @@ function Release({ release }: { release: ReleaseSummary }) {
                 {release.releaseId}@{release.version}
               </code>,
             ],
-            ["Release digest", <Hash key="digest" full value={release.releaseDigest} what="release digest" />],
-            ["Commit", <code key="commit">{release.provenance.commit}</code>],
+            ["License", release.provenance.spdxLicense],
             ["Published", when(release.publishedAt)],
-            [
-              "Adoption record",
-              "Finalized adoptions of this capability that passed their pinned acceptance tests, and how many were counted: ERC-8004 feedback on the provider's agent from Lemma's attester only, on Arbitrum Sepolia. Buyers counts the distinct buyers behind them.",
-            ],
+            ["Valid until", when(release.expiresAt)],
+            ["Commit", <code key="commit">{release.provenance.commit.slice(0, 12)}</code>],
+            ["Digest", <Hash key="digest" value={release.releaseDigest} what="release digest" />],
           ]}
         />
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Profile</th>
-                <th scope="col">Platform</th>
-                <th scope="col">Evidence</th>
-                <th scope="col">Sale</th>
-                <th scope="col" className="num">
-                  All-in reduction at list price
-                </th>
-                <th scope="col" className="num">
-                  Highest price that keeps the target
-                </th>
-                <th scope="col" className="num">
-                  Compatibility confidence
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {release.profiles.map((p) => (
-                <Profile key={p.profileIndex} profile={p} />
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="small muted">
-          {COMPATIBILITY_EXPLAINED} {BUYERS_EXPLAINED}
-        </p>
+        <h4 className="profiles-title">Projects it fits</h4>
+        <ul className="profile-list">
+          {release.profiles.map((p) => (
+            <Profile key={p.profileIndex} profile={p} />
+          ))}
+        </ul>
+        <p className="small muted">{COMPATIBILITY_EXPLAINED}</p>
       </details>
     </article>
   );
@@ -198,29 +154,41 @@ function Release({ release }: { release: ReleaseSummary }) {
 
 function Profile({ profile: p }: { profile: ProfileSummary }) {
   const deps = Object.entries(p.platform.dependencies).map(([name, range]) => `${name} ${range}`);
+  const c = p.compatibility;
   return (
-    <tr>
-      <td>#{p.profileIndex}</td>
-      <td>
+    <li className="profile">
+      <div className="profile-head">
+        <span className="profile-name">Profile {p.profileIndex}</span>
+        {p.label === "none" ? null : <Badge tone={p.label === "provisional" ? "warn" : "accent"}>{EVIDENCE_LABEL[p.label]}</Badge>}
+        {p.blocker === null ? <Badge tone="ok">For sale</Badge> : <Badge>Free preview</Badge>}
+      </div>
+      <p className="profile-platform">
         {p.platform.languages.join("/")}, Node {p.platform.nodeMajor.min}–{p.platform.nodeMajor.max}, {p.platform.packageManagers.join("/")}, {p.platform.moduleSystems.join("/")}
         {p.platform.frameworks.length > 0 ? `, ${p.platform.frameworks.join("/")}` : ""}
-        {deps.length > 0 ? <div className="platform-deps">{deps.join("; ")}</div> : null}
-      </td>
-      <td>
-        {p.label === "none" ? (
-          <span className="muted">none</span>
-        ) : p.label === "provisional" ? (
-          <Badge tone="warn">probe (provisional, testnet only)</Badge>
-        ) : (
-          <Badge tone="accent">benchmarked</Badge>
+        {deps.length > 0 ? ` · ${deps.join("; ")}` : ""}
+      </p>
+      <dl className="profile-facts">
+        {p.allInReductionBps === null ? null : (
+          <div>
+            <dt>Cheaper than building</dt>
+            <dd>{percent(p.allInReductionBps)}</dd>
+          </div>
         )}
-      </td>
-      <td>{p.blocker === null ? <Badge tone="ok">sellable</Badge> : <span className="muted">not sold: {reasonText(p.blocker)}</span>}</td>
-      <td className="num">{p.allInReductionBps === null ? "–" : percent(p.allInReductionBps)}</td>
-      <td className="num">{p.maxPriceUsdc === null ? "–" : usdc(p.maxPriceUsdc)}</td>
-      <td className="num">
-        <ConfidenceCell profile={p} />
-      </td>
-    </tr>
+        {p.maxPriceUsdc === null ? null : (
+          <div>
+            <dt>Highest fair price</dt>
+            <dd>{usdc(p.maxPriceUsdc)}</dd>
+          </div>
+        )}
+        {c === null ? null : (
+          <div>
+            <dt>Score</dt>
+            <dd>
+              {percent(BigInt(c.confidenceBps))} <span className="muted">({compatibilityBasis(c, p.label)})</span>
+            </dd>
+          </div>
+        )}
+      </dl>
+    </li>
   );
 }

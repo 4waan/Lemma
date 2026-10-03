@@ -4,7 +4,6 @@ import type { Polled } from "../api.js";
 import { percent, thousandths, when } from "../format.js";
 import { explorerAddressUrl } from "../links.js";
 import { ExplorerLink } from "./chain.js";
-import { compatibilityBasis } from "./Compatibility.js";
 import { Panel } from "./ui.js";
 
 export interface MeterPick {
@@ -41,10 +40,11 @@ export function meterPick(view: CatalogView): MeterPick | null {
 }
 
 /**
- * This server's compatibility confidence as it stands: the figure, what it
- * rests on, when the server computed it, and the engine that computes it on
- * chain from the same outcomes. It shows only what the catalog answered;
- * between answers nothing moves.
+ * This server's score as it stands: the pass-rate figure (compatibility
+ * confidence, the 90% lower bound), what it rests on, when the server
+ * computed it, and the engine that keeps it on chain. Before any profile has
+ * a score, it shows the releases being scored. It shows only what the catalog
+ * answered; between answers nothing moves.
  */
 export function LiveMeter({ catalog, status }: { catalog: Polled<CatalogView>; status: Polled<StatusView> }) {
   const view = catalog.loaded.state === "ready" ? catalog.loaded.data : null;
@@ -52,52 +52,55 @@ export function LiveMeter({ catalog, status }: { catalog: Polled<CatalogView>; s
   const pick = view === null ? null : meterPick(view);
   const engineUrl = chain === null || chain.engine === null ? null : explorerAddressUrl(chain.explorer, chain.engine);
   return (
-    <Panel title="Live from this server" label="Live compatibility confidence" className="meter" badge={<span className="live-dot">Live</span>}>
+    <Panel title="Live score" label="Live score from this server" className="meter" badge={<span className="live-dot">Live</span>}>
       {catalog.loaded.state === "loading" ? <p className="meter-wait">Loading…</p> : null}
-      {catalog.loaded.state === "error" ? <p className="meter-wait">Live figures are unavailable: {catalog.loaded.message}</p> : null}
+      {catalog.loaded.state === "error" ? <p className="meter-wait">Live figures are unavailable right now ({catalog.loaded.message}).</p> : null}
       {view !== null && pick === null ? (
-        <p className="meter-wait">No profile has a confidence yet: the first benchmark or finalized adoption on this server starts the record.</p>
+        <p className="meter-figure">
+          <span className="meter-value">{view.releases.length}</span>
+          <span className="meter-caption">{view.releases.length === 1 ? "release in the catalog, scored from each test result" : "releases in the catalog, scored from each test result"}</span>
+        </p>
       ) : null}
       {pick === null ? null : (
         <>
           <p className="meter-figure">
             <span className="meter-value">{percent(BigInt(pick.compatibility.confidenceBps))}</span>
-            <span className="meter-caption">compatibility confidence, the 90% lower bound</span>
+            <span className="meter-caption">pass rate, a cautious estimate (90% lower bound)</span>
           </p>
           <dl className="meter-stats">
             <div>
-              <dt>Effective n</dt>
-              <dd>{thousandths(pick.compatibility.effectiveNMilli)}</dd>
-            </div>
-            <div>
-              <dt>Outcomes</dt>
+              <dt>Test results</dt>
               <dd>{pick.compatibility.outcomes}</dd>
             </div>
             <div>
               <dt>Buyers</dt>
               <dd>{pick.compatibility.buyers === null ? `under ${MIN_PUBLISHED_BUYERS}` : pick.compatibility.buyers}</dd>
             </div>
+            <div>
+              <dt>Sample size</dt>
+              <dd>{thousandths(pick.compatibility.effectiveNMilli)}</dd>
+            </div>
           </dl>
           <p className="meter-basis">
             <code>
               {pick.release.releaseId}@{pick.release.version}
             </code>
-            , profile {pick.profile.profileIndex}: {compatibilityBasis(pick.compatibility, pick.profile.label)}.
+            , profile {pick.profile.profileIndex}
           </p>
         </>
       )}
       {view === null ? null : (
         <p className="meter-foot">
-          Computed {when(view.generatedAt)}; refreshes every minute while this page is open.
+          Updated {when(view.generatedAt)}. Refreshes every minute.
           {engineUrl === null || chain === null ? null : (
             <>
               {" "}
-              The Stylus engine computes it on chain from the same outcomes: <ExplorerLink href={engineUrl} explorer={chain.explorer} label="View the compatibility engine" />
+              Score engine: <ExplorerLink href={engineUrl} explorer={chain.explorer} label="View the score engine" />
             </>
           )}
         </p>
       )}
-      {catalog.failure === null ? null : <p className="meter-foot">The latest refresh failed ({catalog.failure}); these figures are from the last one that loaded.</p>}
+      {catalog.failure === null ? null : <p className="meter-foot">The last refresh failed ({catalog.failure}). These figures are from the one before.</p>}
     </Panel>
   );
 }

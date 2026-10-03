@@ -2,7 +2,6 @@ import { useState } from "react";
 
 import { CodeBlock } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
-import { Badge, Built } from "../components/ui.js";
 
 const CHECKOUT = "<path to your Lemma checkout>";
 const PLACEHOLDER_SERVER = "https://<this server>";
@@ -63,7 +62,7 @@ export function Setup() {
             </li>
             <li>
               <Icon name="check" />
-              <span>A copy of the Lemma repository. The bridge is built from a checkout for now.</span>
+              <span>A copy of the Lemma repository. The bridge builds from it.</span>
             </li>
           </ul>
         </div>
@@ -111,14 +110,13 @@ export function Setup() {
             Tools your agent sees <Icon name="chevron" size={18} />
           </summary>
           <div className="accordion-body">
-            <p>The bridge answers in short text built from codes and numbers, so catalog prose never reaches the model.</p>
+            <p>Answers are short codes and numbers, so no catalog text reaches the model.</p>
             <div className="table-wrap">
               <table>
                 <thead>
                   <tr>
                     <th scope="col">Tool</th>
                     <th scope="col">What it does</th>
-                    <th scope="col">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -128,9 +126,6 @@ export function Setup() {
                         <code>{t.name}</code>
                       </td>
                       <td>{t.text}</td>
-                      <td>
-                        <Built built={t.built} />
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -159,12 +154,6 @@ export function Setup() {
                     <tr key={s.name}>
                       <td>
                         <code>{s.name}</code>
-                        {s.later ? (
-                          <>
-                            {" "}
-                            <Badge tone="warn">coming soon</Badge>
-                          </>
-                        ) : null}
                       </td>
                       <td>{s.text}</td>
                       <td>{s.fallback}</td>
@@ -173,11 +162,14 @@ export function Setup() {
                 </tbody>
               </table>
             </div>
-            <p className="small muted">
-              The buyer key never goes in the bridge's environment: lemma-signer init creates it in a key file, and lemma-signer serve signs within the same limits, which it
-              enforces itself. Acceptance tests run as your user, so the verify tool refuses to run while a wallet secret is in the bridge's environment. For full isolation, run
-              the signer as another user.
-            </p>
+            <ul className="check-list">
+              {KEYS.map((item) => (
+                <li key={item}>
+                  <Icon name="shield" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         </details>
 
@@ -201,30 +193,35 @@ export function Setup() {
   );
 }
 
-const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly built: boolean }> = [
-  { name: "lemma_preview", text: "Free compatibility check from package metadata. Also checks local files for drift before any purchase.", built: true },
-  { name: "lemma_buy_resolution", text: "Pays for an open offer through x402 and your local signer, within your spending limits. Never pays twice.", built: true },
-  { name: "lemma_apply_resolution", text: "Previews the patch by default. Applies it all or nothing on request, or exports it to merge by hand.", built: true },
-  { name: "lemma_verify_adoption", text: "Runs the release's acceptance tests and records the Adoption Receipt.", built: true },
-  { name: "lemma_claim_refund", text: "Collects the warranty refund of each purchase whose failure the evaluator confirmed. Free, and safe to call again.", built: true },
+const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string }> = [
+  { name: "lemma_preview", text: "Free check from your package list. Before a purchase it also checks that your files have not changed." },
+  { name: "lemma_buy_resolution", text: "Pays for an offer through x402 and your local signer, within your limits. Never pays twice." },
+  { name: "lemma_apply_resolution", text: "Shows the patch first. Applies it whole or not at all, or exports it to merge by hand." },
+  { name: "lemma_verify_adoption", text: "Runs the patch's tests and signs the result." },
+  { name: "lemma_claim_refund", text: "Collects the refund for each purchase whose failure was confirmed. Free, and safe to call again." },
 ];
 
-const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly fallback: string; readonly later: boolean }> = [
-  { name: "LEMMA_API_URL", text: "This server's address.", fallback: "http://localhost:3000", later: false },
-  { name: "LEMMA_WORKSPACE", text: "The repository root the bridge may read. Nothing above it is read.", fallback: "the working directory", later: false },
-  { name: "LEMMA_STATE_DIR", text: "Purchases, receipts, apply journals and exports, private to you.", fallback: "~/.local/state/lemma", later: false },
-  { name: "LEMMA_ACCEPTANCE_OFFLINE", text: "Set to 1 to run acceptance tests without network, on Linux.", fallback: "off", later: false },
+const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly fallback: string }> = [
+  { name: "LEMMA_API_URL", text: "This server's address.", fallback: "http://localhost:3000" },
+  { name: "LEMMA_WORKSPACE", text: "The repository root the bridge may read. Nothing above it is read.", fallback: "the working directory" },
+  { name: "LEMMA_STATE_DIR", text: "Purchases, receipts, apply journals and exports, private to you.", fallback: "~/.local/state/lemma" },
+  { name: "LEMMA_ACCEPTANCE_OFFLINE", text: "Set to 1 to run acceptance tests without network, on Linux.", fallback: "off" },
   {
     name: "LEMMA_AGENT_ID",
-    text: "Optional: this agent's own ERC-8004 agent id, sent with each adoption receipt so the agent gets public feedback on its adoptions. It publishes on chain that the wallet that paid (the agent's owner or agent wallet) adopted each resolution.",
+    text: "Optional: your agent's ERC-8004 id. Each result then names it, which shows on chain that the paying wallet adopted that patch.",
     fallback: "unset: no agent is named",
-    later: false,
   },
-  { name: "LEMMA_SIGNER_SOCKET", text: "The socket of lemma-signer, the separate process that holds the buyer key. Purchases stay off while no signer answers.", fallback: "the signer's own default, <state>/signer/signer.sock", later: false },
-  { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost, in atomic USDC (250000 is 0.25 USDC).", fallback: "none: purchases stay off", later: false },
-  { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a rolling day, in atomic USDC.", fallback: "none: purchases stay off", later: false },
-  { name: "LEMMA_ALLOWED_PAY_TO", text: "The recipient addresses the buyer will pay, comma-separated.", fallback: "none: purchases stay off", later: false },
-  { name: "LEMMA_REFUND_TO", text: "Where warranty credits are paid: an address you control other than the buyer's, since a withdrawal shows it next to the resolution id on chain. Purchases need it.", fallback: "none: purchases stay off", later: false },
+  { name: "LEMMA_SIGNER_SOCKET", text: "The socket of lemma-signer, the separate process that holds the buyer key. Purchases stay off while no signer answers.", fallback: "the signer's own default, <state>/signer/signer.sock" },
+  { name: "LEMMA_MAX_USDC_PER_RESOLUTION", text: "The most one purchase may cost, in atomic USDC (250000 is 0.25 USDC).", fallback: "none: purchases stay off" },
+  { name: "LEMMA_DAILY_USDC_CAP", text: "The most the bridge may spend in a rolling day, in atomic USDC.", fallback: "none: purchases stay off" },
+  { name: "LEMMA_ALLOWED_PAY_TO", text: "The recipient addresses the buyer will pay, comma-separated.", fallback: "none: purchases stay off" },
+  { name: "LEMMA_REFUND_TO", text: "Where refunds go: an address you control, other than the buyer's. A refund shows it on chain. Purchases need it.", fallback: "none: purchases stay off" },
+];
+
+const KEYS: readonly string[] = [
+  "The buyer key lives in lemma-signer's key file, never in the bridge's environment.",
+  "The signer checks the same spending limits itself before it signs.",
+  "Tests run as your user, so the verify tool refuses to run while a wallet secret is in the bridge's environment. For full separation, run the signer as another user.",
 ];
 
 const NEVER: readonly string[] = [

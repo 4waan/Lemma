@@ -1,4 +1,5 @@
 import "./zod-jitless.js";
+import "./theme-init.js";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

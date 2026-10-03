@@ -71,20 +71,21 @@ const catalog = CatalogView.parse({
 });
 
 describe("views render only from read models", () => {
-  it("shows the catalog with labels and prices, escaping catalog prose", () => {
+  it("shows the catalog with labels and prices, and never renders catalog prose", () => {
     const html = renderToStaticMarkup(<Catalog view={catalog} />);
-    expect(html).toContain("probe (provisional, testnet only)");
+    expect(html).toContain('<span class="badge warn">Early estimate</span>');
     expect(html).toContain("0.25 USDC");
     expect(html).toContain("29.60 %");
-    expect(html).toContain("sellable");
+    expect(html).toContain('<span class="badge ok">For sale</span>');
+    // The release's own title is catalog prose: the card names the capability instead.
     expect(html).not.toContain("<img");
-    expect(html).toContain("&lt;img");
+    expect(html).not.toContain("Payment gating");
     expect(html).toContain('href="https://github.com/coinbase/x402/tree/dd927a26cfefc98c24b3ec38b3a8f204dad0c60d"');
     expect(html).toContain('rel="noopener noreferrer nofollow"');
-    expect(html).toContain("Compatibility confidence");
+    expect(html).toContain("<dt>Score</dt>");
     expect(html).toContain("26.98 %");
-    // The prior comes from a testnet-only probe here, and the basis says so.
-    expect(html).toContain("provisional probe prior, no outcomes yet");
+    // The starting score comes from a short probe here, and the basis says so.
+    expect(html).toContain("(from the early estimate)");
     expect(html).toContain("90% lower bound");
   });
 
@@ -97,9 +98,9 @@ describe("views render only from read models", () => {
     });
     for (const html of [renderToStaticMarkup(<Catalog view={withOutcomes} />), renderToStaticMarkup(<Evidence view={withOutcomes} />)]) {
       expect(html).toContain("73.37 %");
-      expect(html).toContain("provisional probe prior and 4 outcomes");
-      expect(html).toContain(COMPATIBILITY_EXPLAINED.replaceAll("'", "&#x27;"));
+      expect(html).toContain("early estimate and 4 results");
     }
+    expect(renderToStaticMarkup(<Catalog view={withOutcomes} />)).toContain(COMPATIBILITY_EXPLAINED.replaceAll("'", "&#x27;"));
     expect(renderToStaticMarkup(<Evidence view={withOutcomes} />)).toContain(">21.727<");
     // Frozen-benchmark evidence: the prior is the benchmark's, with nothing provisional about it.
     const frozen = { ...release, version: "1.0.0+bench-1", supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: { ...p.evidence, benchmarkVersion: "bench-1" } })) };
@@ -108,33 +109,35 @@ describe("views render only from read models", () => {
       releases: [summarizeRelease({ release: frozen, releaseDigest: hex("58"), baseReleaseDigest: hex("56"), provisional: false }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const, buyers: null }]]))],
     });
     for (const html of [renderToStaticMarkup(<Catalog view={benchmarked} />), renderToStaticMarkup(<Evidence view={benchmarked} />)]) {
-      expect(html).toContain("benchmark prior, no outcomes yet");
-      expect(html).not.toContain("provisional probe prior");
+      expect(html).toContain("from the benchmark");
+      expect(html).not.toContain("from the early estimate");
+      expect(html).not.toContain(">Early estimate</span>");
     }
-    // No evidence and no outcome: a dash in the catalog and an empty state on the proof page.
+    // No evidence and no result: no score in the catalog, and no score table on the proof page.
     const none = CatalogView.parse({
       ...catalog,
       releases: [summarizeRelease({ release: { ...release, supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: null })) }, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 0n }, NOW)],
     });
-    expect(renderToStaticMarkup(<Evidence view={none} />)).toContain("Nothing to be confident about yet");
-    expect(renderToStaticMarkup(<Catalog view={none} />)).not.toContain("no outcomes yet");
+    expect(renderToStaticMarkup(<Evidence view={none} />)).not.toContain("<th scope=\"col\" class=\"num\">Score</th>");
+    expect(renderToStaticMarkup(<Catalog view={none} />)).not.toContain("<dt>Score</dt>");
   });
 
   it("shows evidence, demand, status and a resolution", () => {
     const evidence = renderToStaticMarkup(<Evidence view={catalog} />);
     expect(evidence).toContain("provisional-1");
-    expect(evidence).toContain("Their saving is optimistic");
-    expect(evidence).toContain("compatibility confidence 26.98 % (provisional probe prior, no outcomes yet)");
+    expect(evidence).toContain("It is more optimistic than the full benchmark.");
+    expect(evidence).toContain("score 26.98 % (from the early estimate)");
     const demand: DemandView = { minProfiles: 5, buckets: [{ day: "2026-09-30", profiles: 7, sources: 6, buyers: 3, key: { capability: "node-service.add-payment-facilitator", decision: "build", release: null, profileIndex: null, reasons: ["NO_RELEASE_FOR_CAPABILITY"], offer: false, class: { packageManager: "npm", moduleSystem: "esm", nodeMajor: 22, frameworks: [] } } }] };
     const demandHtml = renderToStaticMarkup(<Demand view={demand} />);
-    expect(demandHtml).toContain("no release exists for this capability yet");
+    expect(demandHtml).toContain("no release for this capability");
     expect(demandHtml).toContain("Buyer-days");
     expect(demandHtml).toContain('<td class="num">3</td>');
     const status = StatusView.parse({ schemaVersion: "1", status: "ok", network: "eip155:421614", catalogDigest: hex("88"), releases: 2, paidTools: false, provisionalEvidence: true, store: "memory", economics: "placeholder", chain: { explorer: "https://sepolia.arbiscan.io", usdc: "0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d", registry: null, engine: null, identityRegistry: null, reputationRegistry: null, providerAgentId: null } });
     const statusHtml = renderToStaticMarkup(<Status view={status} />);
-    expect(statusHtml).toContain("Arbitrum Sepolia (testnet)");
-    expect(statusHtml).toContain("placeholder: nothing can be sold");
-    expect(renderToStaticMarkup(<Status view={{ ...status, status: "degraded" }} />)).toContain("degraded");
+    expect(statusHtml).toContain("<dd>Arbitrum Sepolia</dd>");
+    expect(statusHtml).toContain("Free previews");
+    expect(statusHtml).toContain('<span class="badge warn">loaded</span>');
+    expect(renderToStaticMarkup(<Status view={{ ...status, status: "degraded" }} />)).toContain("<dd>Degraded<span class=\"stat-note\">the database is not answering, so purchases may fail</span></dd>");
     const resolution: ResolutionView = {
       resolutionId: hex("aa"),
       state: "settled",
@@ -148,12 +151,13 @@ describe("views render only from read models", () => {
     const resolutionHtml = renderToStaticMarkup(<Resolution view={resolution} explorer={status.chain.explorer} />);
     expect(resolutionHtml).toContain("paid and delivered");
     expect(resolutionHtml).toContain("unverified");
-    expect(renderToStaticMarkup(<Resolution view={{ ...resolution, release: { ...resolution.release, version: "1.0.0+provisional-1" } }} explorer={null} />)).toContain("provisional (testnet only)");
+    expect(renderToStaticMarkup(<Resolution view={{ ...resolution, release: { ...resolution.release, version: "1.0.0+provisional-1" } }} explorer={null} />)).toContain('<span class="badge warn">Early estimate</span>');
   });
 
-  it("renders the shell with its testnet pill, a collapsed phone menu, and loading and error states", () => {
+  it("renders the shell with its network badge, a theme switch, a collapsed phone menu, and loading and error states", () => {
     const shell = renderToStaticMarkup(<App initialHash="#/" />);
-    expect(shell).toContain("Testnet");
+    expect(shell).toContain('<span class="network-dot" aria-hidden="true"></span>Arbitrum Sepolia</a>');
+    expect(shell).toContain('class="theme-btn"');
     expect(shell).toContain('aria-current="page"');
     expect(shell).toContain('aria-expanded="false"');
     expect(shell).toContain('class="wordmark"');

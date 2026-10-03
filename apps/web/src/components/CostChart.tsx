@@ -38,7 +38,7 @@ function niceStep(max: number): number {
 const plot = (atomic: bigint) => Number(atomic) / 1e6;
 
 /** A bar segment square at its start and rounded at its data end. */
-function dataEndPath(x: number, y: number, w: number, h: number): string {
+export function dataEndPath(x: number, y: number, w: number, h: number): string {
   const r = Math.min(4, w / 2, h / 2);
   return `M${x} ${y}H${x + w - r}A${r} ${r} 0 0 1 ${x + w} ${y + r}V${y + h - r}A${r} ${r} 0 0 1 ${x + w - r} ${y + h}H${x}Z`;
 }
@@ -48,7 +48,7 @@ function dataEndPath(x: number, y: number, w: number, h: number): string {
  * rounded ends that never stretch, and labels that never scale with the
  * container. Server-side renders and tests use the fallback.
  */
-function usePlotWidth(): [(node: HTMLDivElement | null) => (() => void) | undefined, number] {
+export function usePlotWidth(): [(node: HTMLDivElement | null) => (() => void) | undefined, number] {
   const [width, setWidth] = useState(FALLBACK_WIDTH);
   const ref = useCallback((node: HTMLDivElement | null) => {
     if (node === null || typeof ResizeObserver === "undefined") return undefined;
@@ -71,7 +71,22 @@ const midSentence = (label: string) => `${label.charAt(0).toLowerCase()}${label.
  * (C - (C - S + P + g)) / C. A values table below carries every number, so
  * hovering is never needed to read one.
  */
-export function CostComparison({ control, residual, price, gas, caption }: { control: bigint; residual: bigint; price: bigint; gas: bigint; caption: string }) {
+export function CostComparison({
+  control,
+  residual,
+  price,
+  gas,
+  caption,
+  compact = false,
+}: {
+  control: bigint;
+  residual: bigint;
+  price: bigint;
+  gas: bigint;
+  caption: string;
+  /** Folds the values table away under "Show the numbers", for a chart that sits in a page's flow. */
+  compact?: boolean | undefined;
+}) {
   const [active, setActive] = useState<{ row: number; key: CostKey } | null>(null);
   const [plotRef, width] = usePlotWidth();
   const rows: readonly Row[] = [
@@ -89,9 +104,7 @@ export function CostComparison({ control, residual, price, gas, caption }: { con
 
   const activeRow = active === null ? undefined : rows[active.row];
   const readout =
-    active === null || activeRow === undefined ? (
-      "Hover over or focus a bar segment to read its value."
-    ) : (
+    active === null || activeRow === undefined ? null : (
       <>
         <strong>{usdcAmount(activeRow.parts[active.key])} USDC</strong> · {COST_LABEL[active.key]}, {midSentence(activeRow.label)}
       </>
@@ -99,7 +112,7 @@ export function CostComparison({ control, residual, price, gas, caption }: { con
 
   return (
     <figure className="cost-chart">
-      <figcaption>{caption}</figcaption>
+      <figcaption className={compact ? "sr-only" : undefined}>{caption}</figcaption>
       <ul className="legend">
         {ORDER.map((key) => (
           <li key={key}>
@@ -162,43 +175,86 @@ export function CostComparison({ control, residual, price, gas, caption }: { con
       <p className="cost-readout" aria-live="polite">
         {readout}
       </p>
-      <div className="table-wrap">
-        <table className="cost-table">
-          <caption className="sr-only">{caption}, in USDC</caption>
-          <thead>
-            <tr>
-              <th scope="col">USDC per resolution</th>
-              {rows.map((row) => (
-                <th key={row.label} scope="col" className="num">
-                  {row.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ORDER.map((key) => (
-              <tr key={key}>
-                <th scope="row">
-                  <span className={`swatch seg-${key}`} aria-hidden="true" /> {COST_LABEL[key]}
-                </th>
+      {compact ? (
+        <details className="cost-numbers">
+          <summary>Show the numbers</summary>
+          <div className="table-wrap">
+            <table className="cost-table">
+              <caption className="sr-only">{caption}, in USDC</caption>
+              <thead>
+                <tr>
+                  <th scope="col">USDC per purchase</th>
+                  {rows.map((row) => (
+                    <th key={row.label} scope="col" className="num">
+                      {row.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ORDER.map((key) => (
+                  <tr key={key}>
+                    <th scope="row">
+                      <span className={`swatch seg-${key}`} aria-hidden="true" /> {COST_LABEL[key]}
+                    </th>
+                    {rows.map((row) => (
+                      <td key={row.label} className="num">
+                        {key !== "model" && row.label === "Build it yourself" ? "–" : usdcAmount(row.parts[key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                <tr>
+                  <th scope="row">Total</th>
+                  {totals.map((total, i) => (
+                    <td key={rows[i]?.label ?? i} className="num">
+                      <strong>{usdcAmount(total)}</strong>
+                    </td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </details>
+      ) : (
+        <div className="table-wrap">
+          <table className="cost-table">
+            <caption className="sr-only">{caption}, in USDC</caption>
+            <thead>
+              <tr>
+                <th scope="col">USDC per purchase</th>
                 {rows.map((row) => (
-                  <td key={row.label} className="num">
-                    {key !== "model" && row.label === "Build it yourself" ? "–" : usdcAmount(row.parts[key])}
+                  <th key={row.label} scope="col" className="num">
+                    {row.label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ORDER.map((key) => (
+                <tr key={key}>
+                  <th scope="row">
+                    <span className={`swatch seg-${key}`} aria-hidden="true" /> {COST_LABEL[key]}
+                  </th>
+                  {rows.map((row) => (
+                    <td key={row.label} className="num">
+                      {key !== "model" && row.label === "Build it yourself" ? "–" : usdcAmount(row.parts[key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              <tr>
+                <th scope="row">Total</th>
+                {totals.map((total, i) => (
+                  <td key={rows[i]?.label ?? i} className="num">
+                    <strong>{usdcAmount(total)}</strong>
                   </td>
                 ))}
               </tr>
-            ))}
-            <tr>
-              <th scope="row">Total</th>
-              {totals.map((total, i) => (
-                <td key={rows[i]?.label ?? i} className="num">
-                  <strong>{usdcAmount(total)}</strong>
-                </td>
-              ))}
-            </tr>
-          </tbody>
-        </table>
-      </div>
+            </tbody>
+          </table>
+        </div>
+      )}
     </figure>
   );
 }

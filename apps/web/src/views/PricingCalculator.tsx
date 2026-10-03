@@ -3,14 +3,14 @@ import { useState } from "react";
 import { type PricingField, type PricingInput, VERDICT_TEXT, WORKED_EXAMPLE, evaluatePricing } from "../calculator.js";
 import { CostComparison } from "../components/CostChart.js";
 import { Icon } from "../components/Icon.js";
-import { Stat } from "../components/ui.js";
+import { Badge, Stat } from "../components/ui.js";
 import { percent, usdcAmount } from "../format.js";
 
 const FIELDS: ReadonlyArray<{ readonly name: PricingField; readonly label: string; readonly hint: string }> = [
-  { name: "control", label: "Control cost to green (C)", hint: "Median model cost for an agent to finish the task alone." },
-  { name: "saving", label: "Measured saving (S)", hint: "Conservative model-cost saving from the paired benchmark." },
-  { name: "price", label: "Resolution price (P)", hint: "What the agent pays Lemma in USDC." },
-  { name: "gas", label: "Chain cost (g)", hint: "Settlement, warranty activation, outcome and expiry." },
+  { name: "control", label: "Cost without Lemma", hint: "Model cost for an agent to finish the task alone." },
+  { name: "saving", label: "Saving with Lemma", hint: "Model cost the patch saves, from the benchmark." },
+  { name: "price", label: "Price", hint: "What your agent pays for the patch." },
+  { name: "gas", label: "Gas", hint: "On-chain cost of one purchase." },
 ];
 
 /** The sale rule and the buyer's target, recomputed with core's own pricing functions as you type. */
@@ -49,12 +49,12 @@ export function PricingCalculator() {
             </div>
           );
         })}
-        <p className="field-hint">
-          Inputs start at the worked example in <code>docs/economic-gates.md</code>. They are illustrative assumptions, not measurements.
+        <p className="field-hint calc-hint">
+          <Badge>Example</Badge> The numbers start at an example. Try your own.
         </p>
         {changed ? (
           <button type="button" className="btn btn-secondary" onClick={() => setInput(WORKED_EXAMPLE)}>
-            Reset to the worked example
+            Back to the example
           </button>
         ) : null}
       </div>
@@ -66,13 +66,13 @@ export function PricingCalculator() {
               <span>{VERDICT_TEXT[result.verdict]}</span>
             </p>
             <dl className="stats calc-results">
-              <Stat label="Buyer's all-in reduction" value={percent(result.reductionBps)} note="target: at least 25.00 %" />
+              <Stat label="Cheaper than building" value={percent(result.reductionBps)} note="needs at least 25.00 %" />
               <Stat
                 label="Highest price allowed"
                 value={result.maxPrice === 0n ? "None" : `${usdcAmount(result.maxPrice)} USDC`}
-                note={result.maxPrice === 0n ? "preview only: no price meets both rules" : "min(30% of S, S − g − 25% of C)"}
+                note={result.maxPrice === 0n ? "free preview only" : "the lower of the two limits"}
               />
-              <Stat label="Buyer's net saving" value={`${usdcAmount(result.saving - result.price - result.gas)} USDC`} note="S − P − g, per resolution" />
+              <Stat label="You keep" value={`${usdcAmount(result.saving - result.price - result.gas)} USDC`} note="the saving, minus price and gas" />
             </dl>
             <CostComparison control={result.control} residual={result.residual} price={result.price} gas={result.gas} caption="Expected cost to reach passing tests" />
           </>

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { ARBITRUM_SEPOLIA_USDC, CatalogView, type ProfileCompatibility, StatusView, summarizeRelease } from "@lemma/core";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -5,9 +7,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Loaded, MAX_POLL_MS, POLL_MS, POLL_START, type Polled, nextPolled, startPoll } from "../src/api.js";
 import { App } from "../src/App.js";
 import { FlowDiagram } from "../src/components/FlowDiagram.js";
+import { GasChart } from "../src/components/GasChart.js";
 import { LiveMeter, meterPick } from "../src/components/LiveMeter.js";
-import { BUILT_ON, FOOTER_COLUMNS, NAV, isCurrent, parseRoute } from "../src/routes.js";
-import { Overview, Pricing, VerifyIt, blockBadge, claimWindowText, evidenceFlow } from "../src/views/Overview.js";
+import { DEPLOYMENT, PASSING_PURCHASE_GAS } from "../src/deployment.js";
+import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, isCurrent, parseRoute } from "../src/routes.js";
+import { THEME_COLOR, applyTheme, storedTheme } from "../src/theme.js";
+import { Overview, Pricing, claimWindowText, recordFlow } from "../src/views/Overview.js";
+import { VerifyIt } from "../src/views/Status.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
 const hex = (b: string) => `0x${b.repeat(32)}`;
@@ -91,11 +97,11 @@ describe("the live meter", () => {
     expect(meterPick(view)?.release.releaseId).toBe("most-outcomes");
     const html = renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status())} />);
     expect(html).toContain("40.86 %");
-    expect(html).toContain("compatibility confidence, the 90% lower bound");
-    for (const figure of ["<dt>Effective n</dt><dd>6.998</dd>", "<dt>Outcomes</dt><dd>5</dd>", "<dt>Buyers</dt><dd>3</dd>"]) expect(html).toContain(figure);
+    expect(html).toContain("pass rate, a cautious estimate (90% lower bound)");
+    for (const figure of ["<dt>Sample size</dt><dd>6.998</dd>", "<dt>Test results</dt><dd>5</dd>", "<dt>Buyers</dt><dd>3</dd>"]) expect(html).toContain(figure);
     expect(html).toContain("most-outcomes@0.1.0-skeleton");
-    expect(html).toContain("5 outcomes from 3 buyers, no benchmark");
-    expect(html).toContain("Computed 2026-10-01 00:00 UTC");
+    expect(html).toContain("profile 0");
+    expect(html).toContain("Updated 2026-10-01 00:00 UTC");
     expect(html).toContain(`href="https://sepolia.arbiscan.io/address/${ENGINE}"`);
     expect(html).not.toContain("style=");
   });
@@ -109,12 +115,14 @@ describe("the live meter", () => {
     expect(renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status())} />)).toContain("<dt>Buyers</dt><dd>under 3</dd>");
   });
 
-  it("says when no profile has a confidence, while loading, and when the catalog fails", () => {
-    const empty = renderToStaticMarkup(<LiveMeter catalog={polled(catalog([{ id: "none" }]))} status={polled(status())} />);
-    expect(empty).toContain("No profile has a confidence yet");
+  it("shows the releases being scored before any profile has a score, while loading, and when the catalog fails", () => {
+    const empty = renderToStaticMarkup(<LiveMeter catalog={polled(catalog([{ id: "a" }, { id: "b" }]))} status={polled(status())} />);
+    expect(empty).toContain('<span class="meter-value">2</span>');
+    expect(empty).toContain("releases in the catalog, scored from each test result");
     expect(empty).not.toContain(" %");
+    expect(renderToStaticMarkup(<LiveMeter catalog={polled(catalog([{ id: "a" }]))} status={polled(status())} />)).toContain("release in the catalog, scored");
     expect(renderToStaticMarkup(<LiveMeter catalog={POLL_START} status={POLL_START} />)).toContain("Loading…");
-    expect(renderToStaticMarkup(<LiveMeter catalog={failed("The server answered 500.")} status={POLL_START} />)).toContain("Live figures are unavailable: The server answered 500.");
+    expect(renderToStaticMarkup(<LiveMeter catalog={failed("The server answered 500.")} status={POLL_START} />)).toContain("Live figures are unavailable right now (The server answered 500.)");
   });
 
   it("keeps the figures that loaded when a later refresh fails, and says so", () => {
@@ -123,7 +131,7 @@ describe("the live meter", () => {
     expect(kept.loaded).toEqual({ state: "ready", data: view });
     const html = renderToStaticMarkup(<LiveMeter catalog={kept} status={polled(status())} />);
     expect(html).toContain("15.86 %");
-    expect(html).toContain("The latest refresh failed (Too many requests; try again shortly.)");
+    expect(html).toContain("The last refresh failed (Too many requests; try again shortly.)");
     // New data clears the failure, and a failure before any data is shown as the error it is.
     expect(nextPolled(kept, { state: "ready", data: view }).failure).toBeNull();
     expect(nextPolled(POLL_START, { state: "error", message: "down" })).toEqual({ loaded: { state: "error", message: "down" }, failure: null });
@@ -228,66 +236,157 @@ describe("polling", () => {
 });
 
 describe("the home page sections", () => {
-  it("draws the evidence flow as an ordered list of text, marking the on-chain steps this server has off", () => {
-    const html = renderToStaticMarkup(<FlowDiagram label="From one adoption to public evidence" steps={evidenceFlow(status())} />);
-    expect(html).toContain('<ol class="flow" aria-label="From one adoption to public evidence">');
-    expect(html.match(/<li class="flow-step">/g)).toHaveLength(4);
-    for (const title of ["Adoption receipt", "Warranty registry", "Stylus engine", "ERC-8004 reputation"]) expect(html).toContain(title);
-    // Only the reputation registry is off on this server.
-    expect(html.match(/Off on this server/g)).toHaveLength(1);
+  it("draws what happens to a test result as an ordered list of text, adding reputation only where the server posts it", () => {
+    const html = renderToStaticMarkup(<FlowDiagram label="What happens to one test result" steps={recordFlow(status())} />);
+    expect(html).toContain('<ol class="flow" aria-label="What happens to one test result">');
+    expect(html.match(/<li class="flow-step">/g)).toHaveLength(3);
+    for (const title of ["Signed result", "Warranty contract", "Score engine"]) expect(html).toContain(title);
+    expect(html).not.toContain("ERC-8004");
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain("style=");
-    // Before the status loads, nothing is marked off.
-    expect(renderToStaticMarkup(<FlowDiagram label="flow" steps={evidenceFlow(null)} />)).not.toContain("Off on this server");
+    const withReputation = renderToStaticMarkup(<FlowDiagram label="flow" steps={recordFlow(status({ reputationRegistry: "0x00000000000000000000000000000000000000f1" }))} />);
+    expect(withReputation.match(/<li class="flow-step">/g)).toHaveLength(4);
+    expect(withReputation).toContain("Public reputation");
+    // Before the status loads, the flow shows the steps every deployment has.
+    expect(renderToStaticMarkup(<FlowDiagram label="flow" steps={recordFlow(null)} />).match(/<li class="flow-step">/g)).toHaveLength(3);
   });
 
-  it("badges each building block by what this server runs", () => {
-    const html = (state: Parameters<typeof blockBadge>[0], s: Polled<StatusView>) => renderToStaticMarkup(<>{blockBadge(state, s)}</>);
-    expect(html("live", POLL_START)).toContain("Live");
-    expect(html((s) => (s.paidTools ? "testnet" : "off"), POLL_START)).toContain("…");
-    expect(html((s) => (s.paidTools ? "testnet" : "off"), failed("down"))).toContain("Unknown");
-    expect(html((s) => (s.paidTools ? "testnet" : "off"), polled(status({}, false)))).toContain("Off on this server");
-    expect(html((s) => (s.chain.registry !== null ? "testnet" : "off"), polled(status()))).toContain("Testnet");
-  });
-
-  it("prices from this server's catalog: what is for sale now and the claim window", () => {
+  it("prices from this server's catalog, with the claim window and one example tagged as such", () => {
     const view = catalog([{ id: "a" }, { id: "b", hours: 48 }]);
     expect(claimWindowText(view)).toBe("48 to 72 hours");
     expect(claimWindowText(catalog([{ id: "a" }]))).toBe("72 hours");
     expect(claimWindowText(catalog([]))).toBeNull();
-    const html = renderToStaticMarkup(<Pricing catalog={polled(view)} status={polled(status())} />);
-    for (const text of ["Free", "≤ 30%", "of the measured saving", "Included", "For sale on this server now: 0 of 2 profiles", "Claim window on this server: 48 to 72 hours"]) expect(html).toContain(text);
+    const html = renderToStaticMarkup(<Pricing catalog={polled(view)} />);
+    for (const text of ["Free", "≤ 30%", "of what it saves you", "Included", "Claim within 48 to 72 hours"]) expect(html).toContain(text);
     expect(html).toContain('class="price-card featured"');
-    expect(renderToStaticMarkup(<Pricing catalog={polled(view)} status={polled(status({ registry: null, engine: null }))} />)).toContain("Off on this server: it runs no warranty pipeline");
+    // The worked example: 2.50 to build, 1.30 saved, a 0.39 price and 0.01 gas.
+    expect(html.match(/<span class="badge">Example<\/span>/g)).toHaveLength(1);
+    for (const text of ["36%", "cheaper than building it", "0.39 USDC", "price: 30% of the 1.30 saved", "0.90 USDC", "Show the numbers"]) expect(html).toContain(text);
+    expect(renderToStaticMarkup(<Pricing catalog={POLL_START} />)).toContain("Each patch sets its claim window");
   });
 
-  it("lists this server's contracts with explorer links, and says which are off", () => {
-    const html = renderToStaticMarkup(<VerifyIt catalog={polled(catalog([{ id: "a" }]))} status={polled(status())} />);
+  it("charts each on-chain step's measured gas, linking every step to its transaction", () => {
+    const html = renderToStaticMarkup(<GasChart steps={DEPLOYMENT.steps} explorer={DEPLOYMENT.explorer} label="gas" />);
+    expect(html.match(/<li class="gas-row">/g)).toHaveLength(4);
+    for (const text of ["91,275 gas", "216,065 gas", "146,896 gas", "84,009 gas"]) expect(html).toContain(text);
+    for (const step of DEPLOYMENT.steps) expect(html).toContain(`href="https://sepolia.arbiscan.io/tx/${step.tx}"`);
+    // The bars are drawn, not read: the values are text beside them.
+    expect(html.match(/<svg class="gas-bar"[^>]*aria-hidden="true"/g)).toHaveLength(4);
+    expect(html).not.toContain("style=");
+    expect(PASSING_PURCHASE_GAS).toBe(91_275 + 216_065 + 146_896);
+  });
+
+  it("lists this server's contracts with explorer links, only the ones it uses, and the read-only check", () => {
+    const html = renderToStaticMarkup(<VerifyIt view={status()} />);
     expect(html).toContain('id="verify"');
     for (const address of [REGISTRY, ENGINE, ARBITRUM_SEPOLIA_USDC.toLowerCase()]) expect(html).toContain(`href="https://sepolia.arbiscan.io/address/${address}"`);
-    expect(html).toContain("off on this server");
+    expect(html).not.toContain("ERC-8004");
     expect(html).toContain("npm run sepolia:check");
-    expect(renderToStaticMarkup(<VerifyIt catalog={failed("down")} status={failed("down")} />)).toContain("unavailable");
+    const bare = renderToStaticMarkup(<VerifyIt view={status({ registry: null, engine: null, explorer: null })} />);
+    expect(bare).not.toContain("Warranty contract");
+    expect(bare).not.toContain("arbiscan");
   });
 
-  it("renders the whole home page without inline styles, with every section", () => {
+  it("renders the whole home page without inline styles, in its six parts", () => {
     const html = renderToStaticMarkup(<Overview />);
     expect(html).not.toContain("style=");
-    for (const text of ["Building blocks", "Every adoption becomes evidence", "Priced from the saving, never above 30% of it", 'id="pricing"', 'id="verify"', "Run your own Lemma", "Try it in your agent"]) {
+    for (const text of ["Tested integrations your agent can reuse", 'id="how-it-works"', 'id="arbitrum"', `On ${NETWORK_LABEL}`, "Every test result counts", 'id="pricing"', "Try it in your agent"]) {
       expect(html).toContain(text);
     }
-    // While the status loads, the announcement makes no claim about the chain.
-    expect(html).toContain("Every amount is test USDC on Arbitrum Sepolia");
+    for (const gone of ["Building blocks", 'id="verify"', "Run your own Lemma", "Why Arbitrum"]) expect(html).not.toContain(gone);
+    // The on-chain section shows the recorded run: its contracts, chain and gas.
+    for (const contract of DEPLOYMENT.contracts) expect(html).toContain(`href="https://sepolia.arbiscan.io/address/${contract.address.toLowerCase()}"`);
+    expect(html).toContain("421614");
+    expect(html).toContain("454,236 gas");
+  });
+});
+
+/** The text a reader sees: markup, attributes and entities removed. */
+const visibleText = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
+
+describe("the wording", () => {
+  it("never says testnet, demo, illustrative, placeholder or coming soon, and names the network only in the header and its own section", () => {
+    const pages = ["#/", "#/catalog", "#/evidence", "#/status", "#/setup", "#/demand", "#/resolutions", "#/nowhere"].map((hash) => visibleText(renderToStaticMarkup(<App initialHash={hash} />)));
+    for (const text of pages) expect(text).not.toMatch(/testnet|\bdemo|illustrative|placeholder|coming soon|hackathon/i);
+    const home = pages[0] as string;
+    // The header badge and the section's title; amounts never carry the network.
+    expect(home.match(new RegExp(NETWORK_LABEL, "g"))).toHaveLength(2);
+    expect(home).not.toMatch(/USDC on Arbitrum/);
+  });
+});
+
+describe("the theme", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("shows a stored pick on the page, or the system's theme without one, and tints the browser's chrome to match", () => {
+    const attributes = new Map<string, string>();
+    const metas = [
+      { media: "(prefers-color-scheme: light)", content: "" },
+      { media: "(prefers-color-scheme: dark)", content: "" },
+    ];
+    vi.stubGlobal("document", {
+      documentElement: { setAttribute: (k: string, v: string) => attributes.set(k, v), removeAttribute: (k: string) => attributes.delete(k) },
+      querySelectorAll: () => metas,
+    });
+    applyTheme("dark");
+    expect(attributes.get("data-theme")).toBe("dark");
+    expect(metas.map((m) => m.content)).toEqual([THEME_COLOR.dark, THEME_COLOR.dark]);
+    applyTheme(null);
+    expect(attributes.has("data-theme")).toBe(false);
+    expect(metas.map((m) => m.content)).toEqual([THEME_COLOR.light, THEME_COLOR.dark]);
+  });
+
+  it("reads only a valid stored pick, and none when storage is blocked", () => {
+    const store = new Map<string, string>();
+    vi.stubGlobal("window", { localStorage: { getItem: (k: string) => store.get(k) ?? null } });
+    expect(storedTheme()).toBeNull();
+    store.set("lemma-theme", "dark");
+    expect(storedTheme()).toBe("dark");
+    store.set("lemma-theme", "sepia");
+    expect(storedTheme()).toBeNull();
+    vi.stubGlobal("window", {
+      get localStorage(): Storage {
+        throw new Error("blocked");
+      },
+    });
+    expect(storedTheme()).toBeNull();
+  });
+
+  it("keeps the two dark token blocks identical, and the page's own scrollbar hidden", () => {
+    const css = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+    const block = (start: string) => {
+      const from = css.indexOf(start);
+      expect(from, start).toBeGreaterThan(-1);
+      const open = css.indexOf("{", from + start.length - 1);
+      return css
+        .slice(open + 1, css.indexOf("}", open))
+        .split(";")
+        .map((d) => d.trim())
+        .filter(Boolean);
+    };
+    const system = block('@media (prefers-color-scheme: dark) {\n  :root:not([data-theme="light"]) {');
+    const picked = block(':root[data-theme="dark"] {');
+    expect(system.length).toBeGreaterThan(20);
+    expect(picked).toEqual(system);
+    expect(css).toMatch(/html \{[^}]*scrollbar-width: none;/);
+    expect(css).toContain("html::-webkit-scrollbar {\n  display: none;");
+  });
+
+  it("puts a theme switch in the header that names the theme it switches to", () => {
+    const html = renderToStaticMarkup(<App initialHash="#/" />);
+    expect(html).toContain('class="theme-btn" aria-label="Switch to dark mode"');
   });
 });
 
 describe("the shell", () => {
-  it("has a footer with Product, Explore, Trust and Built on, the testnet line, and no affiliation", () => {
+  it("has a footer with Product, Explore, Trust and Built on, the read-only line, and no affiliation", () => {
     const html = renderToStaticMarkup(<App initialHash="#/" />);
     for (const title of ["Product", "Explore", "Trust", "Built on"]) expect(html).toContain(`<h2 class="footer-title">${title}</h2>`);
     for (const name of BUILT_ON) expect(html).toContain(`<li>${name}</li>`);
     for (const item of FOOTER_COLUMNS.flatMap((c) => c.items)) expect(html).toContain(`<a href="${item.href}">${item.label}</a>`);
-    expect(html).toContain("Testnet only: every amount is test USDC on Arbitrum Sepolia.");
+    expect(html).toContain("This site only reads. It holds no keys and cannot sign anything.");
     expect(html).toContain("Lemma is not affiliated with them");
     expect(html).not.toContain("style=");
   });
@@ -299,10 +398,18 @@ describe("the shell", () => {
     expect(pricing).not.toContain('aria-label="Lemma home" aria-current="page"');
     expect(pricing).not.toContain('<a href="#/how-it-works" aria-current="page">');
     expect(parseRoute("#/pricing")).toEqual({ view: "overview", anchor: "pricing" });
-    expect(parseRoute("#/verify")).toEqual({ view: "overview", anchor: "verify" });
+    expect(parseRoute("#/arbitrum")).toEqual({ view: "overview", anchor: "arbitrum" });
+    // Verify it yourself lives on the Status page, beside this server's contracts.
+    expect(parseRoute("#/verify")).toEqual({ view: "status", anchor: "verify" });
+    expect(parseRoute("#/status")).toEqual({ view: "status", anchor: null });
     const [how, catalogItem] = NAV;
     expect(how !== undefined && isCurrent(how, { view: "overview", anchor: "how-it-works" })).toBe(true);
     expect(how !== undefined && isCurrent(how, { view: "overview", anchor: null })).toBe(false);
     expect(catalogItem !== undefined && isCurrent(catalogItem, { view: "catalog" })).toBe(true);
+    const verify = FOOTER_COLUMNS.flatMap((c) => c.items).find((item) => item.href === "#/verify");
+    expect(verify !== undefined && isCurrent(verify, { view: "status", anchor: "verify" })).toBe(true);
+    expect(verify !== undefined && isCurrent(verify, { view: "status", anchor: null })).toBe(false);
+    // The header's network badge links to the section about the network.
+    expect(renderToStaticMarkup(<App initialHash="#/" />)).toContain(`<a class="pill network" href="#/arbitrum"`);
   });
 });

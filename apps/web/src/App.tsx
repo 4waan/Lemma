@@ -9,10 +9,10 @@ import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, type Route, isCurrent, pa
 import { useTheme } from "./theme.js";
 import { Catalog } from "./views/Catalog.js";
 import { Demand } from "./views/Demand.js";
-import { Evidence } from "./views/Evidence.js";
+import { Benchmark } from "./views/Benchmark.js";
 import { Overview } from "./views/Overview.js";
 import { Resolution, ResolutionLookup } from "./views/Resolution.js";
-import { Setup } from "./views/Setup.js";
+import { Connect } from "./views/Connect.js";
 import { Status } from "./views/Status.js";
 
 /** The dashboard shell: the header and its navigation, the view the URL fragment names, and the footer with its link columns. */
@@ -43,11 +43,18 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
             <Logo />
           </a>
           <nav id="site-nav" className={menuOpen ? "site-nav open" : "site-nav"} aria-label="Main">
-            {NAV.map((item) => (
-              <a key={item.href} href={item.href} aria-current={isCurrent(item, route) ? "page" : undefined}>
-                {item.label}
-              </a>
-            ))}
+            {NAV.map((item) =>
+              item.view === null ? (
+                <a key={item.href} href={item.href} target="_blank" rel="noopener noreferrer">
+                  {item.label}
+                  <span className="sr-only"> (opens in a new tab)</span>
+                </a>
+              ) : (
+                <a key={item.href} href={item.href} aria-current={isCurrent(item, route) ? "page" : undefined}>
+                  {item.label}
+                </a>
+              ),
+            )}
             <a className="pill network" href="#/arbitrum" title={`Every amount on this site is on ${NETWORK_LABEL}`}>
               <span className="network-dot" aria-hidden="true" />
               {NETWORK_LABEL}
@@ -55,8 +62,8 @@ export function App({ initialHash = typeof window === "undefined" ? "" : window.
           </nav>
           <div className="header-actions">
             <ThemeButton />
-            <a className="btn btn-primary btn-sm" href="#/setup" aria-current={route.view === "setup" ? "page" : undefined}>
-              Get started
+            <a className="btn btn-primary btn-sm" href="#/connect" aria-current={route.view === "connect" ? "page" : undefined}>
+              Connect your agent
             </a>
             <button type="button" className="menu-btn" aria-expanded={menuOpen} aria-controls="site-nav" onClick={() => setMenuOpen((open) => !open)}>
               <Icon name={menuOpen ? "x" : "menu"} size={20} />
@@ -113,12 +120,12 @@ function RouteView({ route }: { route: Route }) {
   switch (route.view) {
     case "overview":
       return <Overview />;
-    case "setup":
-      return <Setup />;
+    case "connect":
+      return <Connect />;
     case "catalog":
       return <View name="catalog" path="/api/v1/catalog" schema={CatalogView} render={(v) => <Catalog view={v} />} />;
-    case "evidence":
-      return <View name="evidence" path="/api/v1/catalog" schema={CatalogView} anchor={route.anchor} render={(v) => <Evidence view={v} />} />;
+    case "benchmark":
+      return <View name="benchmark" path="/api/v1/catalog" schema={CatalogView} anchor={route.anchor} render={(v) => <Benchmark view={v} />} />;
     case "demand":
       return <View name="demand" path="/api/v1/demand" schema={DemandView} render={(v) => <Demand view={v} />} />;
     case "status":

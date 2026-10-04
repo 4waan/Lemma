@@ -114,16 +114,3 @@ export function PricingCard({
     </div>
   );
 }
-
-/** A dark product panel with a title bar, for a session transcript or a live readout. */
-export function Panel({ title, badge, label, className, children }: { title: string; badge?: ReactNode; label: string; className?: string | undefined; children: ReactNode }) {
-  return (
-    <aside className={className === undefined ? "panel" : `panel ${className}`} aria-label={label}>
-      <div className="panel-head">
-        <span>{title}</span>
-        {badge}
-      </div>
-      {children}
-    </aside>
-  );
-}

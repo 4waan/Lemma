@@ -1,5 +1,4 @@
 import { CAPABILITY_IDS, type CapabilityId, type CatalogView, type ProfileSummary, type ReleaseSummary } from "@lemma/core";
-import { useState } from "react";
 
 import { COMPATIBILITY_EXPLAINED, buyersText, compatibilityBasis } from "../components/Compatibility.js";
 import { Hash } from "../components/copy.js";
@@ -7,21 +6,28 @@ import { Icon } from "../components/Icon.js";
 import { Badge, KeyValue, PageHead } from "../components/ui.js";
 import { CAPABILITY_SHORT, CAPABILITY_TEXT, EVIDENCE_LABEL, percent, usdc, when } from "../format.js";
 import { sourceUrl } from "../links.js";
+import { REPOSITORY_URL } from "../routes.js";
+
+/** Where a developer starts adding a release: the catalog's authoring guide. */
+export const CONTRIBUTE_URL = `${REPOSITORY_URL}/blob/main/packages/catalog/README.md#author-a-release`;
 
 /**
  * The catalog: one compact card per release, with what a buyer decides on
  * first (what it does, its price, what it fits, the warranty, its record and
- * its source) and everything else folded under Details.
+ * its source) and everything else folded under Details; then the integrations
+ * without a release yet, and how to add one.
  */
 export function Catalog({ view }: { view: CatalogView }) {
-  const [filter, setFilter] = useState<CapabilityId | "all">("all");
-  const capabilities = CAPABILITY_IDS.filter((c) => filter === "all" || c === filter);
-  const releases = capabilities.flatMap((c) => view.releases.filter((r) => r.capability === c));
-  const unmet = capabilities.filter((c) => !view.releases.some((r) => r.capability === c));
+  const releases = CAPABILITY_IDS.flatMap((c) => view.releases.filter((r) => r.capability === c));
+  const unmet = CAPABILITY_IDS.filter((c) => !view.releases.some((r) => r.capability === c));
   return (
     <>
       <PageHead eyebrow="Catalog" title="What your agent can reuse">
         <p className="lead">Tested integrations, and the projects each one fits.</p>
+        <p className="x402-note">
+          <Icon name="bolt" size={16} />
+          <span>Lemma runs on x402: every purchase is paid in USDC and settled by Lemma&apos;s own facilitator.</span>
+        </p>
         <p className="meta-line">
           <span>
             {view.releases.length} {view.releases.length === 1 ? "release" : "releases"}
@@ -29,38 +35,60 @@ export function Catalog({ view }: { view: CatalogView }) {
           <span>updated {when(view.generatedAt)}</span>
         </p>
       </PageHead>
-      <div className="filters" role="group" aria-label="Filter by integration">
-        <button type="button" className="chip" aria-pressed={filter === "all"} onClick={() => setFilter("all")}>
-          All
-        </button>
-        {CAPABILITY_IDS.map((c) => (
-          <button type="button" key={c} className="chip" aria-pressed={filter === c} onClick={() => setFilter(c)}>
-            {CAPABILITY_SHORT[c]}
-          </button>
-        ))}
-      </div>
       <div className="release-grid">
         {releases.map((r) => (
           <Release key={r.releaseDigest} release={r} />
         ))}
-        {unmet.map((c) => (
-          <Requested key={c} capability={c} />
-        ))}
       </div>
+      {unmet.length === 0 ? null : <NotYet capabilities={unmet} />}
+      <Contribute />
     </>
   );
 }
 
-/** A capability with no release: what an agent asking for it gets today. */
-function Requested({ capability }: { capability: CapabilityId }) {
+/** Integrations with no release yet: one line each. Agents asking for them get a free answer to build it themselves. */
+function NotYet({ capabilities }: { capabilities: readonly CapabilityId[] }) {
   return (
-    <article className="release requested">
-      <h3>{CAPABILITY_SHORT[capability]}</h3>
-      <p className="release-what">{CAPABILITY_TEXT[capability]}</p>
-      <p className="release-note">
-        Agents asking for this get a free answer to build it themselves. Each request is counted in <a href="#/demand">Demand</a>.
+    <section className="not-yet" aria-labelledby="not-yet-title">
+      <h2 id="not-yet-title">Next in the catalog</h2>
+      <ul>
+        {capabilities.map((c) => (
+          <li key={c}>
+            <strong>{CAPABILITY_SHORT[c]}</strong>
+            <span className="muted">{CAPABILITY_TEXT[c]}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="small muted">
+        Until its release is published, an agent that asks gets a free answer to build it itself, and the request is counted in <a href="#/demand">Demand</a>.
       </p>
-    </article>
+    </section>
+  );
+}
+
+const CONTRIBUTE_STEPS: readonly string[] = [
+  "Pick one integration and the projects it fits.",
+  "Add the patch, its tests and its source commit.",
+  "Run the catalog checks and open a pull request.",
+];
+
+/** How a developer adds a release, in three short steps. */
+function Contribute() {
+  return (
+    <section className="contribute" aria-labelledby="contribute-title">
+      <div>
+        <h2 id="contribute-title">Add a release</h2>
+        <p className="muted">Built an integration that works? Share it so every agent can reuse it.</p>
+      </div>
+      <ol>
+        {CONTRIBUTE_STEPS.map((step) => (
+          <li key={step}>{step}</li>
+        ))}
+      </ol>
+      <a className="btn btn-secondary" href={CONTRIBUTE_URL} target="_blank" rel="noopener noreferrer">
+        Read the guide <Icon name="external" size={16} />
+      </a>
+    </section>
   );
 }
 

@@ -56,6 +56,7 @@ Implemented tools:
 | `GET /api/v1/evidence/:resolutionId/:target` | The ERC-8004 feedback file behind one feedback (`target` is `provider` or `buyer-agent`), byte for byte as hashed. 404 until the attester has claimed a send of that feedback. |
 | `GET /healthz` | Process health. |
 | `GET /` and `GET /assets/:name` | Built dashboard when `apps/web/dist` is present. |
+| `GET /dl/lemma-mcp-<version>.tgz` | The packed bridge for one-command installs (`npx -y <server>/dl/...`), when `apps/bridge/pack/out` is present. Only that exact file name is served. |
 
 There are no public facilitator routes. The x402 facilitator runs in process, because a public one would pay gas for anyone's settlements; serving other resource servers would need its own authentication and gas budget.
 

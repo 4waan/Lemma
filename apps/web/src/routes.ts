@@ -5,10 +5,10 @@ export type HomeAnchor = "how-it-works" | "arbitrum" | "pricing";
 export type Route =
   | { readonly view: "overview"; readonly anchor: HomeAnchor | null }
   | { readonly view: "catalog" }
-  | { readonly view: "evidence"; readonly anchor: "what-to-trust" | null }
+  | { readonly view: "benchmark"; readonly anchor: "what-to-trust" | null }
   | { readonly view: "demand" }
   | { readonly view: "status"; readonly anchor: "verify" | null }
-  | { readonly view: "setup" }
+  | { readonly view: "connect" }
   | { readonly view: "resolution"; readonly id: string | null }
   | { readonly view: "not-found" };
 
@@ -18,11 +18,13 @@ export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   if (path === "" || path === "overview") return { view: "overview", anchor: null };
   if (path === "how-it-works" || path === "arbitrum" || path === "pricing") return { view: "overview", anchor: path };
-  if (path === "evidence") return { view: "evidence", anchor: null };
-  if (path === "what-to-trust") return { view: "evidence", anchor: "what-to-trust" };
+  // "evidence" and "setup" are the pages' earlier names; links to them still land.
+  if (path === "benchmark" || path === "evidence") return { view: "benchmark", anchor: null };
+  if (path === "what-to-trust") return { view: "benchmark", anchor: "what-to-trust" };
+  if (path === "connect" || path === "setup") return { view: "connect" };
   if (path === "status") return { view: "status", anchor: null };
   if (path === "verify") return { view: "status", anchor: "verify" };
-  if (path === "catalog" || path === "demand" || path === "setup") return { view: path };
+  if (path === "catalog" || path === "demand") return { view: path };
   if (path === "resolutions") return { view: "resolution", id: null };
   const match = /^resolutions\/(.+)$/.exec(path);
   if (match !== null) return HEX32.test(match[1] as string) ? { view: "resolution", id: match[1] as string } : { view: "not-found" };
@@ -32,7 +34,8 @@ export function parseRoute(hash: string): Route {
 export interface NavItem {
   readonly href: string;
   readonly label: string;
-  readonly view: Route["view"];
+  /** The view it opens; null for a link that leaves the site. */
+  readonly view: Route["view"] | null;
   /** For a section of a page: which one. */
   readonly anchor?: HomeAnchor | "verify" | undefined;
 }
@@ -48,12 +51,16 @@ export function isCurrent(item: NavItem, route: Route): boolean {
   return true;
 }
 
-/** The header: the story, the catalog, the price and the proof. Get started is the header's button. */
+/** Lemma's source code. */
+export const REPOSITORY_URL = "https://github.com/4waan/Lemma";
+
+/** The header's links. Connect your agent is the header's button. */
 export const NAV: readonly NavItem[] = [
-  { href: "#/how-it-works", label: "How it works", view: "overview", anchor: "how-it-works" },
   { href: "#/catalog", label: "Catalog", view: "catalog" },
-  { href: "#/pricing", label: "Pricing", view: "overview", anchor: "pricing" },
-  { href: "#/evidence", label: "Proof", view: "evidence" },
+  { href: "#/resolutions", label: "Resolutions", view: "resolution" },
+  { href: "#/benchmark", label: "Benchmark", view: "benchmark" },
+  { href: "#/status", label: "Status", view: "status" },
+  { href: REPOSITORY_URL, label: "GitHub", view: null },
 ];
 
 /** The one place the site names its network, beside the home page's section about it. */
@@ -67,7 +74,7 @@ export const FOOTER_COLUMNS: ReadonlyArray<{ readonly title: string; readonly it
       { href: "#/how-it-works", label: "How it works", view: "overview", anchor: "how-it-works" },
       { href: "#/catalog", label: "Catalog", view: "catalog" },
       { href: "#/pricing", label: "Pricing", view: "overview", anchor: "pricing" },
-      { href: "#/setup", label: "Get started", view: "setup" },
+      { href: "#/connect", label: "Connect your agent", view: "connect" },
     ],
   },
   {
@@ -81,8 +88,8 @@ export const FOOTER_COLUMNS: ReadonlyArray<{ readonly title: string; readonly it
   {
     title: "Trust",
     items: [
-      { href: "#/evidence", label: "Proof", view: "evidence" },
-      { href: "#/what-to-trust", label: "What to trust", view: "evidence" },
+      { href: "#/benchmark", label: "Benchmark", view: "benchmark" },
+      { href: "#/what-to-trust", label: "What to trust", view: "benchmark" },
       { href: "#/verify", label: "Verify it yourself", view: "status", anchor: "verify" },
     ],
   },
@@ -94,10 +101,10 @@ export const BUILT_ON: readonly string[] = ["Arbitrum", "Stylus", "x402", "USDC"
 const LABEL: Readonly<Record<Route["view"], string>> = {
   overview: "Home",
   catalog: "Catalog",
-  evidence: "Proof",
+  benchmark: "Benchmark",
   demand: "Demand",
   status: "Status",
-  setup: "Get started",
+  connect: "Connect your agent",
   resolution: "Resolutions",
   "not-found": "Not found",
 };

@@ -15,7 +15,7 @@ import { sourceUrl } from "../src/links.js";
 import { parseRoute } from "../src/routes.js";
 import { Catalog } from "../src/views/Catalog.js";
 import { Demand } from "../src/views/Demand.js";
-import { Evidence } from "../src/views/Evidence.js";
+import { Benchmark } from "../src/views/Benchmark.js";
 import { Resolution } from "../src/views/Resolution.js";
 import { Status } from "../src/views/Status.js";
 
@@ -96,19 +96,19 @@ describe("views render only from read models", () => {
         summarizeRelease({ release, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 7337, effectiveNMilli: "21727", outcomes: 4, source: "benchmark+outcomes" as const, buyers: null }]])),
       ],
     });
-    for (const html of [renderToStaticMarkup(<Catalog view={withOutcomes} />), renderToStaticMarkup(<Evidence view={withOutcomes} />)]) {
+    for (const html of [renderToStaticMarkup(<Catalog view={withOutcomes} />), renderToStaticMarkup(<Benchmark view={withOutcomes} />)]) {
       expect(html).toContain("73.37 %");
       expect(html).toContain("early estimate and 4 results");
     }
     expect(renderToStaticMarkup(<Catalog view={withOutcomes} />)).toContain(COMPATIBILITY_EXPLAINED.replaceAll("'", "&#x27;"));
-    expect(renderToStaticMarkup(<Evidence view={withOutcomes} />)).toContain(">21.727<");
+    expect(renderToStaticMarkup(<Benchmark view={withOutcomes} />)).toContain(">21.727<");
     // Frozen-benchmark evidence: the prior is the benchmark's, with nothing provisional about it.
     const frozen = { ...release, version: "1.0.0+bench-1", supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: { ...p.evidence, benchmarkVersion: "bench-1" } })) };
     const benchmarked = CatalogView.parse({
       ...catalog,
       releases: [summarizeRelease({ release: frozen, releaseDigest: hex("58"), baseReleaseDigest: hex("56"), provisional: false }, { chainCostAtomic: 10_000n }, NOW, new Map([[0, { confidenceBps: 2698, effectiveNMilli: "1000", outcomes: 0, source: "benchmark" as const, buyers: null }]]))],
     });
-    for (const html of [renderToStaticMarkup(<Catalog view={benchmarked} />), renderToStaticMarkup(<Evidence view={benchmarked} />)]) {
+    for (const html of [renderToStaticMarkup(<Catalog view={benchmarked} />), renderToStaticMarkup(<Benchmark view={benchmarked} />)]) {
       expect(html).toContain("from the benchmark");
       expect(html).not.toContain("from the early estimate");
       expect(html).not.toContain(">Early estimate</span>");
@@ -118,12 +118,12 @@ describe("views render only from read models", () => {
       ...catalog,
       releases: [summarizeRelease({ release: { ...release, supportedProfiles: release.supportedProfiles.map((p) => ({ ...p, evidence: null })) }, releaseDigest: hex("55"), baseReleaseDigest: hex("56"), provisional: true }, { chainCostAtomic: 0n }, NOW)],
     });
-    expect(renderToStaticMarkup(<Evidence view={none} />)).not.toContain("<th scope=\"col\" class=\"num\">Score</th>");
+    expect(renderToStaticMarkup(<Benchmark view={none} />)).not.toContain("<th scope=\"col\" class=\"num\">Score</th>");
     expect(renderToStaticMarkup(<Catalog view={none} />)).not.toContain("<dt>Score</dt>");
   });
 
   it("shows evidence, demand, status and a resolution", () => {
-    const evidence = renderToStaticMarkup(<Evidence view={catalog} />);
+    const evidence = renderToStaticMarkup(<Benchmark view={catalog} />);
     expect(evidence).toContain("provisional-1");
     expect(evidence).toContain("It is more optimistic than the full benchmark.");
     expect(evidence).toContain("score 26.98 % (from the early estimate)");
@@ -161,13 +161,13 @@ describe("views render only from read models", () => {
     expect(shell).toContain('aria-current="page"');
     expect(shell).toContain('aria-expanded="false"');
     expect(shell).toContain('class="wordmark"');
-    for (const label of ["How it works", "Catalog", "Proof", "Get started", "Resolutions", "Demand", "Status", "What to trust"]) expect(shell).toContain(label);
+    for (const label of ["How it works", "Catalog", "Benchmark", "Connect your agent", "Resolutions", "Demand", "Status", "What to trust", "GitHub"]) expect(shell).toContain(label);
     expect(renderToStaticMarkup(<Shown loaded={{ state: "loading" }} render={() => null} />)).toContain("Loading");
-    // The setup uses the bridge as built from a checkout; nothing installs a lemma-mcp command yet.
-    const setup = renderToStaticMarkup(<App initialHash="#/setup" />);
-    expect(setup).not.toContain("lemma-mcp");
-    expect(setup).toContain("apps/bridge/dist/main.js");
-    expect(setup).toContain('href="#/setup" aria-current="page"');
+    // Connecting installs the bridge this server serves; the page's earlier address still lands there.
+    const connect = renderToStaticMarkup(<App initialHash="#/setup" />);
+    expect(connect).toContain("/dl/lemma-mcp-0.1.0.tgz");
+    expect(connect).not.toContain("apps/bridge/dist/main.js");
+    expect(connect).toContain('href="#/connect" aria-current="page"');
     // A resolution waits for its read model; its explorer links wait for the status.
     expect(renderToStaticMarkup(<App initialHash={`#/resolutions/${hex("ab")}`} />)).toContain("Loading");
     expect(renderToStaticMarkup(<Shown loaded={{ state: "error", message: "<b>bad</b>" }} render={() => null} />)).toContain("&lt;b&gt;bad&lt;/b&gt;");

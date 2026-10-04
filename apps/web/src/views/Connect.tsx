@@ -2,10 +2,9 @@ import { useState } from "react";
 
 import { CodeBlock } from "../components/copy.js";
 import { Icon } from "../components/Icon.js";
+import { installFor } from "../connect.js";
 
-const CHECKOUT = "<path to your Lemma checkout>";
 const PLACEHOLDER_SERVER = "https://<this server>";
-const BRIDGE = `${CHECKOUT}/apps/bridge/dist/main.js`;
 
 /**
  * Where the bridge should reach this server. The built dashboard is served by
@@ -19,40 +18,37 @@ export function serverOrigin(): string {
   return /^https?:\/\/[^/]+$/.test(origin) ? origin : PLACEHOLDER_SERVER;
 }
 
-type AgentId = "cursor" | "claude" | "other";
+type AgentId = "cursor" | "vscode" | "claude" | "codex" | "goose" | "other";
 
 const AGENTS: ReadonlyArray<{ readonly id: AgentId; readonly label: string }> = [
   { id: "cursor", label: "Cursor" },
+  { id: "vscode", label: "VS Code" },
   { id: "claude", label: "Claude Code" },
-  { id: "other", label: "Other agents" },
+  { id: "codex", label: "Codex" },
+  { id: "goose", label: "Goose" },
+  { id: "other", label: "Other" },
 ];
 
-/** Static: how to build, register and use the local bridge. Nothing here comes from the API. */
-export function Setup() {
+/** Which rule file `install-rule` writes for each agent: its own where it has one, else AGENTS.md. */
+const RULE: Readonly<Record<AgentId, { agent: "cursor" | "claude" | "agents"; note: string }>> = {
+  cursor: { agent: "cursor", note: "Writes .cursor/rules/lemma.mdc, so Cursor checks Lemma before it builds an integration." },
+  claude: { agent: "claude", note: "Writes .claude/rules/lemma.md, which Claude Code loads in every session." },
+  vscode: { agent: "agents", note: "Adds a short block to AGENTS.md, which the agent reads. Your own text stays as it is." },
+  codex: { agent: "agents", note: "Adds a short block to AGENTS.md, which Codex reads. Your own text stays as it is." },
+  goose: { agent: "agents", note: "Adds a short block to AGENTS.md. Your own text stays as it is." },
+  other: { agent: "agents", note: "Adds a short block to AGENTS.md, which many agents read. Your own text stays as it is." },
+};
+
+/** Static: how to add the bridge to an agent, in one click where the agent has an install link. Nothing here comes from the API. */
+export function Connect() {
   const [agent, setAgent] = useState<AgentId>("cursor");
-  const server = serverOrigin();
-  const stdioConfig = JSON.stringify({ mcpServers: { lemma: { command: "node", args: [BRIDGE], env: { LEMMA_API_URL: server } } } }, null, 2);
-  const register: Readonly<Record<AgentId, { title: string; label: string; code: string; note: string }>> = {
-    cursor: { title: "Add it to Cursor", label: ".cursor/mcp.json", code: stdioConfig, note: "Paste it into your project's .cursor/mcp.json. The page fills in this server's address." },
-    claude: {
-      title: "Add it to Claude Code",
-      label: "in your project",
-      code: `claude mcp add --env LEMMA_API_URL=${server} lemma -- node ${BRIDGE}`,
-      note: "Registers the bridge for this project. Check the flags against claude mcp add --help if your version differs.",
-    },
-    other: { title: "Add it to your agent", label: "MCP configuration", code: stdioConfig, note: "Any MCP client that starts servers over stdio accepts this shape. Use your agent's own file and key names." },
-  };
-  const rule: Readonly<Record<AgentId, { code: string; note: string }>> = {
-    cursor: { code: `node ${BRIDGE} install-rule --agent cursor .`, note: "Writes .cursor/rules/lemma.mdc. It tells the agent to check Lemma before building an x402 integration." },
-    claude: { code: `node ${BRIDGE} install-rule --agent claude .`, note: "Writes .claude/rules/lemma.md, which Claude Code loads at the start of every session." },
-    other: { code: `node ${BRIDGE} install-rule --agent agents .`, note: "Adds a marked block to AGENTS.md, which many coding agents read. Your own text in the file is left as it is." },
-  };
+  const install = installFor(serverOrigin());
   return (
     <div className="start">
       <aside className="start-aside">
-        <span className="eyebrow">Get started</span>
+        <span className="eyebrow">Connect</span>
         <h1>Connect your agent</h1>
-        <p className="lead">About three minutes. The bridge runs on your machine and never sends your code.</p>
+        <p className="lead">One click or one command. The bridge runs on your machine and never sends your code.</p>
         <div className="need">
           <span className="field-label">You need</span>
           <ul className="check-list">
@@ -62,7 +58,7 @@ export function Setup() {
             </li>
             <li>
               <Icon name="check" />
-              <span>A copy of the Lemma repository. The bridge builds from it.</span>
+              <span>Nothing else. Checks are free and work straight away.</span>
             </li>
           </ul>
         </div>
@@ -70,41 +66,52 @@ export function Setup() {
       <div>
         <div className="tabs" role="tablist" aria-label="Your agent">
           {AGENTS.map((a) => (
-            <button key={a.id} type="button" role="tab" id={`tab-${a.id}`} aria-selected={agent === a.id} aria-controls="setup-steps" onClick={() => setAgent(a.id)}>
+            <button key={a.id} type="button" role="tab" id={`tab-${a.id}`} aria-selected={agent === a.id} aria-controls="connect-steps" onClick={() => setAgent(a.id)}>
               {a.label}
             </button>
           ))}
         </div>
-        <ol className="start-steps" id="setup-steps" role="tabpanel" aria-labelledby={`tab-${agent}`}>
+        <ol className="start-steps" id="connect-steps" role="tabpanel" aria-labelledby={`tab-${agent}`}>
           <li>
             <div>
-              <h3>Build the bridge</h3>
-              <CodeBlock label="in your Lemma checkout" code="npm ci && npm run build" />
+              <h3>Add Lemma to {AGENTS.find((a) => a.id === agent)?.label}</h3>
+              <AddStep agent={agent} install={install} />
             </div>
           </li>
           <li>
             <div>
-              <h3>{register[agent].title}</h3>
-              <CodeBlock label={register[agent].label} code={register[agent].code} />
-              <p className="note">{register[agent].note}</p>
-            </div>
-          </li>
-          <li>
-            <div>
-              <h3>Install the rule</h3>
-              <CodeBlock label="in your project" code={rule[agent].code} />
-              <p className="note">{rule[agent].note}</p>
+              <h3>Tell your agent to check Lemma</h3>
+              <CodeBlock label="in your project" code={install.run("lemma-mcp", `install-rule --agent ${RULE[agent].agent} .`)} />
+              <p className="note">{RULE[agent].note}</p>
             </div>
           </li>
           <li>
             <div>
               <h3>Ask for an integration</h3>
               <p className="prompt-bubble">Add x402 payment gating to my MCP server.</p>
-              <p className="note">Your agent checks Lemma first and follows the answer. In a monorepo it also passes the package directory.</p>
+              <p className="note">Your agent checks Lemma first and follows the answer.</p>
             </div>
           </li>
         </ol>
 
+        <details className="accordion">
+          <summary>
+            Turn on buying <Icon name="chevron" size={18} />
+          </summary>
+          <div className="accordion-body">
+            <p>Checks need no wallet. To buy, run the signer: a separate process that holds the buyer key, so your agent never does.</p>
+            <ol className="plain-steps">
+              <li>
+                <CodeBlock label="create the buyer key" code={install.run("lemma-signer", "init")} />
+                <p className="note">It prints the address to fund with Arbitrum Sepolia USDC. The key stays in a file only you can read.</p>
+              </li>
+              <li>
+                <CodeBlock label="start the signer" code={install.run("lemma-signer", "serve")} />
+                <p className="note">Set your spending limits first (Settings below). With no limits, nothing is bought.</p>
+              </li>
+            </ol>
+          </div>
+        </details>
         <details className="accordion">
           <summary>
             Tools your agent sees <Icon name="chevron" size={18} />
@@ -193,6 +200,51 @@ export function Setup() {
   );
 }
 
+/** The first step for one agent: its install link as a button where it has one, else the command or file to paste. */
+function AddStep({ agent, install }: { agent: AgentId; install: ReturnType<typeof installFor> }) {
+  switch (agent) {
+    case "cursor":
+      return <InstallButton href={install.cursorUrl} label="Add to Cursor" note="Opens Cursor and asks you to confirm." />;
+    case "vscode":
+      return <InstallButton href={install.vscodeUrl} label="Install in VS Code" note="Opens VS Code and asks you to confirm. Use it in agent mode." />;
+    case "goose":
+      return <InstallButton href={install.gooseUrl} label="Add to Goose" note="Opens Goose and asks you to confirm." />;
+    case "claude":
+      return (
+        <>
+          <CodeBlock label="in your project" code={install.claudeCommand} />
+          <p className="note">Run it once in your project folder.</p>
+        </>
+      );
+    case "codex":
+      return (
+        <>
+          <CodeBlock label="once" code={install.codexCommand} />
+          <p className="note">Or add this to ~/.codex/config.toml:</p>
+          <CodeBlock label="config.toml" code={install.codexToml} />
+        </>
+      );
+    case "other":
+      return (
+        <>
+          <CodeBlock label="MCP configuration" code={install.genericJson} />
+          <p className="note">For Windsurf, Zed, Cline and any agent that reads an mcpServers file.</p>
+        </>
+      );
+  }
+}
+
+function InstallButton({ href, label, note }: { href: string; label: string; note: string }) {
+  return (
+    <>
+      <a className="btn btn-primary install-btn" href={href} rel="noopener noreferrer">
+        {label} <Icon name="external" size={16} />
+      </a>
+      <p className="note">{note}</p>
+    </>
+  );
+}
+
 const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string }> = [
   { name: "lemma_preview", text: "Free check from your package list. Before a purchase it also checks that your files have not changed." },
   { name: "lemma_buy_resolution", text: "Pays for an offer through x402 and your local signer, within your limits. Never pays twice." },
@@ -202,7 +254,7 @@ const TOOLS: ReadonlyArray<{ readonly name: string; readonly text: string }> = [
 ];
 
 const SETTINGS: ReadonlyArray<{ readonly name: string; readonly text: string; readonly fallback: string }> = [
-  { name: "LEMMA_API_URL", text: "This server's address.", fallback: "http://localhost:3000" },
+  { name: "LEMMA_API_URL", text: "This server's address. The install links and commands above set it.", fallback: "this server" },
   { name: "LEMMA_WORKSPACE", text: "The repository root the bridge may read. Nothing above it is read.", fallback: "the working directory" },
   { name: "LEMMA_STATE_DIR", text: "Purchases, receipts, apply journals and exports, private to you.", fallback: "~/.local/state/lemma" },
   { name: "LEMMA_ACCEPTANCE_OFFLINE", text: "Set to 1 to run acceptance tests without network, on Linux.", fallback: "off" },

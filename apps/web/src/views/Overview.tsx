@@ -1,42 +1,37 @@
-import { CatalogView, StatusView } from "@lemma/core";
+import { CatalogView } from "@lemma/core";
 
 import { type Polled, usePolledView } from "../api.js";
 import { WORKED_EXAMPLE, evaluatePricing } from "../calculator.js";
-import { AddressLink } from "../components/chain.js";
 import { CostComparison } from "../components/CostChart.js";
-import { FlowDiagram, type FlowStep } from "../components/FlowDiagram.js";
-import { GasChart } from "../components/GasChart.js";
 import { Icon, type IconName } from "../components/Icon.js";
-import { LiveMeter } from "../components/LiveMeter.js";
-import { Badge, Panel, PricingCard } from "../components/ui.js";
-import { DEPLOYMENT, PASSING_PURCHASE_GAS } from "../deployment.js";
+import { AgentTerminal } from "../components/Terminal.js";
+import { Badge, PricingCard } from "../components/ui.js";
+import { DEPLOYMENT } from "../deployment.js";
 import { usdcAmount } from "../format.js";
+import { explorerAddressUrl, explorerTxUrl } from "../links.js";
 import { NETWORK_LABEL } from "../routes.js";
 
 /**
- * The home page, in the order a visitor asks: what Lemma is, how it works,
- * what runs on chain and what it costs there, what the live record shows, and
- * the price. Live figures come from this server's catalog and status,
- * refreshed every minute while the page is open; the on-chain section shows
- * Lemma's own recorded run. Example numbers carry an Example tag.
+ * The home page, in the order a visitor asks: what Lemma is (with a sample
+ * agent session), how it works, what the chain adds, and the price. The claim
+ * window comes from this server's catalog, refreshed every minute while the
+ * page is open; the chain links point at Lemma's own recorded run.
  */
 export function Overview() {
   const catalog = usePolledView<CatalogView>("/api/v1/catalog", CatalogView);
-  const status = usePolledView<StatusView>("/api/v1/status", StatusView);
   return (
     <div className="home">
       <Hero />
       <HowItWorks />
       <OnArbitrum />
-      <LiveRecord catalog={catalog} status={status} />
       <Pricing catalog={catalog} />
       <div className="cta-band">
         <div>
           <h2>Try it in your agent</h2>
-          <p>Setup takes about three minutes.</p>
+          <p>One click in most agents. Checks are free.</p>
         </div>
-        <a className="btn btn-primary" href="#/setup">
-          Get started <Icon name="arrow" />
+        <a className="btn btn-primary" href="#/connect">
+          Connect your agent <Icon name="arrow" />
         </a>
       </div>
     </div>
@@ -52,7 +47,7 @@ function Hero() {
         <div>
           <a className="announce" href="#/arbitrum">
             <Badge tone="ok">On chain</Badge>
-            <span>See what every step costs</span>
+            <span>Payments, scores and refunds</span>
             <Icon name="arrow" size={14} />
           </a>
           <h1>Tested integrations your agent can reuse</h1>
@@ -64,51 +59,17 @@ function Hero() {
             <span>A patch that fails its tests is refunded from the provider's bond.</span>
           </p>
           <div className="cta-row">
-            <a className="btn btn-primary" href="#/setup">
-              Get started <Icon name="arrow" />
+            <a className="btn btn-primary" href="#/connect">
+              Connect your agent <Icon name="arrow" />
             </a>
             <a className="btn btn-secondary" href="#/catalog">
               See the catalog
             </a>
           </div>
         </div>
-        <ExampleSession />
+        <AgentTerminal />
       </div>
     </section>
-  );
-}
-
-/** What a session looks like, with the worked example's numbers: an example, not a recorded session. */
-function ExampleSession() {
-  return (
-    <Panel title="Agent session" label="An example agent session" className="session" badge={<Badge>Example</Badge>}>
-      <ol>
-        <li>
-          <div className="session-call">
-            lemma_preview <span className="pill">free</span>
-          </div>
-          <div className="session-out">
-            <b>reuse</b> · fits your project · {WORKED_EXAMPLE.price} USDC · saves about {WORKED_EXAMPLE.saving} USDC
-          </div>
-        </li>
-        <li>
-          <div className="session-call">
-            lemma_buy_resolution <span className="pill">paid</span>
-          </div>
-          <div className="session-out">paid {WORKED_EXAMPLE.price} USDC, within your limits</div>
-        </li>
-        <li>
-          <div className="session-call">lemma_apply_resolution</div>
-          <div className="session-out">patch applied: every file or none</div>
-        </li>
-        <li>
-          <div className="session-call">lemma_verify_adoption</div>
-          <div className="session-out">
-            <b>tests passed</b> · result signed
-          </div>
-        </li>
-      </ol>
-    </Panel>
   );
 }
 
@@ -145,16 +106,29 @@ function HowItWorks() {
   );
 }
 
-/** What Arbitrum adds, each with a fact from the recorded run. */
-const VALUE: ReadonlyArray<{ readonly icon: IconName; readonly title: string; readonly text: string }> = [
-  { icon: "wallet", title: "No gas for the agent", text: "The agent signs a USDC transfer and a facilitator sends it. The buyer in our run held no ETH." },
+/** What the chain adds, in three points, each with the recorded run's transaction or contract to look at. */
+const CHAIN_POINTS: ReadonlyArray<{ readonly icon: IconName; readonly title: string; readonly text: string; readonly link: string | null; readonly linkLabel: string }> = [
+  {
+    icon: "wallet",
+    title: "No gas for your agent",
+    text: "Your agent signs a USDC payment. Lemma sends it and pays the gas.",
+    link: explorerTxUrl(DEPLOYMENT.explorer, DEPLOYMENT.paymentTx),
+    linkLabel: "See a payment",
+  },
   {
     icon: "cpu",
     title: "Scores computed on chain",
-    text: `A ${DEPLOYMENT.engineKb} KB Rust program on Stylus keeps each release's score. Adding a result costs about ${DEPLOYMENT.recordGas.toLocaleString("en-US")} gas.`,
+    text: "A Stylus program keeps every release's score, so anyone can check it.",
+    link: explorerAddressUrl(DEPLOYMENT.explorer, DEPLOYMENT.engine),
+    linkLabel: "See the score engine",
   },
-  { icon: "shield", title: "Bonds held by a contract", text: "The provider's USDC bond sits in the warranty contract. A failed test is refunded from it." },
-  { icon: "eye", title: "Anyone can check", text: "Every step is a transaction on Arbiscan, and a read-only script recomputes every score." },
+  {
+    icon: "refund",
+    title: "Failed tests are refunded",
+    text: "Each sale is backed by a USDC bond. If the tests fail, the bond pays you back.",
+    link: explorerTxUrl(DEPLOYMENT.explorer, DEPLOYMENT.refundTx),
+    linkLabel: "See a refund",
+  },
 ];
 
 function OnArbitrum() {
@@ -163,76 +137,23 @@ function OnArbitrum() {
       <div className="section-head">
         <span className="eyebrow">Network</span>
         <h2 id="arbitrum-title">On {NETWORK_LABEL}</h2>
-        <p>Payments, warranties and test results are public transactions. Here is what one purchase used in our run on {DEPLOYMENT.measuredOn}.</p>
       </div>
-      <div className="chain-grid">
-        <div className="card chain-card">
-          <h3 className="card-title">One purchase, step by step</h3>
-          <GasChart steps={DEPLOYMENT.steps} explorer={DEPLOYMENT.explorer} label="Gas used by each on-chain step of one purchase" />
-          <p className="chain-total">
-            <strong>{PASSING_PURCHASE_GAS.toLocaleString("en-US")} gas</strong> for a purchase that passes, under {DEPLOYMENT.purchaseEthBelow} ETH in all. The buyer paid none of it.
-          </p>
-        </div>
-        <ul className="value-grid" aria-label={`What ${NETWORK_LABEL} adds`}>
-          {VALUE.map((item) => (
-            <li className="value-tile" key={item.title}>
-              <span className="feature-icon" aria-hidden="true">
-                <Icon name={item.icon} size={18} />
-              </span>
-              <h3>{item.title}</h3>
-              <p>{item.text}</p>
-            </li>
-          ))}
-        </ul>
-      </div>
-      <ul className="contract-strip" aria-label="Deployed contracts">
-        {DEPLOYMENT.contracts.map((contract) => (
-          <li key={contract.address}>
-            <span className="contract-name">{contract.name}</span>
-            <span className="contract-value">
-              <AddressLink value={contract.address} explorer={DEPLOYMENT.explorer} what={`${contract.name} address`} />
+      <ul className="chain-points">
+        {CHAIN_POINTS.map((point) => (
+          <li className="chain-point" key={point.title}>
+            <span className="feature-icon" aria-hidden="true">
+              <Icon name={point.icon} size={18} />
             </span>
+            <h3>{point.title}</h3>
+            <p>{point.text}</p>
+            {point.link === null ? null : (
+              <a className="chain-link" href={point.link} target="_blank" rel="noopener noreferrer">
+                {point.linkLabel} <Icon name="external" size={14} />
+              </a>
+            )}
           </li>
         ))}
-        <li>
-          <span className="contract-name">Chain ID</span>
-          <span className="contract-value">
-            <code>{DEPLOYMENT.chainId}</code>
-          </span>
-        </li>
       </ul>
-    </section>
-  );
-}
-
-/**
- * What happens to one test result. The on-chain steps are the ones every
- * deployment has; reputation joins them when this server posts it.
- */
-export function recordFlow(status: StatusView | null): readonly FlowStep[] {
-  const steps: FlowStep[] = [
-    { title: "Signed result", where: "Your machine", icon: "receipt", text: "The patch's tests run and your agent signs the result. The server checks the signature." },
-    { title: "Warranty contract", where: "On chain", icon: "shield", text: "The result becomes final. A pass returns the bond to the provider. A failure refunds the buyer." },
-    { title: "Score engine", where: "On chain", icon: "gauge", text: "The result updates the release's score. Older results count less." },
-  ];
-  if (status !== null && status.chain.reputationRegistry !== null) {
-    steps.push({ title: "Public reputation", where: "On chain", icon: "star", text: "The result is posted to the provider's ERC-8004 record, which anyone can read." });
-  }
-  return steps;
-}
-
-function LiveRecord({ catalog, status }: { catalog: Polled<CatalogView>; status: Polled<StatusView> }) {
-  return (
-    <section className="section" aria-labelledby="record-title">
-      <div className="section-head">
-        <span className="eyebrow">Live record</span>
-        <h2 id="record-title">Every test result counts</h2>
-        <p>Results are signed on your machine, made final on chain and added to the release's score. No reviews and no star ratings.</p>
-      </div>
-      <div className="evidence-grid">
-        <FlowDiagram label="What happens to one test result" steps={recordFlow(ready(status))} />
-        <LiveMeter catalog={catalog} status={status} />
-      </div>
     </section>
   );
 }
@@ -293,7 +214,6 @@ export function Pricing({ catalog }: { catalog: Polled<CatalogView> }) {
         <div className="card example-card">
           <div className="card-head">
             <h3 className="card-title">One integration, built or bought</h3>
-            <Badge>Example</Badge>
           </div>
           <div className="example-grid">
             <CostComparison compact control={example.control} residual={example.residual} price={example.price} gas={example.gas} caption="Cost to reach passing tests" />

@@ -26,10 +26,12 @@ describe("install links and commands", () => {
     expect(config).toEqual({ command: "npx", args: ["-y", PACKAGE], env: { LEMMA_API_URL: ORIGIN, LEMMA_WORKSPACE: "${workspaceFolder}" } });
   });
 
-  it("gives VS Code a stdio config, and Goose the command as repeated arguments", () => {
+  it("gives VS Code a stdio config with no editor variable, and Goose the command as repeated arguments", () => {
     const vscode = new URL(install.vscodeUrl);
     expect(`${vscode.origin}${vscode.pathname}`).toBe("https://vscode.dev/redirect/mcp/install");
-    expect(JSON.parse(vscode.searchParams.get("config") ?? "")).toEqual({ type: "stdio", command: "npx", args: ["-y", PACKAGE], env: { LEMMA_API_URL: ORIGIN, LEMMA_WORKSPACE: "${workspaceFolder}" } });
+    // VS Code's one-click install goes to user settings, where ${workspaceFolder} is undefined and would stop the server.
+    expect(JSON.parse(vscode.searchParams.get("config") ?? "")).toEqual({ type: "stdio", command: "npx", args: ["-y", PACKAGE], env: { LEMMA_API_URL: ORIGIN } });
+    expect(install.vscodeUrl).not.toContain("workspaceFolder");
     expect(install.gooseUrl.startsWith("goose://extension?")).toBe(true);
     const goose = new URLSearchParams(install.gooseUrl.slice("goose://extension?".length));
     expect(goose.get("cmd")).toBe("npx");

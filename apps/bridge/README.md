@@ -21,7 +21,7 @@ The built executable is `lemma-mcp` at `dist/main.js`.
 
 When the build has an https `PUBLIC_BASE_URL` (Railway passes the service's to the Docker build), the packed bridge reaches that server without `LEMMA_API_URL`; an install link that cannot pass environment values (Goose) relies on it. `LEMMA_API_URL` still wins when set.
 
-Start a Lemma server first, then configure the agent to launch the bridge from the target repository. `LEMMA_WORKSPACE` defaults to the bridge's working directory.
+Start a Lemma server first, then configure the agent to launch the bridge from the target repository. `LEMMA_WORKSPACE` defaults to the bridge's working directory, which is also used when the agent passes a variable it did not fill in (such as a literal `${workspaceFolder}`).
 
 Install the small rule that prompts an agent to preview before rebuilding a supported capability:
 

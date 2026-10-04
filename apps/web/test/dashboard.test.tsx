@@ -161,7 +161,8 @@ describe("views render only from read models", () => {
     expect(shell).toContain('aria-current="page"');
     expect(shell).toContain('aria-expanded="false"');
     expect(shell).toContain('class="wordmark"');
-    for (const label of ["How it works", "Catalog", "Benchmark", "Connect your agent", "Resolutions", "Demand", "Status", "What to trust", "GitHub"]) expect(shell).toContain(label);
+    for (const label of ["How it works", "Catalog", "Purchases", "Benchmark", "Connect your agent", "Recorded purchases", "Demand", "Status", "What to trust", "GitHub"]) expect(shell).toContain(label);
+    expect(shell).not.toContain('href="#/resolutions"');
     expect(renderToStaticMarkup(<Shown loaded={{ state: "loading" }} render={() => null} />)).toContain("Loading");
     // Connecting installs the bridge this server serves; the page's earlier address still lands there.
     const connect = renderToStaticMarkup(<App initialHash="#/setup" />);

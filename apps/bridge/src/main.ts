@@ -38,7 +38,11 @@ import { Trace } from "./trace.js";
  */
 async function serve(): Promise<void> {
   // The real path, so a workspace reached through a link is scanned like any other; links below it are still refused.
-  const root = realpathSync(resolvePath(process.env["LEMMA_WORKSPACE"] || process.cwd()));
+  // An editor that could not fill in a variable such as ${workspaceFolder} passes it as written: use the working directory then.
+  const workspace = process.env["LEMMA_WORKSPACE"] || undefined;
+  const unexpanded = workspace !== undefined && /\$\{[^}]*\}/.test(workspace);
+  if (unexpanded) console.error("lemma-mcp: LEMMA_WORKSPACE holds a variable the agent did not fill in; reading the working directory instead");
+  const root = realpathSync(resolvePath(unexpanded ? process.cwd() : (workspace ?? process.cwd())));
   const agentId = process.env["LEMMA_AGENT_ID"] || undefined;
   if (agentId !== undefined && !AgentId.safeParse(agentId).success) {
     console.error("lemma-mcp: LEMMA_AGENT_ID must be this agent's ERC-8004 agent id, a decimal number such as 42");

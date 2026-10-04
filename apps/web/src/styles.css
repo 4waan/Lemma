@@ -2768,6 +2768,65 @@ td.num .platform-deps {
   text-decoration: underline;
 }
 
+/* ---------- Home: recorded purchases ---------- */
+
+.purchase-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 899px) {
+  .purchase-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.purchase-grid .card + .card {
+  margin-top: 0;
+}
+
+.purchase-summary {
+  margin: 0.25rem 0 0.875rem;
+  color: var(--fg-2);
+}
+
+.purchase-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+
+.purchase-steps li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.625rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.9375rem;
+}
+
+.purchase-steps li:last-child {
+  border-bottom: 0;
+}
+
+.purchase-steps a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.purchase-steps a:hover {
+  text-decoration: underline;
+}
+
 /* ---------- Connect ---------- */
 
 .install-btn {

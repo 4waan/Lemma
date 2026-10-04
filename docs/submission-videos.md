@@ -53,23 +53,36 @@ The demo carries the judge's questions and the proof. The pitch carries the busi
 | Viewer | Arbitrum Foundation ecosystem and grants people choosing who goes to Founder House | Technical judges checking the build and the decisions |
 | What is on screen | Animation only, with a light music bed and two voices | The real product: the agent, the terminal, the dashboard, Arbiscan |
 | Technical words | None beyond "x402", "USDC" and "Arbitrum" | As many as the step needs |
-| Length | About 2:30 | About 4:35, never past 5 |
+| Length | About 2:56 | About 4:45, never past 5 |
 | Speakers | Aryan Singh Rathore and Awaan Mustafa Siddiqui, alternating | Aryan frames the problem and the close; Awaan drives the product |
 
-## The pitch video, about 2:30
+## The pitch video: ten questions, about 2:56
 
-An animated video in the brand (dark background, mint accents, Lexend headings) with a light music bed. Aryan and Awaan record the voice-over on top. About 340 words.
+The pitch runs as questions and answers. Each question fills the screen for two seconds with a soft chime and no voice, then shrinks to a chip in the top-left corner while Aryan or Awaan answers it. A row of ten dots along the bottom shows which question is being answered. Built in Remotion, rendered at 1920×1080 and 30 fps, with a light music bed and burned-in captions. About 370 spoken words.
 
-| Time | Speaker | What to say | What is shown |
-| --- | --- | --- | --- |
-| 0:00 | Aryan | "Software is starting to pay software. Coding agents already write a big share of our code, and with x402 they can pay for what they use. So what should they buy? I'm Aryan, co-founder of Lemma." | Agents as small nodes, USDC moving between them. Three lines appear: "Agents write code. Agents can pay. What should they buy?" |
-| 0:14 | Aryan | "Today, nothing. Every agent rebuilds the same integrations from scratch: payments, auth, the same glue code, team after team. Eighty-four percent of developers use or plan to use AI tools, and their agents keep repeating work someone already finished." | A grid of terminals multiplying, all building the same integration, token counters climbing. A stat card: "84% of developers use or plan to use AI tools", source "Stack Overflow Developer Survey 2025". |
-| 0:34 | Awaan | "I'm Awaan. Lemma turns solved work into something an agent can buy. Before writing code, the agent asks Lemma. If a tested integration fits the project, it buys it for cents, applies it, and runs the tests. If they fail, it gets its money back." | Four plain icons in a row: Ask, Buy, Apply, Guaranteed. |
-| 0:56 | Awaan | "And this only works now. Agents plug into tools through MCP in every major editor. x402 lets them pay in USDC. And Arbitrum makes it cheap to pay per task and to back every sale on chain." | Three "why now" tiles: MCP (Cursor, VS Code, Claude Code, Codex, Goose), x402 and USDC, Arbitrum. |
-| 1:12 | Aryan | "The model is simple. Developers who solved an integration publish it with a bond behind it. Agents pay per use, never more than thirty percent of what it saves them. Providers earn every time their work is reused, Lemma will keep a ten percent fee, and a release that fails is refunded from its provider's bond." | Three parties, provider, Lemma and agent, with arrows for bond, payment, the 90/10 split and the refund. A small label: "fee after validation". |
-| 1:35 | Aryan | "And every free check tells us what agents need next. We start with what Arbitrum's agent builders need most, x402 payments, then build whatever agents ask for. More outcomes, better scores, more trust." | A flywheel: free checks, demand, new releases, outcomes on chain, better scores, more agents. |
-| 1:52 | Awaan | "It's live today. One click installs Lemma in Cursor, VS Code, Goose, Claude Code and Codex. And on Arbitrum Sepolia, an agent made two real purchases: one passed, one failed and was refunded on chain." | Editor names as chips. Two transaction cards: "passed" and "refunded 0.25 testnet USDC". |
-| 2:10 | Aryan | "We're Aryan and Awaan, and we built all of this in under two weeks. At Founder House, we want to sign our first outside providers and paying teams, and take Lemma to Arbitrum One. Lemma: agents stop paying to rediscover solved work." | Two founder cards. The ask as three lines. The logo, the dashboard URL and the GitHub link. |
+| Time | On screen: the question | Speaker | What is said | What is shown during the answer |
+| --- | --- | --- | --- | --- |
+| 0:00–0:05 | — | — | (music only) | The Lemma mark draws itself; "Lemma, in ten questions" fades in; an "Arbitrum" badge. |
+| 0:05–0:21 | **1. What's changing in software?** | Aryan | "Software is starting to pay software. Coding agents already write a big share of our code, and with x402 they can pay for what they use. So what should they buy? I'm Aryan, co-founder of Lemma." | Small agent nodes appear and connect; USDC coins travel between them. Three lines stack: "Agents write code." "Agents can pay." "What should they buy?" |
+| 0:21–0:40 | **2. What's the problem?** | Aryan | "Today, nothing. Agents rebuild the same integrations from scratch, team after team. They burn tokens, and the result can still fail its tests. Eighty-four percent of developers now use or plan to use AI tools, so this waste grows every day." | One terminal splits into 4, then 16, all typing the same integration; token counters climb; a few flash red "✗ tests failed". A stat card: "84%", source "Stack Overflow Developer Survey 2025". |
+| 0:40–0:53 | **3. Who feels it first?** | Aryan | "Developers building paid agent tools. Their agent has to add x402 payments to an MCP server: the same few files every time, and easy to get wrong." | A user card builds: "TypeScript MCP server", "Claude Code or Cursor", "needs x402 payments". The same three file names repeat across several faded repositories. |
+| 0:53–1:14 | **4. What is Lemma?** | Awaan | "I'm Awaan. Lemma turns solved work into something an agent can buy. Before writing code, the agent asks Lemma. If a tested integration fits the project, it buys it for cents, applies it, and runs the tests. If they fail, it gets its money back." | Four plain icons light up in turn as they are named: Ask, Buy, Apply and test, Money back. |
+| 1:14–1:32 | **5. Why now, and why Arbitrum?** | Awaan | "Agents now plug into tools through MCP in every major editor. x402 lets them pay in USDC. And Arbitrum is cheap enough to settle every purchase, and back it with a bond, on chain." | Three tiles slide in: "MCP" with the five editor names, "x402 and USDC", "Arbitrum: purchases and bonds on chain". |
+| 1:32–1:55 | **6. How does it make money?** | Aryan | "Developers who solved an integration publish it with a bond behind it. Agents pay per use, never more than thirty percent of what it saves them. Providers earn every time their work is reused, Lemma will keep a ten percent fee, and a release that fails is refunded from its provider's bond." | Three parties, provider, Lemma and agent. Arrows animate: the bond into a vault; the payment from the agent; a 90/10 split; a refund arrow back from the vault. A bar shows the saving with the 30% cap marked. A small label: "fee after validation". |
+| 1:55–2:12 | **7. How does it grow?** | Aryan | "Every free check tells us what agents need next. We start with x402 payments for Arbitrum's agent builders, then build whatever agents ask for most. More outcomes mean better scores, and better scores bring more agents." | A flywheel turns once per phrase: free checks, demand, new releases, outcomes on chain, better scores, more agents. |
+| 2:12–2:28 | **8. What's real today?** | Awaan | "Lemma is live. One click installs it in Cursor, VS Code, Goose, Claude Code and Codex. On Arbitrum Sepolia, an agent made two real purchases: one passed, one failed and was refunded on chain." | Five editor chips. Two transaction cards slide in: "Purchase 1: passed" and "Purchase 2: refunded 0.25 testnet USDC", each with its Arbiscan hash. A small label: "Arbitrum Sepolia testnet, 2026-10-01". |
+| 2:28–2:36 | **9. Who's building it?** | Awaan | "Aryan and I. We built all of Lemma in under two weeks, during this buildathon." | Two founder cards: "Aryan Singh Rathore, Co-founder" and "Awaan Mustafa Siddiqui, Co-founder". A line: "First commit 24 Sep 2026". |
+| 2:36–2:51 | **10. What do we need?** | Aryan | "At Founder House, we want to sign our first outside providers and paying teams, and take Lemma to Arbitrum One. Lemma: agents stop paying to rediscover solved work." | Three ask lines tick in: "First outside providers", "First paying teams", "Arbitrum One". Then the closing line in large type. |
+| 2:51–2:56 | — | — | (music swells and fades) | The logo, the dashboard URL and the GitHub link. |
+
+Each answer is timed to about 2.4 spoken words a second. If a take runs long, the answer's scene stretches to fit and the next question starts after it.
+
+### How the pitch gets made
+
+1. **Visuals:** a Remotion project (React) renders the cards, the question chips, the animations and the captions. Remotion is free for individuals and companies of up to three people, so the two of us need no license.
+2. **Music:** a light, original bed made for this video, so it has no licensing questions, mixed low enough to sit under speech.
+3. **Voice:** Aryan and Awaan each record their answers on a Mac, one file per answer, in a quiet room with a headset or phone microphone. QuickTime's New Audio Recording, or Tella, is enough.
+4. **Assembly:** the voice files go into the Remotion project, each placed at its answer's start time. The music dips under each voice, and the render writes the final MP4.
 
 ## The demo video storyboard, about 4:45
 

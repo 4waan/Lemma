@@ -7,6 +7,7 @@ Use this page to find the document that owns a decision. Component READMEs cover
 - [Root README](../README.md): product, current implementation, quickstart, repository map, and submission roadmap.
 - [Economics](economics.md): what Lemma sells, why a resolution has value, pricing, warranties, and the business model.
 - [Demo Script](demo-script.md): the final three-minute narrative and claims that require evidence.
+- [Submission videos](submission-videos.md): what the buildathon asks for, how the pitch and demo videos differ, and the shot list for each.
 
 ## Understand the system
 

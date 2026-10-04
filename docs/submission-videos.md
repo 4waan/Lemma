@@ -43,76 +43,58 @@ Two London agentic winners are close to Lemma: ReineiraOS backs agent commitment
 
 ## How the two videos differ
 
+The demo carries the judge's questions and the proof. The pitch carries the business. They share the one-line hook and nothing else.
+
 | | Pitch video | Demo video |
 | --- | --- | --- |
-| Question it answers | Why should this exist, and why are we the team to build it? | Does it work on Arbitrum, and does it hold up when something goes wrong? |
-| Criteria it scores | Product-market fit, real problem solving, innovation | Smart contract quality, deployed on Arbitrum, innovation |
-| Viewer | Arbitrum Foundation ecosystem and grants people choosing who goes to Founder House and gets milestone money | Technical judges checking the build |
-| What is on screen | An animated video with a light music bed and two voices over it | The real product: the agent, the terminal, the dashboard, Arbiscan |
-| Tone | The decisions: the wedge, why on chain and on Arbitrum, what we cut, what we traded | Proof: one task end to end, every transaction and state change on screen, one failure on purpose |
-| Length | About 2:30 | 3:30 to 4:00, never past 5 |
-| Mistake to avoid | Spending a minute on architecture | Spending a minute on slides |
-
-Both videos have to stand alone. A judge may watch only one, so each opens with the one-line hook and says "on Arbitrum" in its first 20 seconds.
-
-## The judge's questions, and which video answers each
-
-Every question from Ben Greenberg's article has one home. A question the pitch answers gets one line in the demo at most, and the other way round.
-
-| Judge's question | Pitch | Demo | Lemma's answer |
-| --- | --- | --- | --- |
-| The problem, one narrow one | 0:10 | 0:00 | Agents pay to rebuild integrations someone already built and tested, and can still fail the tests. |
-| One identifiable group of users | 0:10 | 0:00 | A developer whose coding agent must add x402 payments to a TypeScript MCP server (the first capability in the catalog). |
-| What they do today | 0:10 | — | The agent builds from zero, or copies old code from GitHub without knowing whether it fits. |
-| Specific unmet need | 0:30 | — | An answer before spending: does it fit my repository, is it safe to apply, is buying cheaper than building? |
-| Gap in current solutions | 0:30 | — | Code search gives code, not fit. Coverage products such as Pact Network refund after a failure. Nobody answers before payment, or prices by measured saving. |
-| Solved better than what exists | 0:48 | 0:15 to 2:50 | Fit checked before payment, price capped by measured saving, failure refunded from a bond. |
-| Team capability and insight | 1:35 | — | Your team line (to fill in), and the insight: price a release by the saving a benchmark measured, and never sell without that evidence. |
-| Why on chain | 1:12 | 1:20 | A refund promise means little if the seller holds the money. The registry contract holds the bond and pays refunds; outcomes are public. |
-| Why Arbitrum, why Stylus | 1:12 | 2:05 | The agent pays USDC and holds no ETH; a whole purchase costs under 0.00002 testnet ETH of gas. The score is written once in Rust: the Stylus contract and the server run the same crate, so the catalog and the chain always agree. |
-| Priorities: what we cut | 1:52 | — | One first-party provider, not a marketplace. Testnet only. No fee split. ERC-8004 registration waits for a public server URL. |
-| Trade-offs, said out loud | 1:52 | 3:20 | A team key decides failures (independent evaluators later). Matching reads metadata only, so it covers fewer repositories but never sees source. The contracts have one owner key (a multisig later). |
-| Show the transaction | — | 1:20 to 2:50 | Settlement, warranty activation, outcome, refund, each opened on Arbiscan. |
-| Show the state change | — | 0:45, 2:05, 2:50 | Release score, the buyer's balance and the registry's bond, shown before and after. |
-| One failure on purpose | — | 2:20 | A repository whose tests fail, refunded from the bond. |
-| Durability: what is handled | — | 3:05 | Lost paid answer recovered without paying twice; a purchase over the spend limit refused before signing; wrong recipient refused; two bridges cannot both spend; a failed apply rolls back. |
-| Failure modes not covered yet | — | 3:20 | Independent evaluation, mainnet custody, reorg detection in the indexer, sandboxed tests on macOS. Check an empty buyer balance before recording; if it is not handled cleanly, list it here. |
-| Future plan | 2:15 | 3:35 | Measured benchmarks so releases go on sale, outside providers, independent evaluators, ERC-8004 reputation, an audit, then Arbitrum One. |
+| Question it answers | Why does this become a business, and why now? | What did we decide, and does it hold up on Arbitrum? |
+| Content | Vision, the waste at scale, the product in plain words, why now, business model, how it grows, traction, team, the ask | The wedge, the gap, why on chain and Stylus, what we cut, the trade-offs, then one live run with its transactions, state changes, a failure on purpose, and what is not covered yet |
+| Criteria it scores | Product-market fit, real problem solving, innovation | Smart contract quality, deployed on Arbitrum, real problem solving |
+| Viewer | Arbitrum Foundation ecosystem and grants people choosing who goes to Founder House | Technical judges checking the build and the decisions |
+| What is on screen | Animation only, with a light music bed and two voices | The real product: the agent, the terminal, the dashboard, Arbiscan |
+| Technical words | None beyond "x402", "USDC" and "Arbitrum" | As many as the step needs |
+| Length | About 2:30 | About 4:35, never past 5 |
+| Speakers | Aryan Singh Rathore and Awaan Mustafa Siddiqui, alternating | Aryan frames the problem and the close; Awaan drives the product |
 
 ## The pitch video, about 2:30
 
-An animated video built from the brand (dark background, mint accents, Lexend headings), with a light music bed. Two people record the voice-over on top. Speaker 1 carries the problem, the users, the team and the proof; Speaker 2 carries the product, Arbitrum and the decisions. About 330 words, so read at an even pace.
+An animated video in the brand (dark background, mint accents, Lexend headings) with a light music bed. Aryan and Awaan record the voice-over on top. About 340 words.
 
 | Time | Speaker | What to say | What is shown |
 | --- | --- | --- | --- |
-| 0:00 | 1 | "Coding agents keep paying to rebuild integrations that someone already built and tested. Lemma lets them reuse that work, with a refund if it fails." | Three agent terminals building the same "x402 payment gating" side by side, token counters climbing, one ending in "tests failed". Cut to the Lemma logo. |
-| 0:10 | 1 | "I'm [Name 1], with [Name 2]. Our user is a developer whose agent has to add x402 payments to a TypeScript MCP server. Today the agent starts from zero, or copies old code from GitHub. Either way it burns tokens, and it can still fail the tests." | A user card: "TypeScript MCP server · Claude Code or Cursor · needs x402 payments". Two paths, "build from zero" and "copy from GitHub", both ending at "tests may fail". |
-| 0:30 | 1 | "What's missing isn't code. It's an answer before you spend: does this fit my repo, is it safe to apply, and is buying cheaper than building? Code search gives you code, not fit. Coverage products refund you after a failure. Nobody answers before you pay." | Three question cards, then a comparison grid: code search, post-failure coverage, Lemma, against "checks fit before payment", "price capped by saving", "refund from a bond". |
-| 0:48 | 2 | "I'm [Name 2]. The agent sends a short profile: language, versions, packages, never source. Lemma answers deterministically: reuse, adapt, build or decline. If a tested patch fits, the agent buys it for cents in USDC over x402, applies it whole or not at all, and runs its tests locally. A failure is refunded from the provider's bond." | A profile card leaves the repository (the source stays behind a lock), reaches Lemma, and "reuse" lights up. Then the four steps light in turn: check, buy, apply and test, covered. |
-| 1:12 | 2 | "It's on chain because a refund promise means little if the seller holds the money. A registry contract holds the bond and pays refunds. On Arbitrum, the agent pays in USDC and never holds ETH. And we wrote the score in Rust for Stylus, so the same code runs on chain and in our server, and they always agree." | Three cards: warranty registry (Solidity), USDC over x402, score engine (Stylus, Rust). One Rust crate splits into "Stylus contract" and "server wasm", both showing the same score. "A whole purchase: under 0.00002 testnet ETH of gas." |
-| 1:35 | 1 | "[One sentence: who we are and what we've built before that makes us the team for this.] Our insight: price a release by what it saves. It costs at most thirty percent of the saving a benchmark measured. No evidence, no sale." | Two team cards with names and roles. A bar: measured saving, the 30% price cap, what the buyer keeps. Labelled "worked example". |
-| 1:52 | 2 | "We cut on purpose: one provider, not a marketplace, and testnet only, to prove the loop first. And the trade-offs, out loud: a team key judges failures for now. Matching reads only metadata, so it covers fewer projects but never sees your code. And one owner key, until a multisig." | "Cut" list with strike-through: marketplace, mainnet, fee split. A table "trade-off → why → next": team evaluator → independent evaluators; metadata only → privacy; one owner key → multisig. |
-| 2:15 | 1 | "It's live today: two real purchases on Arbitrum Sepolia. One passed. One failed, and was refunded on chain. Next: measured benchmarks, outside providers, independent evaluators, an audit, then Arbitrum One. Lemma: agents stop paying to rediscover solved work." | Two transaction cards, "passed" and "refunded 0.25 testnet USDC", with Arbiscan hashes. A roadmap line. The logo, the dashboard URL and the GitHub link. |
+| 0:00 | Aryan | "Software is starting to pay software. Coding agents already write a big share of our code, and with x402 they can pay for what they use. So what should they buy? I'm Aryan, co-founder of Lemma." | Agents as small nodes, USDC moving between them. Three lines appear: "Agents write code. Agents can pay. What should they buy?" |
+| 0:14 | Aryan | "Today, nothing. Every agent rebuilds the same integrations from scratch: payments, auth, the same glue code, team after team. Eighty-four percent of developers use or plan to use AI tools, and their agents keep repeating work someone already finished." | A grid of terminals multiplying, all building the same integration, token counters climbing. A stat card: "84% of developers use or plan to use AI tools", source "Stack Overflow Developer Survey 2025". |
+| 0:34 | Awaan | "I'm Awaan. Lemma turns solved work into something an agent can buy. Before writing code, the agent asks Lemma. If a tested integration fits the project, it buys it for cents, applies it, and runs the tests. If they fail, it gets its money back." | Four plain icons in a row: Ask, Buy, Apply, Guaranteed. |
+| 0:56 | Awaan | "And this only works now. Agents plug into tools through MCP in every major editor. x402 lets them pay in USDC. And Arbitrum makes it cheap to pay per task and to back every sale on chain." | Three "why now" tiles: MCP (Cursor, VS Code, Claude Code, Codex, Goose), x402 and USDC, Arbitrum. |
+| 1:12 | Aryan | "The model is simple. Developers who solved an integration publish it with a bond behind it. Agents pay per use, never more than thirty percent of what it saves them. Providers earn every time their work is reused, Lemma will keep a ten percent fee, and a release that fails is refunded from its provider's bond." | Three parties, provider, Lemma and agent, with arrows for bond, payment, the 90/10 split and the refund. A small label: "fee after validation". |
+| 1:35 | Aryan | "And every free check tells us what agents need next. We start with what Arbitrum's agent builders need most, x402 payments, then build whatever agents ask for. More outcomes, better scores, more trust." | A flywheel: free checks, demand, new releases, outcomes on chain, better scores, more agents. |
+| 1:52 | Awaan | "It's live today. One click installs Lemma in Cursor, VS Code, Goose, Claude Code and Codex. And on Arbitrum Sepolia, an agent made two real purchases: one passed, one failed and was refunded on chain." | Editor names as chips. Two transaction cards: "passed" and "refunded 0.25 testnet USDC". |
+| 2:10 | Aryan | "We're Aryan and Awaan, and we built all of this in under two weeks. At Founder House, we want to sign our first outside providers and paying teams, and take Lemma to Arbitrum One. Lemma: agents stop paying to rediscover solved work." | Two founder cards. The ask as three lines. The logo, the dashboard URL and the GitHub link. |
 
-## The demo video, about 3:45
+## The demo video, about 4:35
 
-A screen recording with a voice-over, ideally one live run on Arbitrum Sepolia. Record at 1080p or higher, with the terminal font at 18 pt or more and the browser zoomed to 125%. Cut every wait; for an on-chain wait, show a "1 minute later" card instead of real time. Speaker 2 can narrate the whole demo, or the two can split it at the failure.
+The demo follows Ben Greenberg's article: the decisions first, spoken over the real product rather than slides, then one live run on Arbitrum Sepolia, then the limits. Record at 1080p or higher, with the terminal font at 18 pt or more and the browser zoomed to 125%. Cut every wait; for an on-chain wait, show a "1 minute later" card instead of real time.
 
-| Time | What is shown | What is said |
-| --- | --- | --- |
-| 0:00 | The fixture repository in Claude Code or Cursor, with the bridge connected. The prompt: "add x402 payment gating on Arbitrum Sepolia". | "Lemma on Arbitrum: one agent task, start to finish. Our user's agent needs x402 payments on this MCP server." |
-| 0:15 | The agent calls `lemma_preview` before writing code. The request's profile fields, then the `reuse` answer: price, evidence, limits, warranty terms. | "First, a free check. Only this profile leaves the machine, never the source. Same profile, same answer: no model decides a match or a price." |
-| 0:45 | **State before.** The release's card on the Catalog page with its score; the buyer's USDC and the registry's bond on Arbiscan. | "Remember three numbers: the release's score, the buyer's balance, and the bond." |
-| 1:00 | The bridge's checks (network, asset, recipient, limit, window); the signer signs; the agent holds no ETH. | "The key lives in a separate signer that enforces the spend limits itself. The model never touches it." |
-| 1:20 | **Transaction:** the settlement on Arbiscan, USDC from the buyer to the provider. | "Paid in USDC over x402. The facilitator paid the gas." |
-| 1:35 | **Durability:** the paid answer is dropped on purpose, then recovered, with still only one payment on Arbiscan. | "We lost the answer after paying. The bridge recovers it, and never pays twice." |
-| 1:50 | **Transaction and state change:** the resolution page goes from pending to active; the activation transaction reserves the price from the bond. | "The warranty is live: the provider's bond now backs this purchase." |
-| 2:05 | Apply and test; the receipt is signed; the page shows passed; the outcome transaction records into the Stylus engine; **the score changes** on the Catalog. | "Applied whole or not at all, tests passed, and the Stylus contract updated the score from this outcome." |
-| 2:20 | **The failure on purpose:** a second repository fails its tests; the evaluator decides failed. | "Now the case that matters: the patch fits, but this project's tests fail." |
-| 2:50 | **Transaction and state change:** `lemma_claim_refund`, the withdrawal on Arbiscan, the refund address up 0.25 testnet USDC, the bond down by the same amount. | "Refunded from the bond, on chain. The buyer never needed ETH." |
-| 3:05 | A purchase over the spend limit, refused before anything is signed; an unsupported repository gets a free `build` answer with no price. | "Over the limit, nothing is signed. Not a fit, nothing is sold." |
-| 3:20 | Text on screen: what is handled, and what is not covered yet. | "Not covered yet: a team key decides failures, it's testnet only, and the indexer doesn't detect reorgs." |
-| 3:35 | The home page's On Arbitrum Sepolia section, the roadmap, the links. | "Next: measured benchmarks, outside providers, an audit, then Arbitrum One." |
+| Time | Judge's question | What is shown | What is said |
+| --- | --- | --- | --- |
+| 0:00 | The problem, one user | The fixture TypeScript MCP server in Claude Code or Cursor, with the prompt "add x402 payment gating on Arbitrum Sepolia". | Aryan: "This is Lemma, on Arbitrum. Our user is a developer whose coding agent has to add x402 payments to a TypeScript MCP server. Without Lemma, the agent starts from zero, burns tokens, and can still fail the tests." |
+| 0:20 | What exists, the gap, the unmet need | The agent about to write code; a code search full of similar repositories. | "Copying from GitHub gives code, not fit. Coverage products refund after something breaks. What the developer needs is an answer before paying: does this fit my repository, is it safe, is buying cheaper than building?" |
+| 0:40 | Team insight | The Benchmark page calculator. | "Our insight: price a release by what it saves. It costs at most thirty percent of the saving a benchmark measured, the buyer still saves a quarter or more, and without evidence it can't be sold." |
+| 1:00 | Solved better | `lemma_preview` runs before any code: the profile fields it sends, then the `reuse` answer with price, evidence, limits and warranty terms. | Awaan: "The first check is free. Only this profile leaves the machine, never the source, and the answer is deterministic: no model decides a match or a price." |
+| 1:20 | Why on chain, why Arbitrum, why Stylus | The two contracts on Arbiscan; `contracts/stylus` and `packages/confidence` side by side. | "A refund promise means little if the seller holds the money, so a registry contract holds the bond. The agent pays USDC and never holds ETH. We wrote the score once in Rust: the Stylus contract and our server run the same crate, so they always agree." |
+| 1:40 | State before | The release's score on the Catalog page; the buyer's USDC and the registry's bond on Arbiscan. | "Three numbers to watch: the score, the buyer's balance, the bond." |
+| 1:55 | Show the transaction | The bridge's checks (network, asset, recipient, limit, window); the signer signs; the settlement on Arbiscan. | "The key lives in a separate signer that enforces the limits itself. Paid in USDC over x402, and the facilitator paid the gas." |
+| 2:15 | Durability | The paid answer dropped on purpose and recovered; still one payment on Arbiscan. | "We lost the answer after paying. The bridge recovers it and never pays twice." |
+| 2:30 | Show the state change | The resolution page goes from pending to active; the activation transaction reserves the price from the bond. | "The warranty is live: the provider's bond now backs this purchase." |
+| 2:45 | State change | Apply, tests pass, the receipt is signed, the outcome transaction records into the Stylus engine, and the score changes on the Catalog. | "Applied whole or not at all, tests passed, and the Stylus contract updated the score." |
+| 3:05 | One failure on purpose | A second repository fails its tests; the evaluator decides failed. | "Now the case that matters: the patch fits, but this project's tests fail." |
+| 3:25 | Transaction and state change | `lemma_claim_refund`; the withdrawal on Arbiscan; the refund address up 0.25 testnet USDC and the bond down by the same. | "Refunded from the bond, on chain, and the buyer never needed ETH." |
+| 3:40 | Durability | A purchase over the spend limit refused before signing; an unsupported repository gets a free `build` answer with no price. | "Over the limit, nothing is signed. Not a fit, nothing is sold." |
+| 3:55 | Priorities and trade-offs | Text over the dashboard: what we cut and the trade-offs, each with its reason. | "We cut the marketplace and mainnet to prove this loop first. A team key judges failures for now; matching reads metadata only, so it covers fewer projects but never sees code; the contracts have one owner key until a multisig." |
+| 4:10 | Failure modes not covered yet | Text on screen. | "Not covered yet: independent evaluators, mainnet custody, reorg detection in our indexer, and sandboxed tests on macOS." |
+| 4:20 | Future plan | The home page's On Arbitrum Sepolia section, the roadmap, the links. | Aryan: "Next: measured benchmarks so releases go on sale, outside providers, an audit, then Arbitrum One." |
+
+Check an empty buyer balance before recording. If the bridge does not handle it cleanly, add it to the 4:10 list.
 
 ### Where each part of the demo comes from
 

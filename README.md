@@ -25,32 +25,14 @@ Copying an old implementation is not enough. The agent needs to know whether it 
 
 ## How Lemma works
 
-```mermaid
-flowchart LR
-    A[Coding agent] --> B[Local bridge]
-    B -->|Project profile, never code| C[Lemma server]
-    C -->|Free answer: reuse, adapt, build or decline| B
-    B -->|x402 payment in USDC| C
-    C -->|Signed patch| B
-    B -->|Apply, run tests, sign result| D[Your repository]
-    C -. warranty, result, refund .-> E[Contracts on Arbitrum]
-```
+| | Step | What happens |
+|---|---|---|
+| 1 | **Check**, free | Your agent sends a short profile of your project (language, Node version, packages), never its code. Lemma answers reuse, adapt, build or decline. |
+| 2 | **Buy**, over x402 | If a tested patch fits, the agent pays cents in USDC, within your spending limits. The key stays in a separate signer. |
+| 3 | **Apply and test** | The patch goes in whole or not at all, then its own tests run on your machine. |
+| 4 | **Covered** | A USDC bond backs every sale. A failed test is refunded, and each result updates the release's score on chain. |
 
-### Check: free, and private
-
-**The agent sends a short profile of the project, never its source.** The local bridge reads allowlisted metadata (language, Node version, package manager, dependency versions) and Lemma's resolver answers `reuse`, `adapt`, `build` or `decline` with its reasons. Matching is deterministic: no model text reaches a match, a price or a payment. A project nothing fits gets a free answer to build it itself.
-
-### Buy: cents in USDC, over x402
-
-**A match comes with a price, and the agent pays it over x402.** The buyer key lives in a separate signer process (`lemma-signer`), never in the bridge or the agent. The signer checks the spending limits itself before it signs: a per-purchase cap, a daily cap, and the recipients it may pay. Lemma's own facilitator settles the payment, so the agent needs no ETH for gas.
-
-### Apply and test: on your machine
-
-**The patch goes in whole or not at all, then its own tests run.** The bridge refuses a patch over files that changed since it was built (it answers `adapt` instead), runs the release's acceptance tests as an argv array with no shell, and signs an adoption receipt with the result.
-
-### Covered: a bond backs every sale
-
-**The provider's USDC bond sits in a warranty contract and reserves the price of each sale.** A pass returns the reservation to the provider. A confirmed failure turns it into the buyer's credit, which the bridge claims with `lemma_claim_refund`. Each result also updates the release's score in a Stylus program, so anyone can check how often it passes.
+Matching is deterministic: no model text decides a match, a price or a payment. Lemma pays the gas, so your agent needs no ETH.
 
 ## Two purchases, every step on chain
 

@@ -1,162 +1,161 @@
+<div align="center">
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/brand/lemma-logo-dark.png">
-  <img src="docs/brand/lemma-logo.png" alt="Lemma" width="280">
+  <img src="docs/brand/lemma-logo.png" alt="Lemma" width="260">
 </picture>
 
-# Lemma
+### Tested integrations your coding agent can reuse.
 
-**Verified integration work for coding agents.**
+Before your agent writes an integration, it asks Lemma. If a tested patch fits your project, the agent buys it for cents over x402, applies it, and runs its tests. A failed test is refunded from a USDC bond.
 
-Coding agents repeatedly solve the same integration problems, but copying an old implementation is not enough. The agent still needs to know whether that implementation fits the current repository, whether its dependencies are compatible, whether applying it is safe, and whether buying the result costs less than rebuilding it.
+**[Open Lemma](https://lemma-production-8383.up.railway.app)** · **[Connect your agent](https://lemma-production-8383.up.railway.app/#/connect)** · **[How it works](#how-lemma-works)** · **[Two purchases on chain](#two-purchases-every-step-on-chain)** · **[Run locally](#run-locally)**
 
-Lemma turns reviewed integration work into compatibility-aware releases. An agent can request a free preview, receive a deterministic reuse decision, purchase a matching resolution through x402, apply it locally, and record whether it passed the release's acceptance test.
+`Arbitrum Sepolia 421614` · `x402` · `USDC` · `Stylus` · `MCP`
 
-Lemma is for teams that run coding agents and want reuse to be measurable, bounded, and inspectable instead of another source of generated code.
+<img src="docs/brand/lemma-readme-banner.svg" width="900" alt="How Lemma works: check for free, buy over x402 in USDC, apply and test on your machine, covered by a USDC bond that refunds a failure">
 
-## The product model
+</div>
 
-- A **Capability Release** packages a narrow integration, its supported repository profiles, provenance, patch bundle, acceptance recipe, price, evidence, and warranty terms.
-- A **Compatibility Resolution** binds one release to one task, repository profile, buyer, payment, and recoverable payload.
-- An **Adoption Receipt** records whether the applied resolution passed, failed, or was abandoned. Verified outcomes can inform compatibility history and warranty settlement.
+## Agents rebuild the same integrations
 
-The code remains open. The paid product is the verified answer that a specific release applies here, together with a ready integration path and bounded recourse when an eligible failure is confirmed.
+Coding agents solve the same integration problems again and again: x402 payment gating for an MCP server, a paying client with spending limits, a payment facilitator. Each rebuild costs model tokens and can still fail its tests.
+
+Copying an old implementation is not enough. The agent needs to know whether it fits *this* repository, whether its dependencies match, whether applying it is safe, and whether buying it costs less than building it. Lemma answers all four, before any money moves.
 
 ## How Lemma works
 
 ```mermaid
 flowchart LR
-    A[Coding agent] --> B[Local MCP bridge]
-    B -->|Safe repository profile| C[Lemma server]
-    C --> D[Deterministic catalog resolver]
-    D -->|Free preview| B
-    B -->|Policy-approved purchase| E[x402 and USDC on Arbitrum]
-    E --> C
-    C -->|Resolution and patch bundle| B
-    B -->|Preview, apply, verify| F[Buyer repository]
-    B -->|Adoption receipt| C
-    C --> G[Dashboard and evidence]
-    C -. warranty activation, outcome, refund .-> H[Warranty registry]
+    A[Coding agent] --> B[Local bridge]
+    B -->|Project profile, never code| C[Lemma server]
+    C -->|Free answer: reuse, adapt, build or decline| B
+    B -->|x402 payment in USDC| C
+    C -->|Signed patch| B
+    B -->|Apply, run tests, sign result| D[Your repository]
+    C -. warranty, result, refund .-> E[Contracts on Arbitrum]
 ```
 
-The bridge is the local authority boundary. It scans allowlisted metadata, holds buyer-side state, enforces spending policy, checks drift, applies patches atomically, and runs acceptance commands. The buyer key stays in a separate local signer process (`lemma-signer`), never in the bridge. Repository source and buyer credentials do not belong on the hosted server.
+### Check: free, and private
 
-The server owns deterministic matching, recoverable resolution state, the x402 paid tool with its in-process facilitator and settlement reconciler, catalog and dashboard APIs, and privacy-thresholded demand data. Its warranty outcome pipeline activates each paid warranty, finalizes outcomes, expires warranties, and relays refunds on the warranty registry, and indexes the registry's events for the catalog's compatibility confidence and the ERC-8004 attester (see [Reputation and Confidence](docs/reputation-and-confidence.md)).
+**The agent sends a short profile of the project, never its source.** The local bridge reads allowlisted metadata (language, Node version, package manager, dependency versions) and Lemma's resolver answers `reuse`, `adapt`, `build` or `decline` with its reasons. Matching is deterministic: no model text reaches a match, a price or a payment. A project nothing fits gets a free answer to build it itself.
 
-## Why Arbitrum
+### Buy: cents in USDC, over x402
 
-Lemma needs a cheap, programmable settlement layer because a resolution can cost less than a typical software subscription. Arbitrum Sepolia is the MVP network for three related actions:
+**A match comes with a price, and the agent pays it over x402.** The buyer key lives in a separate signer process (`lemma-signer`), never in the bridge or the agent. The signer checks the spending limits itself before it signs: a per-purchase cap, a daily cap, and the recipients it may pay. Lemma's own facilitator settles the payment, so the agent needs no ETH for gas.
 
-1. x402 payment in USDC for a Compatibility Resolution.
-2. Activation of a provider-funded warranty after settlement.
-3. An evaluator-confirmed pass or refundable failure outcome.
+### Apply and test: on your machine
 
-The x402 payment path and the warranty outcome pipeline run end to end on a local chain (`npm run e2e`) and ran on Arbitrum Sepolia (testnet) on 2026-10-01: the warranty registry and the Stylus compatibility engine are deployed there, and one purchase passed while another was refunded, with every transaction listed in [the deployment record](docs/deployments/arbitrum-sepolia.md). The [deployment runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation) gives the steps. See [Economics](docs/economics.md) and [Protocol](docs/protocol.md).
+**The patch goes in whole or not at all, then its own tests run.** The bridge refuses a patch over files that changed since it was built (it answers `adapt` instead), runs the release's acceptance tests as an argv array with no shell, and signs an adoption receipt with the result.
 
-## Build status
+### Covered: a bond backs every sale
 
-Lemma is an active MVP build. The compatibility path, the testnet purchase path, and the warranty outcome pipeline are implemented; public sales and bonded warranties on a deployed registry remain gated work.
+**The provider's USDC bond sits in a warranty contract and reserves the price of each sale.** A pass returns the reservation to the provider. A confirmed failure turns it into the buyer's credit, which the bridge claims with `lemma_claim_refund`. Each result also updates the release's score in a Stylus program, so anyone can check how often it passes.
 
-| Area | Status |
-| --- | --- |
-| Shared schemas, canonical digests, pricing, spending policy, and read models | Implemented and tested |
-| Catalog loader, integrity checks, fixtures, and deterministic resolver | Implemented with two preview-only skeleton releases |
-| Free MCP preview and resolution recovery | Implemented |
-| Server persistence, dashboard APIs, demand aggregation, and startup checks | Implemented |
-| Local repository scan, drift detection, atomic apply, crash recovery, and adoption verification | Implemented |
-| Dashboard views and production bundle checks | Implemented |
-| Compatibility-confidence engine: Rust crate, server wasm, and Stylus contract | Implemented and tested; deployed on Arbitrum Sepolia (testnet) with two demo outcomes recorded |
-| Benchmark harness, evidence derivation, economic probe, and reporting | Implemented; final fixtures and measured runs remain |
-| x402 paid MCP tool, in-process facilitator, buyer signer and spend ledger, settlement reconciliation, and receipt signature checks | Implemented; two testnet purchases settled on Arbitrum Sepolia from a demo release with made-up evidence; no public release is sellable yet |
-| ERC-8004 reputation: registration file, public feedback files, attester, cached pass rates, and opt-in buyer agents | Implemented and tested against the official registries on a local node; no agent registered |
-| Warranty registry contract, exported ABIs, and fail-closed deploy script | Implemented and tested; deployed on Arbitrum Sepolia (testnet), not verified on Arbiscan |
-| Warranty outcome pipeline: activation, evaluator outcomes, expiry, credit relay, registry indexer, refund tool, and operator scripts | Implemented; run end to end on a local chain (`npm run e2e`) and on Arbitrum Sepolia from one machine (one pass, one refund) |
-| Registry and engine deployment on Arbitrum Sepolia | Done on testnet, 2026-10-01 ([record](docs/deployments/arbitrum-sepolia.md)); ERC-8004 registration waits for a hosted server |
-| Public deployment, verified releases, benchmark evidence, and pilot | Pending |
+## Two purchases, every step on chain
 
-This status is deliberately narrower than the product vision. No mainnet safety, production custody, measured savings, mainnet contract, or public revenue claim is made today; the Arbitrum Sepolia deployment is a testnet demonstration with made-up evidence.
+On 2026-10-01, an agent bought a test release twice on Arbitrum Sepolia (testnet), through the shipped bridge, signer and x402. One purchase passed its tests; the other failed and was refunded. Every step is a transaction you can open:
 
-## Quickstart
+| Step | Purchase 1: passed | Purchase 2: refunded |
+|---|---|---|
+| Paid 0.25 testnet USDC over x402 | [`0x58792e54…e07693`](https://sepolia.arbiscan.io/tx/0x58792e541b6bb4024d93dc750c8cf2b84ee88a2c43f066b6e3e2f3a340e07693) | [`0xb6a9dd4d…d75b14`](https://sepolia.arbiscan.io/tx/0xb6a9dd4daa4e78c879194cd1c9b7a3ee73d36d04a36be3217e5007a6c4d75b14) |
+| Warranty started from the bond | [`0x881b5bcf…5cf201`](https://sepolia.arbiscan.io/tx/0x881b5bcf18ca707e61f3e67419c33bc8d4e172b31627f002e0497d2b5b5cf201) | [`0xd4f2eb49…a665ce`](https://sepolia.arbiscan.io/tx/0xd4f2eb492ce8ac5e7bd88d6cffcb9ab0a8bd33816b031c1264a9c0d120a665ce) |
+| Test result recorded on chain | [`0x08e34b4d…5a060a`](https://sepolia.arbiscan.io/tx/0x08e34b4db84c9e908accfce915d9bf1c5a1814ff0ffafb16031d364fb45a060a) (passed) | [`0xe2e4b36a…71efd0`](https://sepolia.arbiscan.io/tx/0xe2e4b36a88e71a7f7faf77a12aa3673f34141faa2502fc65b8d5ceed8971efd0) (failed) |
+| Refunded 0.25 testnet USDC to the buyer | none: the tests passed | [`0x4d501efa…adf950`](https://sepolia.arbiscan.io/tx/0x4d501efa6df5390e81980ad5508d322eec602ddfbb06b97eaa1d00f69cadf950) |
 
-Requirements:
+Each purchase cost under 0.00002 testnet ETH in gas across all its transactions, and the buyer paid none of it. The release sold was a test release whose benchmark numbers were made up for the run; the payments, warranties, results and refund are real. The [deployment record](docs/deployments/arbitrum-sepolia.md) lists every transaction, the contracts, and what the run does and does not show.
 
-- Node.js 22 or newer
-- npm 10 or newer
-- Foundry for Solidity builds and tests
-- Rust through rustup, only for the Stylus workspace and the engine's wasm (`contracts/stylus/rust-toolchain.toml` pins 1.94.1)
-- Docker or another Compose-compatible runtime when testing Postgres
+| Contract on Arbitrum Sepolia | Address |
+|---|---|
+| Warranty registry (Solidity) | [`0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14`](https://sepolia.arbiscan.io/address/0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14) |
+| Score engine (Stylus, Rust) | [`0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6`](https://sepolia.arbiscan.io/address/0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6) |
+| USDC (Circle) | [`0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d`](https://sepolia.arbiscan.io/address/0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d) |
 
-Install and run the repository checks:
+## Priced by what it saves
+
+**A release may cost at most 30% of the saving a benchmark measured, and the buyer must still spend at least 25% less than building it.** Both rules are checked in code (`packages/core`), and money is integer USDC, never floating point. A release with no benchmark evidence can be previewed but never sold.
+
+| Worked example | Amount |
+|---|---:|
+| Model cost for the agent to build it alone | 2.50 USDC |
+| Saving with the patch, from the benchmark | 1.30 USDC |
+| Highest price allowed (30% of the saving) | 0.39 USDC |
+| Chain cost of the purchase | 0.01 USDC |
+| **Cost with Lemma: 2.50 − 1.30 + 0.39 + 0.01** | **1.60 USDC, 36% cheaper** |
+| **You keep: 1.30 − 0.39 − 0.01** | **0.90 USDC** |
+
+The [Benchmark page](https://lemma-production-8383.up.railway.app/#/benchmark) has a calculator for these rules. See [Economics](docs/economics.md) and [Economic gates](docs/economic-gates.md).
+
+## Connect your agent
+
+The [Connect page](https://lemma-production-8383.up.railway.app/#/connect) installs the bridge in one click for **Cursor**, **VS Code** and **Goose**, with one command for **Claude Code** and **Codex**, and JSON for any other MCP agent. The server hosts the bridge as a single package with no dependencies:
 
 ```bash
-git submodule update --init
+claude mcp add -s local -t stdio -e LEMMA_API_URL=https://lemma-production-8383.up.railway.app lemma \
+  -- npx -y https://lemma-production-8383.up.railway.app/dl/lemma-mcp-0.1.0.tgz
+```
+
+Checks are free and work straight away. Buying needs the signer (`npx -y -p <that package> lemma-signer init`) and your spending limits. The bridge's tools are `lemma_preview`, `lemma_apply_resolution`, `lemma_verify_adoption` and `lemma_claim_refund`, plus `lemma_buy_resolution` once a signer is running.
+
+## Evidence you can inspect
+
+- **Tests.** `npm run verify` typechecks sources and tests, runs over 1,000 Vitest tests across every workspace, builds everything and checks the production bundle. Foundry tests cover the warranty registry; Rust tests cover the Stylus engine, whose wasm rebuilds byte for byte (`npm run confidence:wasm:check`).
+- **End to end on a local chain.** `npm run e2e` runs a full purchase, warranty, result and refund against the real contracts on anvil, with no network and no secret. CI runs it on every change.
+- **On the real chain.** The [deployment record](docs/deployments/arbitrum-sepolia.md) of the 2026-10-01 run, and `npm run sepolia:check`, a read-only check of the contracts, their wiring and every score.
+- **Benchmark harness.** [`packages/benchmark`](packages/benchmark) runs the same task with and without Lemma and derives evidence from the lower quartile of the paired savings, not the average ([protocol](docs/benchmark-protocol.md)).
+- **Security.** [Security model](docs/security-model.md), [warranty registry review](docs/warranty-registry-review.md), and gitleaks over the full history in CI.
+
+## Where it stands
+
+| Works today | Next |
+|---|---|
+| Free preview, deterministic resolver, catalog integrity checks | Real releases with measured benchmark evidence ([draft #67](https://github.com/4waan/Lemma/pull/67) holds two x402 releases) |
+| x402 purchase, buyer signer with spend limits, settlement, recovery | Public sales on the hosted server once a release has evidence |
+| Warranty registry and Stylus score engine, deployed and used on Arbitrum Sepolia | Warranties on the hosted server, with a registry deployed for `main` |
+| Hosted server and dashboard, one-click agent install | ERC-8004 reputation for the provider's agent |
+
+Nothing here claims mainnet safety, production custody or measured savings yet. The purchases above are testnet, and the pricing table is a worked example, not a measurement.
+
+## Run locally
+
+Requires Node 22 and npm 10. Foundry runs the contract tests, Rust (rustup) the Stylus workspace, and Docker the Postgres tests.
+
+```bash
+git clone --recurse-submodules https://github.com/4waan/Lemma.git
+cd Lemma
 npm ci
-npm run verify
-npm run catalog:check
-npm run contracts:build
-npm run contracts:test
+npm run verify            # typecheck, test, build
+npm run catalog:check     # catalog integrity
+npm run contracts:test    # Foundry
+npm run e2e               # full purchase on a local chain (Foundry)
 ```
 
-`npm run verify` typechecks source and tests, runs Vitest, builds every TypeScript workspace, and validates the production web bundle. Some process-isolation tests require Linux facilities such as `/proc` and network namespaces.
-
-With Rust installed, `npm run stylus:test` runs the Stylus workspace's tests, and `npm run confidence:wasm:check` proves that the committed engine wasm rebuilds byte for byte. After an engine change, `npm run confidence:wasm` rebuilds it.
-
-With Foundry on `PATH`, `npm run e2e` runs the warranty outcome pipeline end to end on a local anvil chain, against real contracts and with no network or secret (see [e2e/README.md](e2e/README.md)). It is not part of `npm run verify`.
-
-Start the implemented applications in separate terminals:
+Start the server, dashboard and bridge in separate terminals:
 
 ```bash
-npm run dev:server
-npm run dev:web
-npm run dev:bridge
+npm run dev:server        # http://localhost:3000, in-memory store without DATABASE_URL
+npm run dev:web           # the dashboard, with hot reload
+npm run dev:bridge        # the local MCP bridge
 ```
 
-The dashboard explains the product, lists the catalog, shows the benchmark proof and the pricing rule, looks up resolutions and their warranties, ranks unmet demand, lists the contracts the server works with, and shows how to connect Cursor, Claude Code or any other MCP agent. The server serves the built dashboard at its root; `npm run dev:web` serves it with hot reload. See [apps/web/README.md](apps/web/README.md); the logo and brand files are in [docs/brand](docs/brand/README.md).
-
-The server uses an in-memory store when `DATABASE_URL` is absent. Copy `.env.example` to `.env` only when a workflow needs configured infrastructure. Never use the example database password outside local development.
+Copy `.env.example` to `.env` only when a workflow needs configured infrastructure, and never commit keys. To deploy, follow the [deployment runbook](docs/deployment.md).
 
 ## Repository map
 
-```text
-apps/bridge/        Local stdio MCP server and repository authority boundary
-apps/server/        Hosted MCP endpoint, resolver APIs, persistence, and dashboard host
-apps/web/           Read-only React dashboard
-packages/core/      Versioned schemas, identifiers, pricing, policy, and read models
-packages/catalog/   Curated releases, fixtures, resolver, and catalog integrity tools
-packages/benchmark/ Controlled agent experiments and evidence derivation
-packages/confidence/ Compatibility-confidence engine as reproducible wasm for the server
-contracts/          Foundry project for the warranty registry, its tests, and its deploy script
-contracts/stylus/   Rust confidence engine, its Node wasm build, and its Stylus contract
-e2e/                End-to-end run of the outcome pipeline on a local chain, with checked third-party bytecode
-docs/               Architecture, protocol, economics, security, and delivery decisions
-ops/                Container and Railway configuration, and the Arbitrum Sepolia role setup
-```
-
-Each workspace README explains how to develop that component. Start with the [documentation guide](docs/README.md) when changing behavior across more than one boundary.
-
-## Roadmap to submission
-
-The detailed go-or-iterate criteria live in [Economic Gates and Iterations](docs/economic-gates.md). The remaining path is:
-
-1. Replace the skeleton catalog payloads with reviewed integration releases and run the economic probe.
-2. Run the x402 purchase path on Arbitrum Sepolia with a funded facilitator: one purchase (done on 2026-10-01), and a lost response recovered without a second payment (shown on the local chain only).
-3. Run the [Arbitrum Sepolia runbook](docs/deployment.md#arbitrum-sepolia-runbook-warranty-engine-and-reputation): deploy the registry and the compatibility engine, and demonstrate one pass and one refunded failure. Done on 2026-10-01 ([record](docs/deployments/arbitrum-sepolia.md)), except ERC-8004, which waits for a hosted server.
-4. Freeze and run the paired benchmark, publish measured evidence, and keep any failing profile preview-only.
-5. Deploy the server, dashboard, database, and verified contract, then complete one public-repository pilot.
-6. Publish the evidence bundle and record the final demo using only observed or clearly labeled testnet results.
-
-## Documentation
-
-- [Documentation guide](docs/README.md)
-- [Architecture](docs/architecture.md)
-- [Protocol](docs/protocol.md)
-- [Reputation and Confidence](docs/reputation-and-confidence.md)
-- [Economics](docs/economics.md)
-- [Security policy](SECURITY.md)
-- [Contributing](CONTRIBUTING.md)
+| Path | Responsibility |
+|---|---|
+| [apps/bridge](apps/bridge) | Local MCP bridge: repository scan, spend policy, atomic apply, acceptance tests, and the buyer signer |
+| [apps/server](apps/server) | Hosted MCP endpoint, resolver, x402 paid tool and facilitator, warranty pipeline, APIs, dashboard host |
+| [apps/web](apps/web) | The dashboard |
+| [packages/core](packages/core) | Versioned schemas, digests, amounts, pricing and policy |
+| [packages/catalog](packages/catalog) | Releases, fixtures, resolver and catalog checks |
+| [packages/benchmark](packages/benchmark) | Paired agent experiments and evidence |
+| [packages/confidence](packages/confidence) | The score engine as reproducible wasm for the server |
+| [contracts](contracts) | Warranty registry (Foundry), and the Stylus score engine in [contracts/stylus](contracts/stylus) |
+| [e2e](e2e) | The full purchase on a local chain |
+| [docs](docs) | [Architecture](docs/architecture.md), [protocol](docs/protocol.md), [reputation and confidence](docs/reputation-and-confidence.md), [deployment](docs/deployment.md), and the rest of the [documentation guide](docs/README.md) |
+| [ops](ops) | Container, Railway configuration and Arbitrum Sepolia role setup |
 
 ## License
 
-Lemma is released under the [MIT License](LICENSE). Some bundled material keeps its own license:
-
-- The skills under `.claude/skills/` are vendored with their upstream licenses (Apache-2.0, MIT and CC-BY-SA-4.0), recorded in [`.claude/skills/SOURCES.md`](.claude/skills/SOURCES.md).
-- Each catalog release declares its own SPDX license in its manifest, and the contracts carry their own SPDX headers.
+Lemma is released under the [MIT License](LICENSE). The skills under `.claude/skills/` keep their upstream licenses, recorded in [`.claude/skills/SOURCES.md`](.claude/skills/SOURCES.md); each catalog release declares its own SPDX license, and the contracts carry their own SPDX headers. See also [Security policy](SECURITY.md) and [Contributing](CONTRIBUTING.md).

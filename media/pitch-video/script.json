@@ -1,0 +1,122 @@
+{
+  "fps": 30,
+  "wordsPerSecond": 2.45,
+  "introSeconds": 5,
+  "questionSeconds": 2.2,
+  "answerPadSeconds": 1.1,
+  "outroSeconds": 6,
+  "segments": [
+    {
+      "id": "q1",
+      "question": "What's changing in software?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Software is starting to pay software.",
+        "Coding agents already write a big share of our code,",
+        "and with x402 they can pay for what they use.",
+        "So what should they buy?",
+        "I'm Aryan, co-founder of Lemma."
+      ]
+    },
+    {
+      "id": "q2",
+      "question": "What's the problem?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Today, nothing.",
+        "Agents rebuild the same integrations from scratch, team after team.",
+        "They burn tokens, and the result can still fail its tests.",
+        "Eighty-four percent of developers now use or plan to use AI tools,",
+        "so this waste grows every day."
+      ]
+    },
+    {
+      "id": "q3",
+      "question": "Who feels it first?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Developers building paid agent tools.",
+        "Their agent has to add x402 payments to an MCP server:",
+        "the same few files every time, and easy to get wrong."
+      ]
+    },
+    {
+      "id": "q4",
+      "question": "What is Lemma?",
+      "speaker": "Awaan",
+      "phrases": [
+        "I'm Awaan.",
+        "Lemma turns solved work into something an agent can buy.",
+        "Before writing code, the agent asks Lemma.",
+        "If a tested integration fits the project, it buys it for cents,",
+        "applies it, and runs the tests.",
+        "If they fail, it gets its money back."
+      ]
+    },
+    {
+      "id": "q5",
+      "question": "Why now, and why Arbitrum?",
+      "speaker": "Awaan",
+      "phrases": [
+        "Agents now plug into tools through MCP in every major editor.",
+        "x402 lets them pay in USDC.",
+        "And Arbitrum is cheap enough to settle every purchase,",
+        "and back it with a bond, on chain."
+      ]
+    },
+    {
+      "id": "q6",
+      "question": "How does it make money?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Developers who solved an integration publish it with a bond behind it.",
+        "Agents pay per use, never more than thirty percent of what it saves them.",
+        "Providers earn every time their work is reused,",
+        "Lemma will keep a ten percent fee,",
+        "and a release that fails is refunded from its provider's bond."
+      ]
+    },
+    {
+      "id": "q7",
+      "question": "How does it grow?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Every free check tells us what agents need next.",
+        "We start with x402 payments for Arbitrum's agent builders,",
+        "then build whatever agents ask for most.",
+        "More outcomes mean better scores,",
+        "and better scores bring more agents."
+      ]
+    },
+    {
+      "id": "q8",
+      "question": "What's real today?",
+      "speaker": "Awaan",
+      "phrases": [
+        "Lemma is live.",
+        "One click installs it in Cursor, VS Code, Goose, Claude Code and Codex.",
+        "On Arbitrum Sepolia, an agent made two real purchases:",
+        "one passed, one failed and was refunded on chain."
+      ]
+    },
+    {
+      "id": "q9",
+      "question": "Who's building it?",
+      "speaker": "Awaan",
+      "phrases": [
+        "Aryan and I.",
+        "We built all of Lemma in under two weeks, during this buildathon."
+      ]
+    },
+    {
+      "id": "q10",
+      "question": "What do we need?",
+      "speaker": "Aryan",
+      "phrases": [
+        "At Founder House, we want to sign our first outside providers and paying teams,",
+        "and take Lemma to Arbitrum One.",
+        "Lemma: agents stop paying to rediscover solved work."
+      ]
+    }
+  ]
+}

@@ -1,0 +1,338 @@
+{
+	"fps": 30,
+	"total": 5673,
+	"introEnd": 150,
+	"outroStart": 5493,
+	"segments": [
+		{
+			"id": "q1",
+			"index": 0,
+			"question": "What's changing in software?",
+			"speaker": "Aryan",
+			"questionStart": 150,
+			"answerStart": 216,
+			"end": 700,
+			"words": 36,
+			"phrases": [
+				{
+					"text": "Software is starting to pay software.",
+					"start": 225,
+					"end": 299
+				},
+				{
+					"text": "Coding agents already write a big share of our code,",
+					"start": 299,
+					"end": 422
+				},
+				{
+					"text": "and with x402 they can pay for what they use.",
+					"start": 422,
+					"end": 545
+				},
+				{
+					"text": "So what should they buy?",
+					"start": 545,
+					"end": 606
+				},
+				{
+					"text": "I'm Aryan, co-founder of Lemma.",
+					"start": 606,
+					"end": 667
+				}
+			]
+		},
+		{
+			"id": "q2",
+			"index": 1,
+			"question": "What's the problem?",
+			"speaker": "Aryan",
+			"questionStart": 700,
+			"answerStart": 766,
+			"end": 1309,
+			"words": 41,
+			"phrases": [
+				{
+					"text": "Today, nothing.",
+					"start": 775,
+					"end": 799
+				},
+				{
+					"text": "Agents rebuild the same integrations from scratch, team after team.",
+					"start": 799,
+					"end": 921
+				},
+				{
+					"text": "They burn tokens, and the result can still fail its tests.",
+					"start": 921,
+					"end": 1056
+				},
+				{
+					"text": "Eighty-four percent of developers now use or plan to use AI tools,",
+					"start": 1056,
+					"end": 1203
+				},
+				{
+					"text": "so this waste grows every day.",
+					"start": 1203,
+					"end": 1276
+				}
+			]
+		},
+		{
+			"id": "q3",
+			"index": 2,
+			"question": "Who feels it first?",
+			"speaker": "Aryan",
+			"questionStart": 1309,
+			"answerStart": 1375,
+			"end": 1748,
+			"words": 27,
+			"phrases": [
+				{
+					"text": "Developers building paid agent tools.",
+					"start": 1384,
+					"end": 1445
+				},
+				{
+					"text": "Their agent has to add x402 payments to an MCP server:",
+					"start": 1445,
+					"end": 1580
+				},
+				{
+					"text": "the same few files every time, and easy to get wrong.",
+					"start": 1580,
+					"end": 1715
+				}
+			]
+		},
+		{
+			"id": "q4",
+			"index": 3,
+			"question": "What is Lemma?",
+			"speaker": "Awaan",
+			"questionStart": 1748,
+			"answerStart": 1814,
+			"end": 2406,
+			"words": 45,
+			"phrases": [
+				{
+					"text": "I'm Awaan.",
+					"start": 1823,
+					"end": 1847
+				},
+				{
+					"text": "Lemma turns solved work into something an agent can buy.",
+					"start": 1847,
+					"end": 1969
+				},
+				{
+					"text": "Before writing code, the agent asks Lemma.",
+					"start": 1969,
+					"end": 2055
+				},
+				{
+					"text": "If a tested integration fits the project, it buys it for cents,",
+					"start": 2055,
+					"end": 2202
+				},
+				{
+					"text": "applies it, and runs the tests.",
+					"start": 2202,
+					"end": 2275
+				},
+				{
+					"text": "If they fail, it gets its money back.",
+					"start": 2275,
+					"end": 2373
+				}
+			]
+		},
+		{
+			"id": "q5",
+			"index": 4,
+			"question": "Why now, and why Arbitrum?",
+			"speaker": "Awaan",
+			"questionStart": 2406,
+			"answerStart": 2472,
+			"end": 2930,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "Agents now plug into tools through MCP in every major editor.",
+					"start": 2481,
+					"end": 2616
+				},
+				{
+					"text": "x402 lets them pay in USDC.",
+					"start": 2616,
+					"end": 2689
+				},
+				{
+					"text": "And Arbitrum is cheap enough to settle every purchase,",
+					"start": 2689,
+					"end": 2799
+				},
+				{
+					"text": "and back it with a bond, on chain.",
+					"start": 2799,
+					"end": 2897
+				}
+			]
+		},
+		{
+			"id": "q6",
+			"index": 5,
+			"question": "How does it make money?",
+			"speaker": "Aryan",
+			"questionStart": 2930,
+			"answerStart": 2996,
+			"end": 3676,
+			"words": 52,
+			"phrases": [
+				{
+					"text": "Developers who solved an integration publish it with a bond behind it.",
+					"start": 3005,
+					"end": 3152
+				},
+				{
+					"text": "Agents pay per use, never more than thirty percent of what it saves them.",
+					"start": 3152,
+					"end": 3324
+				},
+				{
+					"text": "Providers earn every time their work is reused,",
+					"start": 3324,
+					"end": 3422
+				},
+				{
+					"text": "Lemma will keep a ten percent fee,",
+					"start": 3422,
+					"end": 3508
+				},
+				{
+					"text": "and a release that fails is refunded from its provider's bond.",
+					"start": 3508,
+					"end": 3643
+				}
+			]
+		},
+		{
+			"id": "q7",
+			"index": 6,
+			"question": "How does it grow?",
+			"speaker": "Aryan",
+			"questionStart": 3676,
+			"answerStart": 3742,
+			"end": 4225,
+			"words": 36,
+			"phrases": [
+				{
+					"text": "Every free check tells us what agents need next.",
+					"start": 3751,
+					"end": 3861
+				},
+				{
+					"text": "We start with x402 payments for Arbitrum's agent builders,",
+					"start": 3861,
+					"end": 3971
+				},
+				{
+					"text": "then build whatever agents ask for most.",
+					"start": 3971,
+					"end": 4057
+				},
+				{
+					"text": "More outcomes mean better scores,",
+					"start": 4057,
+					"end": 4118
+				},
+				{
+					"text": "and better scores bring more agents.",
+					"start": 4118,
+					"end": 4192
+				}
+			]
+		},
+		{
+			"id": "q8",
+			"index": 7,
+			"question": "What's real today?",
+			"speaker": "Awaan",
+			"questionStart": 4225,
+			"answerStart": 4291,
+			"end": 4749,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "Lemma is live.",
+					"start": 4300,
+					"end": 4337
+				},
+				{
+					"text": "One click installs it in Cursor, VS Code, Goose, Claude Code and Codex.",
+					"start": 4337,
+					"end": 4496
+				},
+				{
+					"text": "On Arbitrum Sepolia, an agent made two real purchases:",
+					"start": 4496,
+					"end": 4606
+				},
+				{
+					"text": "one passed, one failed and was refunded on chain.",
+					"start": 4606,
+					"end": 4716
+				}
+			]
+		},
+		{
+			"id": "q9",
+			"index": 8,
+			"question": "Who's building it?",
+			"speaker": "Awaan",
+			"questionStart": 4749,
+			"answerStart": 4815,
+			"end": 5041,
+			"words": 15,
+			"phrases": [
+				{
+					"text": "Aryan and I.",
+					"start": 4824,
+					"end": 4861
+				},
+				{
+					"text": "We built all of Lemma in under two weeks, during this buildathon.",
+					"start": 4861,
+					"end": 5008
+				}
+			]
+		},
+		{
+			"id": "q10",
+			"index": 9,
+			"question": "What do we need?",
+			"speaker": "Aryan",
+			"questionStart": 5041,
+			"answerStart": 5107,
+			"end": 5493,
+			"words": 28,
+			"phrases": [
+				{
+					"text": "At Founder House, we want to sign our first outside providers and paying teams,",
+					"start": 5116,
+					"end": 5288
+				},
+				{
+					"text": "and take Lemma to Arbitrum One.",
+					"start": 5288,
+					"end": 5362
+				},
+				{
+					"text": "Lemma: agents stop paying to rediscover solved work.",
+					"start": 5362,
+					"end": 5460
+				}
+			]
+		}
+	]
+}

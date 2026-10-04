@@ -48,12 +48,12 @@ The demo carries the judge's questions and the proof. The pitch carries the busi
 | | Pitch video | Demo video |
 | --- | --- | --- |
 | Question it answers | Why does this become a business, and why now? | What did we decide, and does it hold up on Arbitrum? |
-| Content | Vision, the waste at scale, the product in plain words, why now, business model, how it grows, traction, team, the ask | The wedge, the gap, why on chain and Stylus, what we cut, the trade-offs, then one live run with its transactions, state changes, a failure on purpose, and what is not covered yet |
+| Content | Vision, the waste at scale, the product in plain words, why now, business model, how it grows, traction, team, the ask | The wedge, the gap, why on chain and Stylus, then the 1 October run on Arbiscan with its transactions, state changes and the failure that was refunded, what still holds today, what we cut, the trade-offs, and what is not covered yet |
 | Criteria it scores | Product-market fit, real problem solving, innovation | Smart contract quality, deployed on Arbitrum, real problem solving |
 | Viewer | Arbitrum Foundation ecosystem and grants people choosing who goes to Founder House | Technical judges checking the build and the decisions |
 | What is on screen | Animation only, with a light music bed and two voices | The real product: the agent, the terminal, the dashboard, Arbiscan |
 | Technical words | None beyond "x402", "USDC" and "Arbitrum" | As many as the step needs |
-| Length | About 3:09 | About 4:45, never past 5 |
+| Length | About 3:09 | About 4:30, never past 5 |
 | Speakers | Aryan Singh Rathore and Awaan Mustafa Siddiqui, alternating | Aryan frames the problem and the close; Awaan drives the product |
 
 ## The pitch video: ten questions, about 3:09
@@ -84,74 +84,38 @@ Each answer is timed to about 2.4 spoken words a second. If a take runs long, th
 3. **Voice:** Aryan and Awaan each record their answers while watching the guide render (`lemma-pitch-guide.mp4`, a teleprompter with countdowns), one file per answer, `q1.m4a` to `q10.m4a`. QuickTime's New Audio Recording is enough.
 4. **Assembly:** `node scripts/mix-voices.mjs <voice folder>` places each file at its answer, cleans and levels the voices, lowers the music, and writes the final MP4 with ffmpeg alone.
 
-## The demo video storyboard, about 4:45
+## The demo video: the recorded run, about 4:30
 
-The demo answers the judge's questions in this order: the problem, the user, the gap, the insight, then the live proof (transaction, state change, a failure on purpose, durability), then the cuts, the trade-offs, what is not covered, and the future. Each judge question appears on screen as a chip in the top-left corner while it is answered, so a judge can tick them off.
+Decided on 2026-10-04: the demo uses the 1 October run on Arbitrum Sepolia, shown through the dashboard and Arbiscan, plus what can run live today: the free preview against the hosted server, the read-only contract check, and the durability tests. Nothing is staged. Every terminal shot replays output captured from a real run on 2026-10-04, and every browser shot is the live dashboard or Arbiscan. Aryan narrates the problem and the close; Awaan narrates the product and the proof.
 
-### Screen layouts
+Each beat opens with the judge's question as a short card (1.4 s), which then stays as a chip in the top-left corner. From the first transaction on, a tracker in the top-right corner holds three numbers from the deployment record: the buyer's USDC, the USDC in the registry, and the refund address's USDC.
 
-| Layout | What fills the screen |
-| --- | --- |
-| **Agent** | Claude Code full screen, font 18 pt, in the fixture repository. |
-| **Split** | tmux in three panes: left 60%, Claude Code (the agent); top right, the server's log through `jq`, showing only events (`settlement`, `activation`, `outcome`, `refund`); bottom right, the signer's log, later the evaluator's terminal. Each pane has a title bar: "Agent", "Lemma server", "Buyer signer" or "Evaluator". |
-| **Browser** | The dashboard or Arbiscan full screen, zoomed to 125%. |
-| **Proof** | Terminal on the left half, Arbiscan on the right half, showing the same transaction hash. |
-| **Card** | An animated full-screen card in the brand: dark background, mint accents, Lexend. |
+| # | Judge's question (chip) | Speaker | What is shown | Source |
+| --- | --- | --- | --- | --- |
+| 0 | — | — | Card: "Lemma, the demo". Labels: "Recorded run: Arbitrum Sepolia testnet, 2026-10-01" and "Live today: free preview, contract check". | Animation |
+| 1 | What's the problem? | Aryan | Three agent terminals side by side build the same x402 payment gating; token counters climb; one ends "✗ tests failed". | Animation |
+| 2 | Who has it? | Aryan | The `weather-mcp` repository: its file tree and `package.json` (TypeScript, MCP SDK, Node 22, npm). Callout: "our first user". | Terminal replay |
+| 3 | What's missing today? | Aryan | Grid: code search, post-failure coverage, Lemma, against "checks fit before payment", "price capped by measured saving", "refund from a bond". | Animation |
+| 4 | What's our insight? | Aryan | The dashboard's Benchmark page: the pricing calculator, the 30% cap ringed. | Browser |
+| 5 | What leaves your machine? | Awaan | Split. Left: the agent calls `lemma_preview`. Right: a logging relay shows the one request the bridge sends: the profile (language, Node 22, npm with its lockfile name, ESM, one dependency version). A padlock on the file tree: "source stays here". | Terminal replay |
+| 6 | What does Lemma answer? | Awaan | Three real answers from the hosted server: payment gating, `reuse` but "cannot be sold (PROFILE_NOT_BENCHMARKED)… nothing is charged"; the facilitator, "no release fits… nothing is charged"; a JavaScript repository, "not supported… nothing is charged". Stamp: "No evidence, no sale". | Terminal replay |
+| 7 | Why on chain, why Arbitrum, why Stylus? | Awaan | Diagram: USDC with no ETH for the agent; the registry holds the bond; one Rust crate runs as the Stylus contract and in the server. Then both contracts on Arbiscan. | Animation, browser |
+| 8 | Show the transaction | Awaan | The dashboard's "Two purchases, every step on chain", then Purchase 1's payment on Arbiscan: 0.25 USDC from the buyer to the provider, sent by the facilitator, which paid the gas. Tracker: buyer 1.00 → 0.75. | Browser |
+| 9 | Show the state change | Awaan | Purchase 1's warranty activation, then its result: `OutcomeFinalized`, passed, recorded into the Stylus engine (Logs tab). | Browser |
+| 10 | What happens when it fails? | Awaan | Purchase 2: paid (buyer 0.75 → 0.50), its result failed, then the refund: 0.25 USDC from the registry to the refund address. Tracker: registry 1.00 → 0.75, refund address 0 → 0.25. | Browser |
+| 11 | Does it hold today? | Awaan | `npm run sepolia:check` against the chain on 2026-10-04: code hashes match, wiring, solvency (0.75 held), 2 outcomes, score 4094 bps, "every check passed". | Terminal replay |
+| 12 | Is it durable? | Awaan | Five bridge tests pass: a lost answer recovered without paying twice, spending caps refusing before anything is signed, the signer refusing a payee or amount, an expired quote charging nothing, changed terms never paid. Then the contract test files, invariant tests included. | Terminal replay |
+| 13 | What did we cut? | Awaan | Strike-through list: marketplace, mainnet, fee split, reputation registration. "Prove the loop first." | Animation |
+| 14 | What did we trade off? | Awaan | Table: trade-off, why, what replaces it (team evaluator, metadata-only matching, one owner key, the 1 October release's made-up benchmark numbers). | Animation |
+| 15 | What isn't covered yet? | Aryan | Amber list: no sales on the hosted server until a release has measured evidence; independent evaluators; mainnet custody; reorg detection; macOS test sandboxing. | Animation |
+| 16 | What comes next? | Aryan | The home page's On Arbitrum Sepolia section, then a roadmap line, then the logo and links. | Browser, animation |
 
-### Overlays used throughout
+### How it gets made
 
-- **Question chip:** top left, mint outline, for example "Who has this problem?". It slides in when a beat starts and fades when it ends.
-- **State tracker:** top right, from 1:45 to 3:50, three rows: release score, buyer USDC, bond in the registry. When a number changes it flashes, with the change in green or red ("−0.25", "+0.25").
-- **Transaction counter:** under the tracker, "On-chain: 0 of 6", counting settlement, activation and outcome for each of the two purchases. The refund adds a seventh, shown as "+ refund".
-- **Hash match:** when a transaction appears, a mint box draws around the hash in the terminal, then the same box around the hash on Arbiscan.
-- **Zoom:** a slow 1.0 to 1.4 push-in on the line that matters, for example the `reuse` answer or "Success" on Arbiscan.
-- **Time-skip card:** "≈ 1 minute later" over a fast blur, wherever the chain or the evaluator makes us wait.
-- **Captions:** every spoken line, burned in at the bottom.
-
-### Shot list
-
-| Time | Judge's question (chip) | What is shown, and how it moves | What is said |
-| --- | --- | --- | --- |
-| 0:00–0:08 | — | **Card.** The Lemma mark draws itself; the line "Tested integrations your coding agent can reuse, on Arbitrum" types out; a small "Arbitrum Sepolia" badge fades in. | Aryan: "This is Lemma, on Arbitrum." |
-| 0:08–0:22 | What is the problem? | **Card, split in three.** Three terminal windows side by side, labelled Team A, B and C. Each types "Adding x402 payment gating…" and the same files appear in each. A token counter in each window climbs (12k, 31k, 58k). Window C ends in red: "✗ 2 tests failed". | "Coding agents keep rebuilding integrations that someone already built and tested. They pay for it in tokens, and it can still fail." |
-| 0:22–0:34 | Who has this problem? | **Agent.** The fixture TypeScript MCP server in Claude Code. A callout labels `package.json`: "TypeScript · MCP server · Node 22". The developer types: "add x402 payment gating on Arbitrum Sepolia". | "Our user is a developer whose agent has to add x402 payments to a TypeScript MCP server. Today the agent starts from zero, or copies something from GitHub." |
-| 0:34–0:50 | What is missing today? | **Card.** Three question cards drop in: "Does it fit my repo?", "Is it safe to apply?", "Is buying cheaper than building?". Then a grid builds row by row: code search (code ✓, fit ✗, refund ✗), post-failure coverage (fit ✗, refund ✓), Lemma (fit before payment ✓, price capped by saving ✓, refund from a bond ✓). The Lemma row lights mint. | "Code search gives code, not fit. Coverage products refund after something breaks. Nobody answers these three questions before you pay." |
-| 0:50–1:05 | What is our insight? | **Browser:** the Benchmark page calculator. The cursor drags the saving; the price cap moves with it; a highlight box rings "at most 30%". | "Our insight: price a release by what it saves. At most thirty percent of the saving a benchmark measured, the buyer keeps at least a quarter, and with no evidence it can't be sold." |
-| 1:05–1:25 | How is it better? | **Agent.** The agent calls `lemma_preview` before writing any code. Zoom on the tool call: the profile fields only (capability, runtime, packages). A padlock icon pops over the file tree: "source stays here". Then the answer: `reuse`, the price, evidence, limits, warranty terms; push in on "reuse". | Awaan: "Before writing code, the agent asks Lemma. Only this profile leaves the machine, never the source. The answer is deterministic: no model decides a match or a price. Here it's reuse." |
-| 1:25–1:45 | Why on chain? Why Arbitrum? | **Card, then Browser.** A diagram: a coin labelled "USDC, no ETH needed" moves from the agent to the provider; a vault labelled "Warranty registry (Solidity)" holds the bond; one Rust crate splits into two arrows, "Stylus contract" and "Lemma server", both ending at the same score. Then a cut to the two contracts on Arbiscan, with their addresses ringed. | "A refund promise means little if the seller holds the money, so a contract holds the bond. On Arbitrum the agent pays USDC and never needs ETH. We wrote the score once in Rust: the Stylus contract and our server run the same code, so they always agree." |
-| 1:45–1:55 | Show the state | **Browser.** Catalog page: the release card's score ringed. Arbiscan: the buyer's USDC and the registry's USDC ringed. The **state tracker** appears top right with all three values. | "Three numbers to watch: the score, the buyer's balance, and the bond." |
-| 1:55–2:15 | Show the transaction | **Split.** Left: the agent calls `lemma_buy_resolution`. Bottom right: the signer logs one signature. Top right: the server logs the settlement. **Proof:** the hash ringed in the terminal, then on Arbiscan with "Success" and the USDC transfer buyer → provider, 0.25. Tracker: buyer −0.25. Counter: 1 of 6. | "The agent pays 0.25 testnet USDC over x402. The key lives in a separate signer that checks the limits itself, and the facilitator pays the gas." |
-| 2:15–2:30 | Is it durable? | **Split.** The agent is stopped (Ctrl+C) right after paying, then restarted; it calls `lemma_apply_resolution`; the bridge answers that it recovered the purchase. Arbiscan: the buyer's transfers, still one payment, ringed. | "We cut the agent off right after it paid. On restart the bridge recovers the purchase for free. It never pays twice." |
-| 2:30–2:45 | Show the state change | **Time-skip card**, then **Browser:** the resolution page (`#/resolutions/<id>`) changes from "pending" to "active"; the activation hash ringed, opened on Arbiscan. Counter: 2 of 6. | "Now the warranty is active: the provider's bond reserves the price for this purchase." |
-| 2:45–3:05 | Show the state change | **Split.** The agent applies the patch (the files it writes scroll by), then `lemma_verify_adoption` runs the tests: green "passed". **Time-skip card.** The resolution page shows "passed" with the outcome hash; the Catalog score changes. Tracker: score up, in green. Counter: 3 of 6. | "Applied whole or not at all, the tests passed, and the outcome is recorded on chain. The Stylus contract just moved the score." |
-| 3:05–3:25 | One failure on purpose | **Split.** A second fixture repository. A callout: "Same profile, but its tests will fail". Preview, buy (counter: 4 of 6), activation (5 of 6), apply, verify: red "failed". Bottom-right pane becomes the **Evaluator**: `npm run evaluator -w @lemma/server -- list`, then `-- decide <id> failed`. The outcome transaction (6 of 6). Tracker: buyer −0.25, score down, in red. | "Now the case that matters: the patch fits, but this project's tests fail. Our evaluator reviews it and confirms the failure, on chain." |
-| 3:25–3:45 | Show the state change | **Split**, then **Proof.** The agent calls `lemma_claim_refund` and the answer reads "refunded". Arbiscan: the withdrawal transaction, 0.25 USDC from the registry to the refund address. Tracker: bond −0.25 in red, and a fourth row appears, "refund address +0.25", in green. Counter: "+ refund". | "The agent claims the refund. The contract pays it from the bond to the buyer's refund address, and the buyer still holds no ETH." |
-| 3:45–4:00 | Is it durable? | **Agent, in two halves.** Left half: an agent whose limit is 0.10 USDC tries to buy; the answer is refused with `EXCEEDS_PER_RESOLUTION`, and the signer's log is empty. Right half: an unsupported repository gets a free `build` answer, with no price and no offer. Two red "✗ nothing signed" and "✗ nothing sold" stamps. | "Over the spending limit, nothing is signed. Not a fit, nothing is sold, and checking is always free." |
-| 4:00–4:12 | What did we cut? | **Card.** A list with strike-through animating across each item: "Marketplace", "Mainnet", "Fee split", "Public reputation registration". Under it: "First prove the loop: pay → apply → test → refund." | Awaan: "We cut on purpose: no marketplace, no mainnet, no fee split, to prove this loop first." |
-| 4:12–4:24 | What did we trade off? | **Card.** A three-column table builds row by row: trade-off, why, what replaces it. "A team key judges failures / ship now / independent evaluators". "Matching reads metadata only / your code never leaves / fewer repositories covered". "One owner key on the contracts / ship now / a multisig". | "And the trade-offs, out loud: a team key judges failures for now, matching reads only metadata so it never sees your code, and one key owns the contracts until a multisig." |
-| 4:24–4:34 | What isn't covered yet? | **Card.** An amber list: "Independent evaluators", "Mainnet custody", "Reorg detection in the indexer", "Sandboxed tests on macOS". | "Not covered yet: independent evaluators, mainnet custody, reorg detection, and test sandboxing on macOS." |
-| 4:34–4:45 | What comes next? | **Browser:** the home page's On Arbitrum Sepolia section, then a **Card** roadmap line lighting node by node: measured benchmarks, outside providers, independent evaluators, audit, Arbitrum One. End on the logo, the dashboard URL and the GitHub link. | Aryan: "Next: measured benchmarks so releases go on sale, outside providers, an audit, then Arbitrum One. Lemma: agents stop paying to rediscover solved work." |
-
-### What to set up before recording
-
-1. **The server** runs on the recording machine against Arbitrum Sepolia: `e2e/live/serve.ts` with the demo catalog, `EVALUATOR_FAILURES=review`, and `WARRANTY_ACTIVATION_BATCH_SECONDS=0` with `WARRANTY_ACTIVATION_JITTER_SECONDS=0`.
-2. **The signer:** `lemma-signer serve`, with its log in the bottom-right pane.
-3. **Claude Code:** the bridge is configured with `LEMMA_API_URL` pointing at that server, the three spending variables, and `LEMMA_REFUND_TO`. A second configuration sets `LEMMA_MAX_USDC_PER_RESOLUTION=100000` for the refusal shot.
-4. **Three fixture repositories:** one the release fits whose tests pass, one it fits whose tests fail, and one it does not fit.
-5. **Funds:** at least 0.50 testnet USDC on the buyer for two purchases (top up from Circle's faucet), and at least 0.50 USDC of free bond in the registry.
-6. **Browser tabs:** dashboard Catalog, Benchmark, the resolution page, Arbiscan for the buyer, the registry, and the refund address.
-7. **Rehearse the lost-answer shot** (stop the agent right after the signer logs). If it does not recover cleanly in rehearsal, cut that beat and keep the spend-limit refusal.
-8. **Test an empty buyer balance.** If the bridge handles it cleanly, mention it at 3:45; if not, add it to the 4:24 list.
-9. **Record each beat as its own take.** Assemble them in an editor (DaVinci Resolve, CapCut or Descript), then add the overlays and the cards.
-
-### Where each part of the demo comes from
-
-Decide this before you record. The hosted server previews for free but sells nothing yet ([README](../README.md#where-it-stands)).
-
-1. **Best: run the live purchase again on Arbitrum Sepolia.** If the machine and role keys from the 2026-10-01 run still exist, run `e2e/live/serve.ts` and `e2e/live/agent.ts adopt pass`, then `adopt fail` and `refund`, as in [e2e/README.md](../e2e/README.md#live-run-on-arbitrum-sepolia). Set `WARRANTY_ACTIVATION_BATCH_SECONDS=0` so activations don't wait an hour. This gives new transactions, recorded on video.
-2. **Fallback: the recorded run.** Show the live free preview against the hosted server, then walk through the 2026-10-01 transactions on Arbiscan and the [deployment record](deployments/arbitrum-sepolia.md). Then run `npm run e2e` in a terminal, sped up, as the full flow on a local chain, and say plainly that it is a local chain with a stand-in engine.
-
-Either way, say on screen that the amounts are testnet USDC and that the release sold uses made-up benchmark evidence labelled `demo-1`.
+1. **Browser footage:** Chromium driven by Playwright records the dashboard and Arbiscan at 1920×1080 with scripted scrolling, and a mint outline on the line being talked about.
+2. **Terminal footage:** the real commands ran on 2026-10-04 and their output was saved. Remotion replays it as a terminal, with the command typed and the output streaming, labelled "real output, 2026-10-04".
+3. **Cards, chips, tracker and captions:** Remotion, with the same components as the pitch.
+4. **Voice:** a guide render with a teleprompter, as for the pitch. Aryan records `d1` to `d4`, `d15` and `d16`; Awaan records `d5` to `d14`. The same mixer places them.
 
 ## Claims to keep straight in both videos
 

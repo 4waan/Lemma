@@ -11,6 +11,13 @@ How to record the two videos for the Arbitrum Open House Singapore online builda
 - **HackQuest project fields:** a **Pitch Video**, a **Demo Video**, the GitHub repository, progress during the hackathon, and fundraising status. Each video can be an uploaded file or a YouTube or Loom link. HackQuest sets no length for this buildathon; its general guide asks for a demo of 2 to 5 minutes that shows the contract interaction and the UI ([HackQuest best practices](https://www.hackquest.io/blog/Best-Practices-for-Successful-Web3-Hackathon-Project-Submissions)).
 - **Buildathon form fields:** frontend link, core contract addresses (`network: address — label`, at most 300 characters), factory contracts, token contract, which code was written during the buildathon (at most 300 characters), and sponsor technologies.
 
+## Hard constraints
+
+- **Demo video:** required. HackQuest's checklist says at most 5 minutes, and a missing demo video, contract address or explorer link "can lead to disqualification". The demo must show the contract interaction, the UI and the working features ([HackQuest best practices](https://www.hackquest.io/blog/Best-Practices-for-Successful-Web3-Hackathon-Project-Submissions)).
+- **Pitch video:** its own field on the project. Neither this buildathon nor HackQuest sets a length or a content rule for it. Past winners kept it between 2 and 5 minutes.
+- **Both:** an uploaded file or a public YouTube or Loom link. HackQuest asks for a new upload for each hackathon, so don't reuse another event's video. Neither may need a login to watch.
+- **Not checked:** the buildathon's Terms and Conditions PDF sits behind a browser check and could not be read here. Open it before you submit: <https://openhouse.arbitrum.io/singapore_version_open_house_buildathon_terms___conditions.pdf>.
+
 ## What the judges say they look for
 
 Ben Greenberg (@hummusonrails), Arbitrum DevRel and a frequent Open House judge, wrote the most useful guide ([article](https://x.com/hummusonrails/status/2098064078438866979), linked from Builder's Block #026):

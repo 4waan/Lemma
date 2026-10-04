@@ -13,7 +13,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc -b && npm run bundle -w @lemma/web",
+    "build": "tsc -b && npm run bundle -w @lemma/web && npm run pack -w @lemma/bridge",
     "typecheck": "tsc -b",
     "typecheck:tests": "tsc -p tsconfig.test.json && tsc -p apps/web/tsconfig.test.json && tsc -p ops/sepolia/tsconfig.json && tsc -p e2e/tsconfig.json",
     "test": "vitest run",

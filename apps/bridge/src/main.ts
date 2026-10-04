@@ -26,7 +26,8 @@ import { Trace } from "./trace.js";
  * rule for the agent (Cursor by default): `.cursor/rules/lemma.mdc`, `.claude/rules/lemma.md`,
  * or a marked block in `AGENTS.md`.
  *
- * Environment: LEMMA_API_URL (default http://localhost:3000), LEMMA_WORKSPACE
+ * Environment: LEMMA_API_URL (default http://localhost:3000, or the server a
+ * packed bridge was downloaded from: apps/bridge/scripts/pack.mjs), LEMMA_WORKSPACE
  * (default: the current directory), LEMMA_STATE_DIR (default
  * $XDG_STATE_HOME/lemma; absolute, outside the workspace), LEMMA_ACCEPTANCE_OFFLINE=1
  * (Linux: run acceptance tests without network), LEMMA_ACCEPTANCE_CONFINE=0
@@ -44,7 +45,7 @@ async function serve(): Promise<void> {
     process.exitCode = 2;
     return;
   }
-  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? "http://localhost:3000"), undefined, undefined, { agentId });
+  const remote = new LemmaRemote(new URL(process.env["LEMMA_API_URL"] ?? process.env["LEMMA_BUNDLED_API_URL"] ?? "http://localhost:3000"), undefined, undefined, { agentId });
   let stateDir: string;
   try {
     stateDir = stateDirFor(root);

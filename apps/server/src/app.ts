@@ -16,7 +16,7 @@ import type { Logger } from "./log.js";
 import { type PaidToolRegistrar, buildMcpServer } from "./mcp.js";
 import { TokenBuckets } from "./rate-limit.js";
 import { DEMAND_MIN_PROFILES, DemandRecorder } from "./demand.js";
-import { DASHBOARD_CSP, dashboardIconPath, serveDashboard } from "./dashboard.js";
+import { DASHBOARD_CSP, dashboardIconPath, serveBridgeDownload, serveDashboard } from "./dashboard.js";
 import type { LemmaStore } from "./persistence.js";
 import { describeError } from "./errors.js";
 import type { FedBuyers } from "./reputation/feed.js";
@@ -50,6 +50,8 @@ export interface AppDeps {
   readonly storeKind?: "postgres" | "memory";
   /** The built dashboard (apps/web/dist); when absent, no dashboard is served. */
   readonly webRoot?: string | undefined;
+  /** The packed bridge (apps/bridge/pack/out), served under /dl/; when absent, nothing is. */
+  readonly bridgePackages?: string | undefined;
   /** Finalized adoption outcomes for the catalog's compatibility confidence, read from memory. Absent: none yet. */
   readonly outcomes?: OutcomeSource | undefined;
   /** Cached ERC-8004 adoption records for previews and the catalog (src/reputation); absent while reputation is off. */
@@ -78,6 +80,7 @@ export interface AppDeps {
  * - `/healthz`.
  * - `/` and `/assets/*`: the built dashboard, under a CSP that allows only
  *   this origin's scripts, styles and API.
+ * - `/dl/lemma-mcp-<version>.tgz`: the packed bridge, for one-command installs.
  */
 export function createApp(deps: AppDeps): Hono {
   const app = new Hono();
@@ -338,6 +341,7 @@ export function createApp(deps: AppDeps): Hono {
   });
 
   if (deps.webRoot !== undefined) serveDashboard(app, deps.webRoot);
+  if (deps.bridgePackages !== undefined) serveBridgeDownload(app, deps.bridgePackages);
   return app;
 }
 

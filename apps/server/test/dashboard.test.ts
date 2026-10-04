@@ -275,3 +275,30 @@ describe("the dashboard", () => {
     expect((await app().request("/")).status).toBe(404);
   });
 });
+
+describe("the bridge download", () => {
+  function packages(): string {
+    const root = mkdtempSync(join(tmpdir(), "lemma-dl-"));
+    temps.push(root);
+    writeFileSync(join(root, "lemma-mcp-0.1.0.tgz"), "tgz bytes");
+    writeFileSync(join(root, "notes.txt"), "not for the web\n");
+    symlinkSync("/etc/hostname", join(root, "lemma-mcp-9.9.9.tgz"));
+    return root;
+  }
+
+  it("serves the packed bridge for npx, with no page policy", async () => {
+    const res = await app({ bridgePackages: packages() }).request("/dl/lemma-mcp-0.1.0.tgz");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("application/gzip");
+    expect(res.headers.get("content-security-policy")).toBe("default-src 'none'; frame-ancestors 'none'");
+    expect(await res.text()).toBe("tgz bytes");
+  });
+
+  it("serves nothing but the package's own name, never through a link, and nothing when unpacked", async () => {
+    const a = app({ bridgePackages: packages() });
+    for (const path of ["/dl/notes.txt", "/dl/lemma-mcp-9.9.9.tgz", "/dl/lemma-mcp-0.1.0.tgz.map", "/dl/..%2Fnotes.txt", "/dl/lemma-mcp-1.0.0.tgz"]) {
+      expect((await a.request(path)).status, path).toBe(404);
+    }
+    expect((await app().request("/dl/lemma-mcp-0.1.0.tgz")).status).toBe(404);
+  });
+});

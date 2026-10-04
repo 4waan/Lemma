@@ -11,11 +11,11 @@ import { explorerAddressUrl, explorerName, explorerTxUrl } from "../src/links.js
 import { parseRoute, titleFor } from "../src/routes.js";
 import { Catalog } from "../src/views/Catalog.js";
 import { Demand } from "../src/views/Demand.js";
-import { Evidence } from "../src/views/Evidence.js";
+import { Benchmark } from "../src/views/Benchmark.js";
 import { Overview } from "../src/views/Overview.js";
 import { PricingCalculator } from "../src/views/PricingCalculator.js";
 import { Resolution, ResolutionLookup } from "../src/views/Resolution.js";
-import { Setup, serverOrigin } from "../src/views/Setup.js";
+import { Connect, serverOrigin } from "../src/views/Connect.js";
 import { Status } from "../src/views/Status.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
@@ -198,15 +198,15 @@ describe("formatting, links and routes", () => {
     expect(explorerName("http://localhost:5100/explorer/")).toBe("localhost:5100");
   });
 
-  it("routes the setup page, the in-page anchors, and titles every view", () => {
-    expect(parseRoute("#/setup")).toEqual({ view: "setup" });
+  it("routes the connect page, the in-page anchors, and titles every view", () => {
+    expect(parseRoute("#/connect")).toEqual({ view: "connect" });
     expect(parseRoute("#/how-it-works")).toEqual({ view: "overview", anchor: "how-it-works" });
-    expect(parseRoute("#/what-to-trust")).toEqual({ view: "evidence", anchor: "what-to-trust" });
-    expect(parseRoute("#/evidence")).toEqual({ view: "evidence", anchor: null });
+    expect(parseRoute("#/what-to-trust")).toEqual({ view: "benchmark", anchor: "what-to-trust" });
+    expect(parseRoute("#/benchmark")).toEqual({ view: "benchmark", anchor: null });
     expect(titleFor({ view: "overview", anchor: null })).toBe("Lemma · Tested integrations for coding agents");
     expect(titleFor({ view: "status", anchor: "verify" })).toBe("Status · Lemma");
-    expect(titleFor({ view: "evidence", anchor: null })).toBe("Proof · Lemma");
-    expect(titleFor({ view: "setup" })).toBe("Get started · Lemma");
+    expect(titleFor({ view: "benchmark", anchor: null })).toBe("Benchmark · Lemma");
+    expect(titleFor({ view: "connect" })).toBe("Connect your agent · Lemma");
     expect(titleFor({ view: "catalog" })).toBe("Catalog · Lemma");
     expect(titleFor({ view: "resolution", id: null })).toBe("Resolutions · Lemma");
     expect(titleFor({ view: "not-found" })).toBe("Not found · Lemma");
@@ -221,18 +221,16 @@ describe("formatting, links and routes", () => {
 });
 
 describe("pages", () => {
-  it("explains the product in one screen, with one example tagged as such", () => {
+  it("explains the product in one screen, beside a sample agent session", () => {
     const html = renderToStaticMarkup(<Overview />);
-    for (const text of ["Tested integrations your agent can reuse", "Agent session", "How it works", "On Arbitrum Sepolia", "Try it in your agent", 'id="how-it-works"']) expect(html).toContain(text);
+    for (const text of ["Tested integrations your agent can reuse", "Sample session", "How it works", "On Arbitrum Sepolia", "Try it in your agent", 'id="how-it-works"']) expect(html).toContain(text);
     expect(html.toLowerCase()).not.toContain("coming soon");
-    // The example session uses the worked example's numbers, under an Example tag.
-    expect(html).toContain('<aside class="panel session" aria-label="An example agent session"><div class="panel-head"><span>Agent session</span><span class="badge">Example</span>');
-    expect(html).toContain(`fits your project · ${WORKED_EXAMPLE.price} USDC`);
-    expect(html).not.toContain("lemma-mcp");
+    // The sample session uses the worked example's numbers.
+    expect(html).toContain(`<dd>${WORKED_EXAMPLE.price} USDC</dd>`);
     // The four steps include the warranty.
     for (const step of ["Check", "Buy", "Apply and test", "Covered"]) expect(html).toContain(`<h3>${step}</h3>`);
-    // What to trust is on the proof page, with its anchor.
-    const proof = renderToStaticMarkup(<Evidence view={previewOnly} />);
+    // What to trust is on the benchmark page, with its anchor.
+    const proof = renderToStaticMarkup(<Benchmark view={previewOnly} />);
     expect(proof).toContain('id="what-to-trust"');
     expect(proof).toContain("A provider bond backs a purchase when the server uses the warranty contract");
     // The known receipt gap is stated plainly.
@@ -255,17 +253,21 @@ describe("pages", () => {
     expect(renderToStaticMarkup(<Logo />)).toContain('<span class="wordmark">Lemma</span>');
   });
 
-  it("gives setup instructions from a checkout, without inventing this server's address when there is no window", () => {
+  it("installs from this server in one click or one command, without inventing its address when there is no window", () => {
     expect(serverOrigin()).toBe("https://<this server>");
-    const html = renderToStaticMarkup(<Setup />);
-    expect(html).toContain("install-rule --agent cursor .");
-    for (const tab of ["Cursor", "Claude Code", "Other agents"]) expect(html).toContain(tab);
-    expect(html).toContain("&lt;path to your Lemma checkout&gt;/apps/bridge/dist/main.js");
-    expect(html).toContain("lemma_buy_resolution");
-    // Purchases go through the separate signer, with limits in atomic USDC; the bridge itself needs no RPC or key.
+    const html = renderToStaticMarkup(<Connect />);
+    for (const tab of ["Cursor", "VS Code", "Claude Code", "Codex", "Goose", "Other"]) expect(html).toContain(`>${tab}</button>`);
+    // Cursor is the first tab: its install link, then the rule from the same package.
+    expect(html).toContain('href="https://cursor.com/en/install-mcp?name=lemma&amp;config=');
+    expect(html).toContain("Add to Cursor");
+    expect(html).toContain("npx -y -p https://&lt;this server&gt;/dl/lemma-mcp-0.1.0.tgz lemma-mcp install-rule --agent cursor .");
+    // Buying needs the signer, from the same package, and limits in atomic USDC; the bridge itself needs no RPC or key.
+    expect(html).toContain("Turn on buying");
+    expect(html).toContain("lemma-signer init");
     for (const name of ["LEMMA_SIGNER_SOCKET", "LEMMA_MAX_USDC_PER_RESOLUTION", "LEMMA_DAILY_USDC_CAP", "LEMMA_ALLOWED_PAY_TO"]) expect(html).toContain(name);
     expect(html).toContain("250000 is 0.25 USDC");
     expect(html).not.toContain("ARBITRUM_SEPOLIA_RPC_URL");
+    expect(html).not.toContain("checkout");
     // Every tool the bridge registers is listed, the refund tool included.
     for (const tool of ["lemma_preview", "lemma_buy_resolution", "lemma_apply_resolution", "lemma_verify_adoption", "lemma_claim_refund"]) expect(html).toContain(tool);
     // Purchases need a refund address other than the buyer's: there is no default to fall back on.
@@ -274,14 +276,14 @@ describe("pages", () => {
   });
 
   it("lists LEMMA_AGENT_ID, says what it publishes, and does not claim the bridge sends no environment value", () => {
-    const html = renderToStaticMarkup(<Setup />);
+    const html = renderToStaticMarkup(<Connect />);
     expect(html).toContain("<code>LEMMA_AGENT_ID</code>");
     expect(html).toContain("shows on chain that the paying wallet adopted that patch");
     expect(html).toContain("environment values, except LEMMA_AGENT_ID when you set it");
     expect(html).not.toContain("file paths or environment values to the server.");
   });
 
-  it("shows each release as a compact card, and what an agent asking for a missing capability gets", () => {
+  it("shows each release as a compact card, the integrations not available yet, and how to add one", () => {
     const html = renderToStaticMarkup(<Catalog view={previewOnly} />);
     // What it is, its price or a free preview, what it fits, the warranty and the source come first.
     for (const text of ["<h3>MCP server paywall</h3>", '<span class="badge">Free preview</span>', "x402 payment gating for a TypeScript MCP server", "<li>TypeScript</li>", "<li>Node 22–24</li>", "72 h to claim", "coinbase/x402"]) {
@@ -289,9 +291,16 @@ describe("pages", () => {
     }
     // No banner about what is missing, no reasons on the card, and the catalog's own titles stay out.
     for (const gone of ["Nothing is for sale yet", "not for sale yet", "not sold:", "Skeleton:"]) expect(html).not.toContain(gone);
-    // A capability with no release is shown by what an agent gets today.
-    expect(html).toContain("<h3>Payment facilitator</h3>");
-    expect(html).toContain("Agents asking for this get a free answer to build it themselves.");
+    // A capability with no release is one line under Not available yet, not a card; there are no filter chips.
+    expect(html).toContain("Not available yet");
+    expect(html).toContain("<strong>Payment facilitator</strong>");
+    expect(html).not.toContain("<h3>Payment facilitator</h3>");
+    expect(html).toContain("Agents asking for these get a free answer to build it themselves.");
+    expect(html).not.toContain('class="filters"');
+    // How to add a release: three steps and the guide.
+    expect(html).toContain("Add a release");
+    expect(html.match(/<ol><li>Pick one integration/g)).toHaveLength(1);
+    expect(html).toContain('href="https://github.com/4waan/Lemma/blob/main/packages/catalog/README.md#author-a-release"');
     // A sellable release shows its price.
     expect(renderToStaticMarkup(<Catalog view={withEvidence} />)).toContain('<span class="badge ok">0.25 USDC</span>');
   });
@@ -317,10 +326,10 @@ describe("pages", () => {
           })),
         })),
       });
-    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(4, 3)} />), renderToStaticMarkup(<Evidence view={withConfidence(4, 3)} />)]) {
+    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(4, 3)} />), renderToStaticMarkup(<Benchmark view={withConfidence(4, 3)} />)]) {
       expect(html).toContain("early estimate and 4 results from 3 buyers");
     }
-    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(5, null)} />), renderToStaticMarkup(<Evidence view={withConfidence(5, null)} />)]) {
+    for (const html of [renderToStaticMarkup(<Catalog view={withConfidence(5, null)} />), renderToStaticMarkup(<Benchmark view={withConfidence(5, null)} />)]) {
       expect(html).toContain("early estimate and 5 results from fewer than 3 buyers");
     }
     expect(renderToStaticMarkup(<Catalog view={withConfidence(1, null, "outcomes")} />)).toContain("1 result from fewer than 3 buyers");
@@ -328,15 +337,16 @@ describe("pages", () => {
     const prior = renderToStaticMarkup(<Catalog view={withEvidence} />);
     expect(prior).toContain("(from the early estimate)");
     expect(prior).not.toContain("buyers)");
-    expect(renderToStaticMarkup(<Evidence view={withConfidence(4, 3)} />)).toContain("Buyer counts show from 3 buyers up");
+    expect(renderToStaticMarkup(<Benchmark view={withConfidence(4, 3)} />)).toContain("Buyer counts show from 3 buyers up");
   });
 
-  it("shows how the benchmark and the score work before any evidence exists, and the measured profiles once it does", () => {
-    const empty = renderToStaticMarkup(<Evidence view={previewOnly} />);
-    for (const text of ["The benchmark", "Without Lemma", "The score", "Starts from the benchmark", "Moves with each result", "Stays current"]) expect(empty).toContain(text);
-    for (const gone of ["Measured profiles", "No frozen benchmark has run yet", "Nothing to be confident about yet"]) expect(empty).not.toContain(gone);
-    const html = renderToStaticMarkup(<Evidence view={withEvidence} />);
-    expect(html).toContain("Measured profiles");
+  it("says there are no results yet and shows the plan before any evidence exists, and the results once it does", () => {
+    const empty = renderToStaticMarkup(<Benchmark view={previewOnly} />);
+    for (const text of ["Results", "No published results yet", "The plan", "How it is measured", "Without Lemma", "The score", "Starts from the benchmark", "Moves with each result", "Stays current", "Try the pricing math", "What to trust"]) expect(empty).toContain(text);
+    for (const gone of ["Cheaper with Lemma", "All numbers", "Nothing to be confident about yet"]) expect(empty).not.toContain(gone);
+    const html = renderToStaticMarkup(<Benchmark view={withEvidence} />);
+    for (const text of ["Cheaper with Lemma", "Tests passed, with Lemma", "Tokens saved", "Spend when nothing fits", "All numbers"]) expect(html).toContain(text);
+    expect(html).not.toContain("No published results yet");
     expect(html).toContain("Early estimates are loaded");
     expect(html).toContain("from the early estimate");
     expect(html).toContain("With Lemma");
@@ -508,8 +518,8 @@ describe("pages", () => {
     const pages = [
       <Catalog key="c1" view={previewOnly} />,
       <Catalog key="c2" view={withEvidence} />,
-      <Evidence key="e1" view={previewOnly} />,
-      <Evidence key="e2" view={withEvidence} />,
+      <Benchmark key="e1" view={previewOnly} />,
+      <Benchmark key="e2" view={withEvidence} />,
       <Status key="s" view={status} />,
       <Resolution key="r" view={resolution} explorer={ARBISCAN} />,
       <Demand key="d" view={{ minProfiles: 5, buckets: [] }} />,

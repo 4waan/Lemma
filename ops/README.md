@@ -6,7 +6,7 @@ The container build, the x402 paid path, and the warranty pipeline are implement
 
 ## Container
 
-`Dockerfile` performs a reproducible Node 22 workspace build, prunes development dependencies, copies the compiled server and shared packages into the runtime image, and runs as the unprivileged `node` user.
+`Dockerfile` performs a reproducible Node 22 workspace build, prunes development dependencies, copies the compiled server, the dashboard, the packed bridge (served at `/dl/`) and the shared packages into the runtime image, and runs as the unprivileged `node` user. The build takes `PUBLIC_BASE_URL` as a build argument, which Railway passes from the service's variables, so the packed bridge reaches this server by default.
 
 Build from the Lemma repository root so workspace paths resolve:
 

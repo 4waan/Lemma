@@ -4,21 +4,29 @@ import { BUYERS_EXPLAINED, compatibilityBasis } from "../components/Compatibilit
 import { CostComparison } from "../components/CostChart.js";
 import { Hash } from "../components/copy.js";
 import { Icon, type IconName } from "../components/Icon.js";
-import { Badge, Callout, PageHead, Section, Stat } from "../components/ui.js";
+import { Badge, Callout, KeyValue, PageHead, Section, Stat } from "../components/ui.js";
 import { EVIDENCE_LABEL, percent, thousandths, usdc, when } from "../format.js";
 import { PricingCalculator } from "./PricingCalculator.js";
 
-/** The proof page: how savings are measured, every profile that carries evidence, the score, the pricing math, and what each guarantee covers. */
-export function Evidence({ view }: { view: CatalogView }) {
+/**
+ * The benchmark page: the results (or, before any are published, the plan),
+ * how a run is measured, the score, the pricing math, and what each guarantee
+ * covers.
+ */
+export function Benchmark({ view }: { view: CatalogView }) {
   const rows = view.releases.flatMap((r) => r.profiles.filter((p) => p.evidence !== null).map((p) => ({ release: r, profile: p })));
   const scored = view.releases.flatMap((r) => r.profiles.filter((p) => p.compatibility !== null).map((p) => ({ release: r, profile: p })));
   return (
     <>
-      <PageHead eyebrow="Proof" title="Measured, not promised">
-        <p className="lead">A release is sold only after a benchmark shows it saves money. Here is how that is measured.</p>
+      <PageHead eyebrow="Benchmark" title="Measured, not promised">
+        <p className="lead">The same task, run with and without Lemma. A release is sold only after this shows it saves money.</p>
       </PageHead>
 
-      <Section title="The benchmark" intro="The same task, model and starting project, run twice. The only difference is Lemma.">
+      <Section title="Results">
+        {rows.length === 0 ? <NoResults /> : <Results rows={rows} chainCost={BigInt(view.economics.chainCostUsdc)} />}
+      </Section>
+
+      <Section title="How it is measured" intro="The same task, model and starting project, run twice. The only difference is Lemma.">
         <div className="arms">
           <div className="arm">
             <h3>
@@ -46,30 +54,7 @@ export function Evidence({ view }: { view: CatalogView }) {
             </ol>
           </div>
         </div>
-        <dl className="stats">
-          <Stat label="Paired runs" value="20" note="3 tasks, each run 3 times both ways, plus one task with no match" />
-          <Stat label="Target" value="25% cheaper" note="in total cost and tokens, with the same test results" />
-          <Stat label="Saving we price from" value="The low end" note="the lower quartile of the paired savings, not the average" />
-          <Stat label="Spend when nothing fits" value="0 USDC" note="no match, no charge" />
-        </dl>
       </Section>
-
-      {rows.length === 0 ? null : (
-        <Section title="Measured profiles">
-          {rows.some(({ profile }) => profile.label === "provisional") ? (
-            <Callout title="Early estimates are loaded">
-              <p>An early estimate comes from a short probe: a few runs without Lemma and one with the patch applied by hand. It is more optimistic than the full benchmark.</p>
-            </Callout>
-          ) : null}
-          <div className="grid grid-2">
-            {rows.map(({ release, profile }) => (
-              <EvidenceCard key={`${release.releaseDigest}-${profile.profileIndex}`} release={release} profile={profile} chainCost={BigInt(view.economics.chainCostUsdc)} />
-            ))}
-          </div>
-          <h3 className="table-title">All numbers</h3>
-          <EvidenceTable rows={rows} />
-        </Section>
-      )}
 
       <Section title="The score" intro="A cautious estimate (the 90% lower bound) of how often a release's tests pass on a project like yours.">
         <ol className="score-steps">
@@ -119,6 +104,58 @@ export function Evidence({ view }: { view: CatalogView }) {
           ))}
         </ul>
       </Section>
+    </>
+  );
+}
+
+/** Before any frozen benchmark: say so, and show the plan every release goes through. */
+function NoResults() {
+  return (
+    <div className="bench-empty">
+      <div className="card bench-status">
+        <h3>No published results yet</h3>
+        <p>Releases stay free to check until a frozen benchmark measures what they save. Results appear here as soon as one is published.</p>
+      </div>
+      <div className="card">
+        <h3 className="card-title">The plan</h3>
+        <KeyValue
+          items={[
+            ["Paired runs", "20: 3 tasks, each run 3 times both ways, plus one task with no match"],
+            ["Target", "25% cheaper in total cost and tokens, with the same test results"],
+            ["Saving we price from", "The low end of the paired savings, not the average"],
+            ["Spend when nothing fits", "0 USDC"],
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** The measured profiles: headline figures, a cost chart for each, and every number in one table. */
+function Results({ rows, chainCost }: { rows: ReadonlyArray<{ release: ReleaseSummary; profile: ProfileSummary }>; chainCost: bigint }) {
+  const evidence = rows.flatMap(({ profile }) => (profile.evidence === null ? [] : [profile.evidence]));
+  const sum = (pick: (e: (typeof evidence)[number]) => number) => evidence.reduce((total, e) => total + pick(e), 0);
+  const best = rows.reduce<bigint | null>((top, { profile }) => (profile.allInReductionBps === null ? top : top === null || BigInt(profile.allInReductionBps) > top ? BigInt(profile.allInReductionBps) : top), null);
+  return (
+    <>
+      {rows.some(({ profile }) => profile.label === "provisional") ? (
+        <Callout title="Early estimates are loaded">
+          <p>An early estimate comes from a short probe: a few runs without Lemma and one with the patch applied by hand. It is more optimistic than the full benchmark.</p>
+        </Callout>
+      ) : null}
+      <dl className="stats">
+        <Stat label="Cheaper with Lemma" value={best === null ? "–" : `up to ${percent(best)}`} note="all in, at list price" />
+        <Stat label="Tests passed, with Lemma" value={`${sum((e) => e.passed.treatment)} of ${sum((e) => e.runs.treatment)}`} note={`without: ${sum((e) => e.passed.control)} of ${sum((e) => e.runs.control)}`} />
+        <Stat label="Tokens saved" value={sum((e) => e.expectedTokenSaving).toLocaleString("en-US")} note="expected, across measured profiles" />
+        <Stat label="Spend when nothing fits" value="0 USDC" note="no match, no charge" />
+      </dl>
+      <div className="grid grid-2">
+        {rows.map(({ release, profile }) => (
+          <EvidenceCard key={`${release.releaseDigest}-${profile.profileIndex}`} release={release} profile={profile} chainCost={chainCost} />
+        ))}
+      </div>
+      <h3 className="table-title">All numbers</h3>
+      <EvidenceTable rows={rows} />
     </>
   );
 }

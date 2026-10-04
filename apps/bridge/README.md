@@ -15,6 +15,12 @@ npm run dev -w @lemma/bridge
 
 The built executable is `lemma-mcp` at `dist/main.js`.
 
+### One-command install
+
+`npm run pack -w @lemma/bridge` (part of the root `npm run build`) bundles `lemma-mcp` and `lemma-signer` with every dependency into `pack/out/lemma-mcp-<version>.tgz`, a package with no dependencies and the agent rule. The server serves it at `/dl/lemma-mcp-<version>.tgz`, so an agent runs the bridge with `npx -y <server>/dl/lemma-mcp-<version>.tgz`, and the signer or the rule with `npx -y -p <that url> lemma-signer init` or `... lemma-mcp install-rule`. The dashboard's Connect page builds the Cursor, VS Code and Goose install links and the Claude Code and Codex commands from it.
+
+When the build has an https `PUBLIC_BASE_URL` (Railway passes the service's to the Docker build), the packed bridge reaches that server without `LEMMA_API_URL`; an install link that cannot pass environment values (Goose) relies on it. `LEMMA_API_URL` still wins when set.
+
 Start a Lemma server first, then configure the agent to launch the bridge from the target repository. `LEMMA_WORKSPACE` defaults to the bridge's working directory.
 
 Install the small rule that prompts an agent to preview before rebuilding a supported capability:

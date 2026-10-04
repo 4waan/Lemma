@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { type Loaded, MAX_POLL_MS, POLL_MS, POLL_START, type Polled, nextPolled, startPoll } from "../src/api.js";
 import { App } from "../src/App.js";
-import { FlowDiagram } from "../src/components/FlowDiagram.js";
-import { GasChart } from "../src/components/GasChart.js";
-import { LiveMeter, meterPick } from "../src/components/LiveMeter.js";
-import { DEPLOYMENT, PASSING_PURCHASE_GAS } from "../src/deployment.js";
-import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, isCurrent, parseRoute } from "../src/routes.js";
+import { WORKED_EXAMPLE } from "../src/calculator.js";
+import { AgentTerminal, DECISION, SESSION, transcript } from "../src/components/Terminal.js";
+import { DEPLOYMENT } from "../src/deployment.js";
+import { shortHex } from "../src/format.js";
+import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, REPOSITORY_URL, isCurrent, parseRoute } from "../src/routes.js";
 import { THEME_COLOR, applyTheme, storedTheme } from "../src/theme.js";
-import { Overview, Pricing, claimWindowText, recordFlow } from "../src/views/Overview.js";
+import { Overview, Pricing, claimWindowText } from "../src/views/Overview.js";
 import { VerifyIt } from "../src/views/Status.js";
 
 const NOW = new Date("2026-10-01T00:00:00.000Z");
@@ -50,8 +50,6 @@ function release(id: string, claimWindowHours = 72) {
   };
 }
 
-const fromOutcomes = (outcomes: number, bps: number, milli: string, buyers: number | null = null): ProfileCompatibility => ({ confidenceBps: bps, effectiveNMilli: milli, outcomes, source: "outcomes", buyers });
-
 function catalog(entries: ReadonlyArray<{ readonly id: string; readonly hours?: number; readonly compatibility?: ProfileCompatibility }>): CatalogView {
   return CatalogView.parse({
     schemaVersion: "1",
@@ -85,64 +83,6 @@ function status(chain: Partial<StatusView["chain"]> = {}, paidTools = true): Sta
 }
 
 const polled = <T,>(data: T, failure: string | null = null): Polled<T> => ({ loaded: { state: "ready", data }, failure });
-const failed = (message: string): Polled<never> => ({ loaded: { state: "error", message }, failure: null });
-
-describe("the live meter", () => {
-  it("shows the confidence with the most outcomes, its effective n, outcomes and buyers, when it was computed, and the engine", () => {
-    const view = catalog([
-      { id: "few-outcomes", compatibility: fromOutcomes(2, 1586, "2000") },
-      { id: "most-outcomes", compatibility: fromOutcomes(5, 4086, "6998", 3) },
-      { id: "none" },
-    ]);
-    expect(meterPick(view)?.release.releaseId).toBe("most-outcomes");
-    const html = renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status())} />);
-    expect(html).toContain("40.86 %");
-    expect(html).toContain("pass rate, a cautious estimate (90% lower bound)");
-    for (const figure of ["<dt>Sample size</dt><dd>6.998</dd>", "<dt>Test results</dt><dd>5</dd>", "<dt>Buyers</dt><dd>3</dd>"]) expect(html).toContain(figure);
-    expect(html).toContain("most-outcomes@0.1.0-skeleton");
-    expect(html).toContain("profile 0");
-    expect(html).toContain("Updated 2026-10-01 00:00 UTC");
-    expect(html).toContain(`href="https://sepolia.arbiscan.io/address/${ENGINE}"`);
-    expect(html).not.toContain("style=");
-  });
-
-  it("breaks a tie in outcomes by the larger effective n, and says under three buyers below three", () => {
-    const view = catalog([
-      { id: "smaller-n", compatibility: fromOutcomes(2, 1500, "1900") },
-      { id: "larger-n", compatibility: fromOutcomes(2, 1586, "2000") },
-    ]);
-    expect(meterPick(view)?.release.releaseId).toBe("larger-n");
-    expect(renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status())} />)).toContain("<dt>Buyers</dt><dd>under 3</dd>");
-  });
-
-  it("shows the releases being scored before any profile has a score, while loading, and when the catalog fails", () => {
-    const empty = renderToStaticMarkup(<LiveMeter catalog={polled(catalog([{ id: "a" }, { id: "b" }]))} status={polled(status())} />);
-    expect(empty).toContain('<span class="meter-value">2</span>');
-    expect(empty).toContain("releases in the catalog, scored from each test result");
-    expect(empty).not.toContain(" %");
-    expect(renderToStaticMarkup(<LiveMeter catalog={polled(catalog([{ id: "a" }]))} status={polled(status())} />)).toContain("release in the catalog, scored");
-    expect(renderToStaticMarkup(<LiveMeter catalog={POLL_START} status={POLL_START} />)).toContain("Loading…");
-    expect(renderToStaticMarkup(<LiveMeter catalog={failed("The server answered 500.")} status={POLL_START} />)).toContain("Live figures are unavailable right now (The server answered 500.)");
-  });
-
-  it("keeps the figures that loaded when a later refresh fails, and says so", () => {
-    const view = catalog([{ id: "a", compatibility: fromOutcomes(2, 1586, "2000") }]);
-    const kept = nextPolled(polled(view), { state: "error", message: "Too many requests; try again shortly.", status: 429 });
-    expect(kept.loaded).toEqual({ state: "ready", data: view });
-    const html = renderToStaticMarkup(<LiveMeter catalog={kept} status={polled(status())} />);
-    expect(html).toContain("15.86 %");
-    expect(html).toContain("The last refresh failed (Too many requests; try again shortly.)");
-    // New data clears the failure, and a failure before any data is shown as the error it is.
-    expect(nextPolled(kept, { state: "ready", data: view }).failure).toBeNull();
-    expect(nextPolled(POLL_START, { state: "error", message: "down" })).toEqual({ loaded: { state: "error", message: "down" }, failure: null });
-  });
-
-  it("links no engine when the server has none or turned explorer links off", () => {
-    const view = catalog([{ id: "a", compatibility: fromOutcomes(2, 1586, "2000") }]);
-    expect(renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status({ engine: null }))} />)).not.toContain("arbiscan");
-    expect(renderToStaticMarkup(<LiveMeter catalog={polled(view)} status={polled(status({ explorer: null }))} />)).not.toContain("arbiscan");
-  });
-});
 
 describe("polling", () => {
   afterEach(() => {
@@ -225,6 +165,14 @@ describe("polling", () => {
     h.poll.stop();
   });
 
+  it("keeps the data that loaded when a later refresh fails, says so, and clears the failure on new data", () => {
+    const kept = nextPolled(polled("catalog"), tooMany);
+    expect(kept).toEqual({ loaded: { state: "ready", data: "catalog" }, failure: "Too many requests; try again shortly." });
+    expect(nextPolled(kept, ok).failure).toBeNull();
+    // A failure before any data is shown as the error it is.
+    expect(nextPolled(POLL_START, { state: "error", message: "down" })).toEqual({ loaded: { state: "error", message: "down" }, failure: null });
+  });
+
   it("does not load or report after it is stopped", async () => {
     const h = harness([ok]);
     await vi.advanceTimersByTimeAsync(0);
@@ -236,22 +184,25 @@ describe("polling", () => {
 });
 
 describe("the home page sections", () => {
-  it("draws what happens to a test result as an ordered list of text, adding reputation only where the server posts it", () => {
-    const html = renderToStaticMarkup(<FlowDiagram label="What happens to one test result" steps={recordFlow(status())} />);
-    expect(html).toContain('<ol class="flow" aria-label="What happens to one test result">');
-    expect(html.match(/<li class="flow-step">/g)).toHaveLength(3);
-    for (const title of ["Signed result", "Warranty contract", "Score engine"]) expect(html).toContain(title);
-    expect(html).not.toContain("ERC-8004");
-    expect(html).toContain('aria-hidden="true"');
+  it("plays a sample session whose numbers are the worked example's and the recorded run's payment", () => {
+    // Outside a browser every line shows at once, as with reduced motion.
+    const html = renderToStaticMarkup(<AgentTerminal />);
+    expect(html).toContain("Sample session");
+    expect(html).toContain('class="terminal" aria-hidden="true"');
+    expect(html.match(/class="term-step shown"/g)).toHaveLength(SESSION.length);
+    for (const text of ["lemma_preview", "lemma_buy_resolution", "lemma_apply_resolution", "lemma_verify_adoption", DECISION.decision, `${WORKED_EXAMPLE.price} USDC`, `about ${WORKED_EXAMPLE.saving} USDC`, shortHex(DEPLOYMENT.paymentTx)]) {
+      expect(html).toContain(text);
+    }
+    // Screen readers get the session as sentences instead of the animation.
+    const lines = transcript();
+    expect(lines).toHaveLength(SESSION.length);
+    expect(lines[0]).toBe("You ask the agent: Add x402 payment gating to this MCP server");
+    expect(html).toContain('<ol class="sr-only" aria-label="The sample session">');
+    expect(html).toContain("Replay");
     expect(html).not.toContain("style=");
-    const withReputation = renderToStaticMarkup(<FlowDiagram label="flow" steps={recordFlow(status({ reputationRegistry: "0x00000000000000000000000000000000000000f1" }))} />);
-    expect(withReputation.match(/<li class="flow-step">/g)).toHaveLength(4);
-    expect(withReputation).toContain("Public reputation");
-    // Before the status loads, the flow shows the steps every deployment has.
-    expect(renderToStaticMarkup(<FlowDiagram label="flow" steps={recordFlow(null)} />).match(/<li class="flow-step">/g)).toHaveLength(3);
   });
 
-  it("prices from this server's catalog, with the claim window and one example tagged as such", () => {
+  it("prices from this server's catalog, with the claim window and one worked example, untagged", () => {
     const view = catalog([{ id: "a" }, { id: "b", hours: 48 }]);
     expect(claimWindowText(view)).toBe("48 to 72 hours");
     expect(claimWindowText(catalog([{ id: "a" }]))).toBe("72 hours");
@@ -260,20 +211,10 @@ describe("the home page sections", () => {
     for (const text of ["Free", "≤ 30%", "of what it saves you", "Included", "Claim within 48 to 72 hours"]) expect(html).toContain(text);
     expect(html).toContain('class="price-card featured"');
     // The worked example: 2.50 to build, 1.30 saved, a 0.39 price and 0.01 gas.
-    expect(html.match(/<span class="badge">Example<\/span>/g)).toHaveLength(1);
+    expect(html).toContain("One integration, built or bought");
+    expect(html).not.toContain(">Example<");
     for (const text of ["36%", "cheaper than building it", "0.39 USDC", "price: 30% of the 1.30 saved", "0.90 USDC", "Show the numbers"]) expect(html).toContain(text);
     expect(renderToStaticMarkup(<Pricing catalog={POLL_START} />)).toContain("Each patch sets its claim window");
-  });
-
-  it("charts each on-chain step's measured gas, linking every step to its transaction", () => {
-    const html = renderToStaticMarkup(<GasChart steps={DEPLOYMENT.steps} explorer={DEPLOYMENT.explorer} label="gas" />);
-    expect(html.match(/<li class="gas-row">/g)).toHaveLength(4);
-    for (const text of ["91,275 gas", "216,065 gas", "146,896 gas", "84,009 gas"]) expect(html).toContain(text);
-    for (const step of DEPLOYMENT.steps) expect(html).toContain(`href="https://sepolia.arbiscan.io/tx/${step.tx}"`);
-    // The bars are drawn, not read: the values are text beside them.
-    expect(html.match(/<svg class="gas-bar"[^>]*aria-hidden="true"/g)).toHaveLength(4);
-    expect(html).not.toContain("style=");
-    expect(PASSING_PURCHASE_GAS).toBe(91_275 + 216_065 + 146_896);
   });
 
   it("lists this server's contracts with explorer links, only the ones it uses, and the read-only check", () => {
@@ -287,17 +228,25 @@ describe("the home page sections", () => {
     expect(bare).not.toContain("arbiscan");
   });
 
-  it("renders the whole home page without inline styles, in its six parts", () => {
+  it("says what the chain adds in three short points, each linked to the recorded run, with no charts or gas figures", () => {
+    const html = renderToStaticMarkup(<Overview />);
+    const section = html.slice(html.indexOf('id="arbitrum"'), html.indexOf('id="pricing"'));
+    expect(section.match(/<li class="chain-point">/g)).toHaveLength(3);
+    for (const title of ["No gas for your agent", "Scores computed on chain", "Failed tests are refunded"]) expect(section).toContain(title);
+    expect(section).toContain(`href="https://sepolia.arbiscan.io/tx/${DEPLOYMENT.paymentTx}"`);
+    expect(section).toContain(`href="https://sepolia.arbiscan.io/address/${DEPLOYMENT.engine}"`);
+    expect(section).toContain(`href="https://sepolia.arbiscan.io/tx/${DEPLOYMENT.refundTx}"`);
+    expect(section).not.toMatch(/\d[\d,]* gas|ETH/);
+    expect(section).not.toMatch(/<svg class="(gas|cost)/);
+  });
+
+  it("renders the whole home page without inline styles, in its five parts", () => {
     const html = renderToStaticMarkup(<Overview />);
     expect(html).not.toContain("style=");
-    for (const text of ["Tested integrations your agent can reuse", 'id="how-it-works"', 'id="arbitrum"', `On ${NETWORK_LABEL}`, "Every test result counts", 'id="pricing"', "Try it in your agent"]) {
+    for (const text of ["Tested integrations your agent can reuse", "Sample session", 'id="how-it-works"', 'id="arbitrum"', `On ${NETWORK_LABEL}`, 'id="pricing"', "Try it in your agent", 'href="#/connect"']) {
       expect(html).toContain(text);
     }
-    for (const gone of ["Building blocks", 'id="verify"', "Run your own Lemma", "Why Arbitrum"]) expect(html).not.toContain(gone);
-    // The on-chain section shows the recorded run: its contracts, chain and gas.
-    for (const contract of DEPLOYMENT.contracts) expect(html).toContain(`href="https://sepolia.arbiscan.io/address/${contract.address.toLowerCase()}"`);
-    expect(html).toContain("421614");
-    expect(html).toContain("454,236 gas");
+    for (const gone of ["Every test result counts", "Live record", "Building blocks", 'id="verify"', "Why Arbitrum", "454,236 gas", "Chain ID"]) expect(html).not.toContain(gone);
   });
 });
 
@@ -306,7 +255,7 @@ const visibleText = (html: string) => html.replace(/<[^>]*>/g, " ").replace(/&#x
 
 describe("the wording", () => {
   it("never says testnet, demo, illustrative, placeholder or coming soon, and names the network only in the header and its own section", () => {
-    const pages = ["#/", "#/catalog", "#/evidence", "#/status", "#/setup", "#/demand", "#/resolutions", "#/nowhere"].map((hash) => visibleText(renderToStaticMarkup(<App initialHash={hash} />)));
+    const pages = ["#/", "#/catalog", "#/benchmark", "#/status", "#/connect", "#/demand", "#/resolutions", "#/nowhere"].map((hash) => visibleText(renderToStaticMarkup(<App initialHash={hash} />)));
     for (const text of pages) expect(text).not.toMatch(/testnet|\bdemo|illustrative|placeholder|coming soon|hackathon/i);
     const home = pages[0] as string;
     // The header badge and the section's title; amounts never carry the network.
@@ -391,25 +340,42 @@ describe("the shell", () => {
     expect(html).not.toContain("style=");
   });
 
-  it("marks the page on screen: the logo on the home page, a section's link on that section", () => {
+  it("marks the page on screen: the logo on the home page, a page's link on that page", () => {
     expect(renderToStaticMarkup(<App initialHash="#/" />)).toContain('aria-label="Lemma home" aria-current="page"');
-    const pricing = renderToStaticMarkup(<App initialHash="#/pricing" />);
-    expect(pricing).toContain('<a href="#/pricing" aria-current="page">Pricing</a>');
-    expect(pricing).not.toContain('aria-label="Lemma home" aria-current="page"');
-    expect(pricing).not.toContain('<a href="#/how-it-works" aria-current="page">');
+    expect(renderToStaticMarkup(<App initialHash="#/pricing" />)).not.toContain('aria-label="Lemma home" aria-current="page"');
+    expect(renderToStaticMarkup(<App initialHash="#/catalog" />)).toContain('<a href="#/catalog" aria-current="page">Catalog</a>');
+    expect(renderToStaticMarkup(<App initialHash="#/benchmark" />)).toContain('<a href="#/benchmark" aria-current="page">Benchmark</a>');
+    expect(renderToStaticMarkup(<App initialHash="#/connect" />)).toContain('href="#/connect" aria-current="page">Connect your agent</a>');
     expect(parseRoute("#/pricing")).toEqual({ view: "overview", anchor: "pricing" });
     expect(parseRoute("#/arbitrum")).toEqual({ view: "overview", anchor: "arbitrum" });
     // Verify it yourself lives on the Status page, beside this server's contracts.
     expect(parseRoute("#/verify")).toEqual({ view: "status", anchor: "verify" });
     expect(parseRoute("#/status")).toEqual({ view: "status", anchor: null });
-    const [how, catalogItem] = NAV;
+    const how = FOOTER_COLUMNS.flatMap((c) => c.items).find((item) => item.href === "#/how-it-works");
     expect(how !== undefined && isCurrent(how, { view: "overview", anchor: "how-it-works" })).toBe(true);
     expect(how !== undefined && isCurrent(how, { view: "overview", anchor: null })).toBe(false);
-    expect(catalogItem !== undefined && isCurrent(catalogItem, { view: "catalog" })).toBe(true);
     const verify = FOOTER_COLUMNS.flatMap((c) => c.items).find((item) => item.href === "#/verify");
     expect(verify !== undefined && isCurrent(verify, { view: "status", anchor: "verify" })).toBe(true);
     expect(verify !== undefined && isCurrent(verify, { view: "status", anchor: null })).toBe(false);
     // The header's network badge links to the section about the network.
     expect(renderToStaticMarkup(<App initialHash="#/" />)).toContain(`<a class="pill network" href="#/arbitrum"`);
+  });
+
+  it("links Catalog, Resolutions, Benchmark, Status and GitHub, with Connect your agent as the button", () => {
+    expect(NAV.map((item) => item.label)).toEqual(["Catalog", "Resolutions", "Benchmark", "Status", "GitHub"]);
+    const html = renderToStaticMarkup(<App initialHash="#/" />);
+    expect(html).toContain(`<a href="${REPOSITORY_URL}" target="_blank" rel="noopener noreferrer">GitHub`);
+    expect(REPOSITORY_URL).toBe("https://github.com/4waan/Lemma");
+    expect(html).toContain('<a class="btn btn-primary btn-sm" href="#/connect">Connect your agent</a>');
+    const github = NAV.find((item) => item.label === "GitHub");
+    expect(github !== undefined && isCurrent(github, { view: "overview", anchor: null })).toBe(false);
+  });
+
+  it("keeps the pages' earlier addresses working", () => {
+    expect(parseRoute("#/benchmark")).toEqual({ view: "benchmark", anchor: null });
+    expect(parseRoute("#/evidence")).toEqual({ view: "benchmark", anchor: null });
+    expect(parseRoute("#/what-to-trust")).toEqual({ view: "benchmark", anchor: "what-to-trust" });
+    expect(parseRoute("#/connect")).toEqual({ view: "connect" });
+    expect(parseRoute("#/setup")).toEqual({ view: "connect" });
   });
 });

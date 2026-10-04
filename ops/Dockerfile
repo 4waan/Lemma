@@ -8,6 +8,9 @@ COPY packages ./packages
 COPY tsconfig.json tsconfig.base.json ./
 
 RUN npm ci
+# The packed bridge reaches this server by default (apps/bridge/scripts/pack.mjs).
+# Railway passes the service's PUBLIC_BASE_URL to the build; elsewhere it is empty.
+ARG PUBLIC_BASE_URL=""
 RUN npm run build
 RUN npm prune --omit=dev
 
@@ -25,6 +28,8 @@ COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/drizzle ./apps/server/drizzle
 # The dashboard's built files: the server serves them at / under its own CSP.
 COPY --from=build /app/apps/web/dist ./apps/web/dist
+# The packed bridge: the server serves it at /dl/ for `npx -y <origin>/dl/lemma-mcp-<version>.tgz`.
+COPY --from=build /app/apps/bridge/pack/out ./apps/bridge/pack/out
 COPY --from=build /app/packages ./packages
 
 USER node

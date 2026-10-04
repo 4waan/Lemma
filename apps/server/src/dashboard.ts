@@ -57,6 +57,26 @@ export function serveDashboard(app: Hono, webRoot: string): void {
   });
 }
 
+/** The bridge package's file name, `lemma-mcp-<version>.tgz` (apps/bridge/scripts/pack.mjs). */
+export const BRIDGE_PACKAGE = /^lemma-mcp-\d+\.\d+\.\d+\.tgz$/;
+
+/**
+ * Serves the packed bridge under `/dl/`, so an agent installs it with one
+ * command: `npx -y <origin>/dl/lemma-mcp-<version>.tgz`. Only a regular file
+ * with the package's exact name is served, never through a link.
+ */
+export function serveBridgeDownload(app: Hono, packageRoot: string): void {
+  app.get("/dl/:name", (c) => {
+    const name = c.req.param("name");
+    const body = BRIDGE_PACKAGE.test(name) ? readRegular(join(packageRoot, name)) : undefined;
+    if (body === undefined) return c.json({ error: "not found" }, 404);
+    c.header("Content-Type", "application/gzip");
+    c.header("Content-Disposition", `attachment; filename="${name}"`);
+    c.header("Cache-Control", "public, max-age=300");
+    return c.body(new Uint8Array(body));
+  });
+}
+
 /**
  * The built dashboard's 180-pixel PNG icon (Vite's `apple-touch-icon-<hash>.png`),
  * as its path under `/assets/`, if it is there as a regular file the dashboard

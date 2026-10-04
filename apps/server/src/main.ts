@@ -159,6 +159,7 @@ const app = createApp({
   economics: catalog.economics,
   storeKind,
   webRoot: dashboardRoot(),
+  bridgePackages: bridgePackageRoot(),
   socketAddress: (c) => getConnInfo(c).remote.address,
   registerPaidTools: payments?.registerPaidTools,
   reputation: reputation.summaries,
@@ -183,6 +184,14 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 10_000).unref();
   });
+}
+
+/** The packed bridge next to this build (apps/bridge/pack/out), when it was packed. */
+function bridgePackageRoot(): string | undefined {
+  const root = fileURLToPath(new URL("../../bridge/pack/out", import.meta.url));
+  if (existsSync(root)) return root;
+  logger.log("warn", "startup.no_bridge_package", { note: "apps/bridge/pack/out is missing: /dl/ serves nothing (npm run pack -w @lemma/bridge)" });
+  return undefined;
 }
 
 /** The built dashboard next to this build (apps/web/dist), when it was built. */

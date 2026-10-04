@@ -21,7 +21,7 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 
 1. Show a TypeScript MCP fixture and ask the agent to add x402 on Arbitrum Sepolia.
 2. The agent calls `lemma_preview` before writing code. It is free and sends no source code.
-3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms. On the Catalog page, show the release's card and, under Details, its score (compatibility confidence: the benchmark's starting score, then real results, with how many distinct buyers are behind them once there are three) and its public record from ERC-8004. The calculator on the Proof page shows why the price is allowed.
+3. Show the typed match, supported profile, provenance, evidence, price, limitations, and warranty terms. On the Catalog page, show the release's card and, under Details, its score (compatibility confidence: the benchmark's starting score, then real results, with how many distinct buyers are behind them once there are three) and its public record from ERC-8004. The calculator on the Benchmark page shows why the price is allowed.
 4. Show the local bridge checking drift, spend policy, network, asset, recipient, and authorization window.
 5. The agent calls `lemma_buy_resolution`, and the signer signs one USDC authorization. The agent never holds ETH; the facilitator pays the gas. Open the Arbitrum Sepolia settlement transaction.
 6. Deliberately lose the paid response, then recover the same resolution without a second payment.
@@ -31,8 +31,8 @@ The full demo requires a public deployment with paid tools on, the warranty regi
 10. Switch to an incompatible fixture and show a free no-match with zero payment.
 11. Switch to the failing fixture: buy, apply, and verify. The failed receipt waits for the evaluator: `npm run evaluator -w @lemma/server -- list`, then `-- decide <resolutionId> failed`. The page shows the warranty failed with its credit.
 12. The agent calls `lemma_claim_refund`. The evaluator relays the withdrawal, the page shows the warranty refunded with the withdrawal transaction, and the refund address holds the price.
-13. End with the frozen control and treatment benchmark and its raw evidence references on the dashboard's Proof page.
-14. Close on the home page's On Arbitrum Sepolia section: the gas each step of a purchase used, each linked to its transaction, and the deployed contracts. Say what each part does today, then the future scope below.
+13. End with the frozen control and treatment benchmark and its raw evidence references on the dashboard's Benchmark page.
+14. Close on the home page's On Arbitrum Sepolia section: no gas for the agent, scores computed on chain by the Stylus engine, and a failed test refunded from the USDC bond, each linked to the recorded run on Arbiscan. Say what each part does today, then the future scope below.
 
 ## The local rehearsal instead
 

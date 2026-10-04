@@ -1,9 +1,10 @@
 // Mixes the voice-over into the rendered pitch with ffmpeg only.
 //
-//   node scripts/mix-voices.mjs [voice-dir] [video-in] [video-out]
+//   node scripts/mix-voices.mjs pitch|demo <voice-dir> [video-in] [video-out]
 //
-// voice-dir holds one file per answer, named by segment id: q1.m4a, q2.m4a …
-// q10.m4a (any extension ffmpeg reads: m4a, mp3, wav, aiff). Each file starts
+// voice-dir holds one file per answer, named by segment id: q1.m4a … q10.m4a
+// for the pitch, d1.m4a … d16.m4a for the demo (any extension ffmpeg reads:
+// m4a, mp3, wav, aiff). Each file starts
 // at its answer's start time. Leading silence is trimmed, every voice is
 // cleaned up (rumble filter, light noise reduction, gentle compression) and
 // levelled, the music is lowered under it, and the result is loudness
@@ -16,10 +17,15 @@ import path from 'node:path';
 
 const here = path.dirname(new URL(import.meta.url).pathname);
 const root = path.resolve(here, '..');
-const voiceDir = path.resolve(process.argv[2] ?? path.join(root, 'public/voice'));
-const videoIn = path.resolve(process.argv[3] ?? path.join(root, 'out/lemma-pitch-music-only.mp4'));
-const videoOut = path.resolve(process.argv[4] ?? path.join(root, 'out/lemma-pitch.mp4'));
-const timeline = JSON.parse(readFileSync(path.join(root, 'src/timeline.json'), 'utf8'));
+const video = process.argv[2];
+if (!['pitch', 'demo'].includes(video)) {
+	console.error('usage: node scripts/mix-voices.mjs pitch|demo <voice-dir> [video-in] [video-out]');
+	process.exit(1);
+}
+const voiceDir = path.resolve(process.argv[3] ?? path.join(root, 'public/voice', video));
+const videoIn = path.resolve(process.argv[4] ?? path.join(root, `out/lemma-${video}-music-only.mp4`));
+const videoOut = path.resolve(process.argv[5] ?? path.join(root, `out/lemma-${video}.mp4`));
+const timeline = JSON.parse(readFileSync(path.join(root, `src/timeline-${video}.json`), 'utf8'));
 
 const probe = (file) =>
 	Number(execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file]).toString().trim());
@@ -59,7 +65,7 @@ for (const s of timeline.segments) {
 }
 
 if (inputs.length === 0) {
-	console.error(`No voice files found in ${voiceDir}. Name them q1.m4a … q10.m4a.`);
+	console.error(`No voice files found in ${voiceDir}. Name them by segment id, for example ${timeline.segments[0].id}.m4a.`);
 	process.exit(1);
 }
 

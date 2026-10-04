@@ -1,0 +1,21 @@
+{
+	"name": "p1-out-logs",
+	"url": "https://sepolia.arbiscan.io/tx/0x08e34b4db84c9e908accfce915d9bf1c5a1814ff0ffafb16031d364fb45a060a#eventlog",
+	"width": 1600,
+	"height": 1106,
+	"scale": 2,
+	"boxes": {
+		"log1": {
+			"x": 141,
+			"y": 245.4375,
+			"w": 1318,
+			"h": 17.390625
+		},
+		"log2": {
+			"x": 302.5625,
+			"y": 585.15625,
+			"w": 353.484375,
+			"h": 23.75
+		}
+	}
+}

@@ -1,9 +1,14 @@
-// Builds timeline.json from script.json: when each question card, answer and
-// caption phrase starts, in frames. The Remotion composition and the music
-// synth both read it, so picture and sound share one clock.
+// Builds src/timeline-<video>.json from <video>.json (pitch or demo): when each
+// question card, answer and caption phrase starts, in frames. The Remotion
+// composition and the music synth both read it, so picture and sound share
+// one clock.
+//
+//   node scripts/timeline.mjs pitch|demo
 import {readFileSync, writeFileSync} from 'node:fs';
 
-const script = JSON.parse(readFileSync(new URL('../script.json', import.meta.url), 'utf8'));
+const video = process.argv[2];
+if (!['pitch', 'demo'].includes(video)) throw new Error('usage: node scripts/timeline.mjs pitch|demo');
+const script = JSON.parse(readFileSync(new URL(`../${video}.json`, import.meta.url), 'utf8'));
 const {fps} = script;
 const sec = (s) => Math.round(s * fps);
 const words = (text) => text.split(/\s+/).filter(Boolean).length;
@@ -39,7 +44,7 @@ const segments = script.segments.map((segment, index) => {
 const outroStart = cursor;
 const total = outroStart + sec(script.outroSeconds);
 const timeline = {fps, total, introEnd: sec(script.introSeconds), outroStart, segments};
-writeFileSync(new URL('../src/timeline.json', import.meta.url), JSON.stringify(timeline, null, '\t') + '\n');
+writeFileSync(new URL(`../src/timeline-${video}.json`, import.meta.url), JSON.stringify(timeline, null, '\t') + '\n');
 
 const clock = (f) => {
 	const s = f / fps;

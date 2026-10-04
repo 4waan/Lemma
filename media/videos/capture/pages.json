@@ -1,0 +1,98 @@
+[
+  {
+    "name": "benchmark",
+    "url": "$DASH/#/benchmark",
+    "height": 2700,
+    "targets": {
+      "math": "Try the pricing math",
+      "rule30": "At most 30% of the saving",
+      "rule25": "At least 25% cheaper",
+      "sellable": "Sellable. The price is at most 30%",
+      "allowed": "Highest price allowed",
+      "keep": "You keep"
+    }
+  },
+  {
+    "name": "home",
+    "url": "$DASH/#/arbitrum",
+    "height": 3000,
+    "targets": {
+      "network": "css:#arbitrum-title",
+      "gas": "No gas for your agent",
+      "scores": "Scores computed on chain",
+      "refunds": "Failed tests are refunded",
+      "purchases": "css:#purchases-title",
+      "p1": "Purchase 1",
+      "p2": "Purchase 2",
+      "p1pay": "Paid 0.25 USDC over x402",
+      "refundRow": "Refunded 0.25 USDC to the buyer"
+    }
+  },
+  {
+    "name": "registry-deploy",
+    "url": "$SCAN/tx/0xe3eaa9166b61e1e570e659359e7c3dbcac6dc7b44e83e6cdc3536bf1cc18eddf",
+    "height": 1150,
+    "targets": {
+      "created": "Contract Created at",
+      "status": "css:span.badge",
+      "time": "Timestamp:"
+    }
+  },
+  {
+    "name": "p1-pay",
+    "url": "$SCAN/tx/0x58792e541b6bb4024d93dc750c8cf2b84ee88a2c43f066b6e3e2f3a340e07693",
+    "height": 1300,
+    "targets": {
+      "action": "up2:TRANSACTION ACTION",
+      "testnet": "This is a Arbitrum Sepolia",
+      "status": "css:span.badge",
+      "time": "Timestamp:",
+      "from": "0x0E5C3Bc27Dfa45e74D162e236Ab873f345f87c9e",
+      "transfers": "ERC-20 Tokens Transferred",
+      "fee": "Transaction Fee:"
+    }
+  },
+  {
+    "name": "p1-act",
+    "url": "$SCAN/tx/0x881b5bcf18ca707e61f3e67419c33bc8d4e172b31627f002e0497d2b5b5cf201",
+    "height": 1200,
+    "targets": {
+      "status": "css:span.badge",
+      "time": "Timestamp:",
+      "from": "0x7D4D19d08C4b6e016CEEF37d341d9A1294951D61",
+      "to": "0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14"
+    }
+  },
+  {
+    "name": "p1-out-logs",
+    "url": "$SCAN/tx/0x08e34b4db84c9e908accfce915d9bf1c5a1814ff0ffafb16031d364fb45a060a#eventlog",
+    "height": 1250,
+    "targets": {
+      "log1": "Transaction Receipt Event Logs",
+      "log2": "0x0eDe0baf8b11B256Fb1C3BFD678A2087188d44b6"
+    }
+  },
+  {
+    "name": "p2-out",
+    "url": "$SCAN/tx/0xe2e4b36a88e71a7f7faf77a12aa3673f34141faa2502fc65b8d5ceed8971efd0",
+    "height": 1200,
+    "targets": {
+      "status": "css:span.badge",
+      "time": "Timestamp:",
+      "from": "0x6DB56f203b9a809cFf55515829c3C6E5B29be231",
+      "to": "0x0B0FdF70AD27B3404Bd4C7f317f56c2388305F14"
+    }
+  },
+  {
+    "name": "p2-refund",
+    "url": "$SCAN/tx/0x4d501efa6df5390e81980ad5508d322eec602ddfbb06b97eaa1d00f69cadf950",
+    "height": 1300,
+    "targets": {
+      "action": "up2:TRANSACTION ACTION",
+      "status": "css:span.badge",
+      "time": "Timestamp:",
+      "transfers": "ERC-20 Tokens Transferred",
+      "from": "0x6DB56f203b9a809cFf55515829c3C6E5B29be231"
+    }
+  }
+]

@@ -1,0 +1,27 @@
+{
+	"name": "registry-deploy",
+	"url": "https://sepolia.arbiscan.io/tx/0xe3eaa9166b61e1e570e659359e7c3dbcac6dc7b44e83e6cdc3536bf1cc18eddf",
+	"width": 1600,
+	"height": 1143,
+	"scale": 2,
+	"boxes": {
+		"created": {
+			"x": 193,
+			"y": 260.4375,
+			"w": 125.40625,
+			"h": 21.75
+		},
+		"status": {
+			"x": 120,
+			"y": 13.28125,
+			"w": 122.53125,
+			"h": 27.421875
+		},
+		"time": {
+			"x": 129,
+			"y": 500.4375,
+			"w": 335.5,
+			"h": 31.75
+		}
+	}
+}

@@ -137,7 +137,7 @@ Copy `.env.example` to `.env` only when a workflow needs configured infrastructu
 | [e2e](e2e) | The full purchase on a local chain |
 | [docs](docs) | [Architecture](docs/architecture.md), [protocol](docs/protocol.md), [reputation and confidence](docs/reputation-and-confidence.md), [deployment](docs/deployment.md), and the rest of the [documentation guide](docs/README.md) |
 | [ops](ops) | Container, Railway configuration and Arbitrum Sepolia role setup |
-| [media/pitch-video](media/pitch-video) | The buildathon pitch video, as a Remotion project outside the npm workspaces |
+| [media/videos](media/videos) | The buildathon pitch and demo videos, as a Remotion project outside the npm workspaces |
 
 ## License
 

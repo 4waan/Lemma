@@ -1,10 +1,14 @@
-// Synthesizes the pitch's music bed from src/timeline.json: a soft pad, a
+// Synthesizes a video's music bed from src/timeline-<video>.json: a soft pad, a
 // quiet arpeggio and a sub bass on a four-chord loop, a chime on every
 // question card, and the bed dipped under every answer so a voice sits on top.
-// Original audio, so nothing needs a license. Writes public/music.wav.
+// Original audio, so nothing needs a license. Writes public/music-<video>.wav.
+//
+//   node scripts/music.mjs pitch|demo
 import {readFileSync, writeFileSync} from 'node:fs';
 
-const timeline = JSON.parse(readFileSync(new URL('../src/timeline.json', import.meta.url), 'utf8'));
+const video = process.argv[2];
+if (!['pitch', 'demo'].includes(video)) throw new Error('usage: node scripts/music.mjs pitch|demo');
+const timeline = JSON.parse(readFileSync(new URL(`../src/timeline-${video}.json`, import.meta.url), 'utf8'));
 const RATE = 44100;
 const seconds = timeline.total / timeline.fps;
 const length = Math.ceil(seconds * RATE);
@@ -161,5 +165,5 @@ header.writeUInt16LE(4, 32);
 header.writeUInt16LE(16, 34);
 header.write('data', 36);
 header.writeUInt32LE(data.length, 40);
-writeFileSync(new URL('../public/music.wav', import.meta.url), Buffer.concat([header, data]));
-console.log(`music.wav: ${seconds.toFixed(1)} s`);
+writeFileSync(new URL(`../public/music-${video}.wav`, import.meta.url), Buffer.concat([header, data]));
+console.log(`music-${video}.wav: ${seconds.toFixed(1)} s`);

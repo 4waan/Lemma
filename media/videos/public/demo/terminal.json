@@ -1,0 +1,126 @@
+{
+	"capturedAt": "2026-10-04T04:42:52.039Z",
+	"repo": {
+		"files": [
+			"./.nvmrc",
+			"./package-lock.json",
+			"./package.json",
+			"./src/server.ts",
+			"./tsconfig.json"
+		],
+		"packageJson": [
+			"{",
+			"  \"name\": \"weather-mcp\",",
+			"  \"private\": true,",
+			"  \"type\": \"module\",",
+			"  \"scripts\": {",
+			"    \"build\": \"tsc\",",
+			"    \"test\": \"node --test\"",
+			"  },",
+			"  \"dependencies\": {",
+			"    \"@modelcontextprotocol/sdk\": \"^1.30.0\"",
+			"  },",
+			"  \"devDependencies\": {",
+			"    \"typescript\": \"5.9.2\"",
+			"  }",
+			"}"
+		]
+	},
+	"preview": [
+		{
+			"tool": "lemma_preview",
+			"args": {
+				"capability": "mcp-server.add-payment-gating"
+			}
+		}
+	],
+	"sent": {
+		"method": "POST",
+		"url": "/mcp",
+		"arguments": {
+			"task": {
+				"schemaVersion": "1",
+				"capability": "mcp-server.add-payment-gating"
+			},
+			"profile": {
+				"schemaVersion": "1",
+				"language": "typescript",
+				"runtime": {
+					"name": "node",
+					"major": 22
+				},
+				"packageManager": {
+					"name": "npm",
+					"lockfile": "package-lock.json"
+				},
+				"moduleSystem": "esm",
+				"dependencies": {
+					"@modelcontextprotocol/sdk": "1.30.1"
+				},
+				"frameworks": []
+			}
+		},
+		"others": [
+			"GET /api/v1/interest",
+			"POST /mcp",
+			"POST /mcp",
+			"GET /mcp"
+		]
+	},
+	"noFit": [
+		{
+			"tool": "lemma_preview",
+			"args": {
+				"capability": "node-service.add-payment-facilitator"
+			},
+			"answer": "Lemma: no release fits this repository (NO_RELEASE_FOR_CAPABILITY). Build it yourself; nothing is charged."
+		},
+		{
+			"tool": "lemma_preview",
+			"args": {
+				"capability": "mcp-server.add-payment-gating"
+			},
+			"answer": "Lemma: this repository's platform is not supported (UNSUPPORTED_LANGUAGE). Build it yourself; nothing is charged."
+		}
+	],
+	"sepoliaCheck": [
+		"ok   chain: 421614",
+		"ok   registry.code: 0x7131a3af590c2ae3618e8744c206d7459bad01cc4c0078c6987d1e74689bc5c7 (the deployment record's runtime code hash)",
+		"ok   registry.usdc: 0x75faf114eafb1bdbe2f0316df893fd58ce46aa4d",
+		"ok   registry.owner: 0xa12fd2fb08acd9993b5f209cd7bf4d47cdd31658",
+		"ok   registry.pendingOwner: 0x0000000000000000000000000000000000000000",
+		"ok   registry.paused: false",
+		"ok   registry.solvency: bonds available 750000, reserved 0, buyer credits 0, held 750000 (atomic testnet USDC)",
+		"ok   registry.engine: 0x0ede0baf8b11b256fb1c3bfd678a2087188d44b6 (the engine's deployment record)",
+		"ok   engine.code: 0x6bdfb8b5b906495168e4a0274ab8b156b802541ffbe5bf78d473d59bba3416a2 (the engine's deployment record)",
+		"ok   engine.registry: 0x0b0fdf70ad27b3404bd4c7f317f56c2388305f14",
+		"ok   engine.owner: 0xa12fd2fb08acd9993b5f209cd7bf4d47cdd31658",
+		"ok   engine.activation: 362 days before the Stylus program must be activated again",
+		"ok   release mcp-server-payment-gating@0.1.0-skeleton: not registered",
+		"ok   release mcp-client-paying-client@0.1.0-skeleton: not registered",
+		"warn rpc.log-timestamps: 6 of 6 logs carry a blockTimestamp that is not their header's (e.g. 0x0); block times must come from headers",
+		"ok   registry.events: 6 since block 314699714: ResolutionActivated 2, OutcomeFinalized 2, EngineRecordFailed 0, ResolutionExpired 0, CreditWithdrawn 1, EngineSet 1, Paused 0, Unpaused 0",
+		"ok   engine.records: no EngineRecordFailed",
+		"ok   engine.stats 0x5d412aef… profile 0: 2 outcomes, pass 998997952813425580 fail 1000000000000000000 (WAD), last 1790885358",
+		"ok   engine.confidence 0x5d412aef… profile 0: 4094 bps, effective n 6893 milli, at block 315560999",
+		"conformance: every check passed"
+	],
+	"tests": [
+		"✓ apps/bridge/test/buy.test.ts > lemma_buy_resolution in the bridge > recovers a lost answer for free and never pays twice",
+		"✓ apps/bridge/test/buy.test.ts > lemma_buy_resolution in the bridge > refuses over the bridge's caps before anything is signed or sent",
+		"✓ apps/bridge/test/buy.test.ts > lemma_buy_resolution in the bridge > pays nothing when the signer refuses a payee or an amount the bridge would allow",
+		"✓ apps/bridge/test/buy.test.ts > lemma_buy_resolution in the bridge > charges nothing for a quote the server finds expired, or when no offer is open",
+		"✓ apps/bridge/test/buy.test.ts > lemma_buy_resolution in the bridge > never pays a challenge that changes the terms, and never pays a challenge at all",
+		"Test Files  1 passed (1)",
+		"Tests  5 passed | 12 skipped (17)"
+	],
+	"contractTests": [
+		"contracts/test/DeployRegistry.t.sol",
+		"contracts/test/RegistryEngine.t.sol",
+		"contracts/test/RegistryFuzz.t.sol",
+		"contracts/test/RegistryPause.t.sol",
+		"contracts/test/ResolutionWarrantyRegistry.t.sol",
+		"contracts/test/Vectors.t.sol",
+		"contracts/test/invariant/RegistryInvariants.t.sol"
+	]
+}

@@ -1,0 +1,480 @@
+{
+	"fps": 30,
+	"total": 8282,
+	"introEnd": 180,
+	"outroStart": 8102,
+	"segments": [
+		{
+			"id": "d1",
+			"index": 0,
+			"question": "What's the problem?",
+			"speaker": "Aryan",
+			"questionStart": 180,
+			"answerStart": 225,
+			"end": 607,
+			"words": 28,
+			"phrases": [
+				{
+					"text": "Coding agents rebuild the same integrations again and again:",
+					"start": 234,
+					"end": 344
+				},
+				{
+					"text": "payment gating, paying clients, the same glue code.",
+					"start": 344,
+					"end": 442
+				},
+				{
+					"text": "Every rebuild burns tokens, and it can still fail its tests.",
+					"start": 442,
+					"end": 577
+				}
+			]
+		},
+		{
+			"id": "d2",
+			"index": 1,
+			"question": "Who has it?",
+			"speaker": "Aryan",
+			"questionStart": 607,
+			"answerStart": 652,
+			"end": 1095,
+			"words": 33,
+			"phrases": [
+				{
+					"text": "Our first user is a developer whose agent must add x402 payments",
+					"start": 661,
+					"end": 808
+				},
+				{
+					"text": "to a TypeScript MCP server, like this one.",
+					"start": 808,
+					"end": 906
+				},
+				{
+					"text": "A few files, easy to get wrong, and someone has already built them.",
+					"start": 906,
+					"end": 1065
+				}
+			]
+		},
+		{
+			"id": "d3",
+			"index": 2,
+			"question": "What's missing today?",
+			"speaker": "Aryan",
+			"questionStart": 1095,
+			"answerStart": 1140,
+			"end": 1620,
+			"words": 36,
+			"phrases": [
+				{
+					"text": "Code search gives you code, but not whether it fits your repository.",
+					"start": 1149,
+					"end": 1296
+				},
+				{
+					"text": "Coverage products pay out after something breaks.",
+					"start": 1296,
+					"end": 1382
+				},
+				{
+					"text": "Nobody answers before you pay:",
+					"start": 1382,
+					"end": 1443
+				},
+				{
+					"text": "does this fit, is it safe, and is it cheaper than building?",
+					"start": 1443,
+					"end": 1590
+				}
+			]
+		},
+		{
+			"id": "d4",
+			"index": 3,
+			"question": "What's our insight?",
+			"speaker": "Aryan",
+			"questionStart": 1620,
+			"answerStart": 1665,
+			"end": 2121,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "Price a release by what it saves.",
+					"start": 1674,
+					"end": 1760
+				},
+				{
+					"text": "A benchmark measures the saving, and the price can be at most thirty percent of it,",
+					"start": 1760,
+					"end": 1956
+				},
+				{
+					"text": "so the buyer always comes out ahead.",
+					"start": 1956,
+					"end": 2042
+				},
+				{
+					"text": "No evidence, no sale.",
+					"start": 2042,
+					"end": 2091
+				}
+			]
+		},
+		{
+			"id": "d5",
+			"index": 4,
+			"question": "What leaves your machine?",
+			"speaker": "Awaan",
+			"questionStart": 2121,
+			"answerStart": 2166,
+			"end": 2745,
+			"words": 44,
+			"phrases": [
+				{
+					"text": "Before writing code, the agent asks Lemma through our local bridge.",
+					"start": 2175,
+					"end": 2310
+				},
+				{
+					"text": "This request is all the bridge sends about your project:",
+					"start": 2310,
+					"end": 2433
+				},
+				{
+					"text": "the task, the language, the Node version, the package manager, the module system and one dependency version.",
+					"start": 2433,
+					"end": 2641
+				},
+				{
+					"text": "No source code, no file paths.",
+					"start": 2641,
+					"end": 2715
+				}
+			]
+		},
+		{
+			"id": "d6",
+			"index": 5,
+			"question": "What if nothing fits?",
+			"speaker": "Awaan",
+			"questionStart": 2745,
+			"answerStart": 2790,
+			"end": 3294,
+			"words": 38,
+			"phrases": [
+				{
+					"text": "If nothing fits, the answer is free.",
+					"start": 2799,
+					"end": 2885
+				},
+				{
+					"text": "A capability we don't have yet, or a JavaScript project we don't support:",
+					"start": 2885,
+					"end": 3044
+				},
+				{
+					"text": "build it yourself, nothing is charged.",
+					"start": 3044,
+					"end": 3117
+				},
+				{
+					"text": "Matching is deterministic, so no model decides a match or a price.",
+					"start": 3117,
+					"end": 3264
+				}
+			]
+		},
+		{
+			"id": "d7",
+			"index": 6,
+			"question": "Why on chain, why Arbitrum, why Stylus?",
+			"speaker": "Awaan",
+			"questionStart": 3294,
+			"answerStart": 3339,
+			"end": 4039,
+			"words": 54,
+			"phrases": [
+				{
+					"text": "A refund promise means little if the seller holds the money,",
+					"start": 3348,
+					"end": 3483
+				},
+				{
+					"text": "so a registry contract on Arbitrum holds the provider's bond.",
+					"start": 3483,
+					"end": 3605
+				},
+				{
+					"text": "The agent pays in USDC and never needs ETH.",
+					"start": 3605,
+					"end": 3715
+				},
+				{
+					"text": "And we wrote the score once in Rust:",
+					"start": 3715,
+					"end": 3813
+				},
+				{
+					"text": "the same code runs as a Stylus contract and in our server, so they always agree.",
+					"start": 3813,
+					"end": 4009
+				}
+			]
+		},
+		{
+			"id": "d8",
+			"index": 7,
+			"question": "Show the transaction",
+			"speaker": "Awaan",
+			"questionStart": 4039,
+			"answerStart": 4084,
+			"end": 4539,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "Here is a real purchase from October first, on Arbitrum Sepolia.",
+					"start": 4093,
+					"end": 4228
+				},
+				{
+					"text": "The agent paid zero point two five USDC over x402.",
+					"start": 4228,
+					"end": 4350
+				},
+				{
+					"text": "The buyer signed, and our facilitator sent the transaction and paid the gas.",
+					"start": 4350,
+					"end": 4509
+				}
+			]
+		},
+		{
+			"id": "d9",
+			"index": 8,
+			"question": "Show the state change",
+			"speaker": "Awaan",
+			"questionStart": 4539,
+			"answerStart": 4584,
+			"end": 5052,
+			"words": 35,
+			"phrases": [
+				{
+					"text": "Next, the provider's bond is reserved for this purchase, and the warranty becomes active.",
+					"start": 4593,
+					"end": 4765
+				},
+				{
+					"text": "The agent applied the patch and its tests passed,",
+					"start": 4765,
+					"end": 4875
+				},
+				{
+					"text": "and the result was recorded on chain, into the Stylus score engine.",
+					"start": 4875,
+					"end": 5022
+				}
+			]
+		},
+		{
+			"id": "d10",
+			"index": 9,
+			"question": "What happens when it fails?",
+			"speaker": "Awaan",
+			"questionStart": 5052,
+			"answerStart": 5097,
+			"end": 5552,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "Now the case that matters: a second purchase, where the project's tests failed.",
+					"start": 5106,
+					"end": 5265
+				},
+				{
+					"text": "The failure was recorded on chain,",
+					"start": 5265,
+					"end": 5338
+				},
+				{
+					"text": "and the bond paid zero point two five USDC back to the buyer's refund address.",
+					"start": 5338,
+					"end": 5522
+				}
+			]
+		},
+		{
+			"id": "d11",
+			"index": 10,
+			"question": "Does it hold today?",
+			"speaker": "Awaan",
+			"questionStart": 5552,
+			"answerStart": 5597,
+			"end": 6065,
+			"words": 35,
+			"phrases": [
+				{
+					"text": "And it still holds today.",
+					"start": 5606,
+					"end": 5667
+				},
+				{
+					"text": "This read-only check runs against the chain:",
+					"start": 5667,
+					"end": 5753
+				},
+				{
+					"text": "the contract code matches, the wiring is right, the registry is solvent,",
+					"start": 5753,
+					"end": 5900
+				},
+				{
+					"text": "and the score is recomputed from both outcomes.",
+					"start": 5900,
+					"end": 5998
+				},
+				{
+					"text": "Every check passed.",
+					"start": 5998,
+					"end": 6035
+				}
+			]
+		},
+		{
+			"id": "d12",
+			"index": 11,
+			"question": "Is it durable?",
+			"speaker": "Awaan",
+			"questionStart": 6065,
+			"answerStart": 6110,
+			"end": 6565,
+			"words": 34,
+			"phrases": [
+				{
+					"text": "We tested the hard paths.",
+					"start": 6119,
+					"end": 6180
+				},
+				{
+					"text": "A lost answer is recovered without paying twice.",
+					"start": 6180,
+					"end": 6278
+				},
+				{
+					"text": "Spending limits refuse before anything is signed.",
+					"start": 6278,
+					"end": 6364
+				},
+				{
+					"text": "Changed payment terms are never paid.",
+					"start": 6364,
+					"end": 6437
+				},
+				{
+					"text": "And the contracts have fuzz and invariant tests.",
+					"start": 6437,
+					"end": 6535
+				}
+			]
+		},
+		{
+			"id": "d13",
+			"index": 12,
+			"question": "What did we cut?",
+			"speaker": "Awaan",
+			"questionStart": 6565,
+			"answerStart": 6610,
+			"end": 6918,
+			"words": 22,
+			"phrases": [
+				{
+					"text": "We cut on purpose: no marketplace, no mainnet, no fee split yet.",
+					"start": 6619,
+					"end": 6766
+				},
+				{
+					"text": "First we proved the whole loop: pay, apply, test, refund.",
+					"start": 6766,
+					"end": 6888
+				}
+			]
+		},
+		{
+			"id": "d14",
+			"index": 13,
+			"question": "What did we trade off?",
+			"speaker": "Awaan",
+			"questionStart": 6918,
+			"answerStart": 6963,
+			"end": 7444,
+			"words": 36,
+			"phrases": [
+				{
+					"text": "And the trade-offs, out loud.",
+					"start": 6972,
+					"end": 7033
+				},
+				{
+					"text": "A team key judges failures for now.",
+					"start": 7033,
+					"end": 7119
+				},
+				{
+					"text": "Matching reads only metadata, so it covers fewer projects but never sees your code.",
+					"start": 7119,
+					"end": 7291
+				},
+				{
+					"text": "And one owner key holds the contracts until a multisig.",
+					"start": 7291,
+					"end": 7414
+				}
+			]
+		},
+		{
+			"id": "d15",
+			"index": 14,
+			"question": "What isn't covered yet?",
+			"speaker": "Aryan",
+			"questionStart": 7444,
+			"answerStart": 7489,
+			"end": 7736,
+			"words": 17,
+			"phrases": [
+				{
+					"text": "Not covered yet: independent evaluators, mainnet custody,",
+					"start": 7498,
+					"end": 7584
+				},
+				{
+					"text": "reorg detection in our indexer, and sandboxed tests on macOS.",
+					"start": 7584,
+					"end": 7706
+				}
+			]
+		},
+		{
+			"id": "d16",
+			"index": 15,
+			"question": "What comes next?",
+			"speaker": "Aryan",
+			"questionStart": 7736,
+			"answerStart": 7781,
+			"end": 8102,
+			"words": 23,
+			"phrases": [
+				{
+					"text": "Next: measured benchmarks for every release, outside providers, independent evaluators, an audit, then Arbitrum One.",
+					"start": 7790,
+					"end": 7974
+				},
+				{
+					"text": "Lemma: agents stop paying to rediscover solved work.",
+					"start": 7974,
+					"end": 8072
+				}
+			]
+		}
+	]
+}

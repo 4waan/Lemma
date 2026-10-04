@@ -1,0 +1,178 @@
+{
+  "fps": 30,
+  "wordsPerSecond": 2.45,
+  "introSeconds": 6,
+  "questionSeconds": 1.5,
+  "answerPadSeconds": 1.0,
+  "outroSeconds": 6,
+  "segments": [
+    {
+      "id": "d1",
+      "question": "What's the problem?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Coding agents rebuild the same integrations again and again:",
+        "payment gating, paying clients, the same glue code.",
+        "Every rebuild burns tokens, and it can still fail its tests."
+      ]
+    },
+    {
+      "id": "d2",
+      "question": "Who has it?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Our first user is a developer whose agent must add x402 payments",
+        "to a TypeScript MCP server, like this one.",
+        "A few files, easy to get wrong, and someone has already built them."
+      ]
+    },
+    {
+      "id": "d3",
+      "question": "What's missing today?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Code search gives you code, but not whether it fits your repository.",
+        "Coverage products pay out after something breaks.",
+        "Nobody answers before you pay:",
+        "does this fit, is it safe, and is it cheaper than building?"
+      ]
+    },
+    {
+      "id": "d4",
+      "question": "What's our insight?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Price a release by what it saves.",
+        "A benchmark measures the saving, and the price can be at most thirty percent of it,",
+        "so the buyer always comes out ahead.",
+        "No evidence, no sale."
+      ]
+    },
+    {
+      "id": "d5",
+      "question": "What leaves your machine?",
+      "speaker": "Awaan",
+      "phrases": [
+        "Before writing code, the agent asks Lemma through our local bridge.",
+        "This request is all the bridge sends about your project:",
+        "the task, the language, the Node version, the package manager, the module system and one dependency version.",
+        "No source code, no file paths."
+      ]
+    },
+    {
+      "id": "d6",
+      "question": "What if nothing fits?",
+      "speaker": "Awaan",
+      "phrases": [
+        "If nothing fits, the answer is free.",
+        "A capability we don't have yet, or a JavaScript project we don't support:",
+        "build it yourself, nothing is charged.",
+        "Matching is deterministic, so no model decides a match or a price."
+      ]
+    },
+    {
+      "id": "d7",
+      "question": "Why on chain, why Arbitrum, why Stylus?",
+      "speaker": "Awaan",
+      "phrases": [
+        "A refund promise means little if the seller holds the money,",
+        "so a registry contract on Arbitrum holds the provider's bond.",
+        "The agent pays in USDC and never needs ETH.",
+        "And we wrote the score once in Rust:",
+        "the same code runs as a Stylus contract and in our server, so they always agree."
+      ]
+    },
+    {
+      "id": "d8",
+      "question": "Show the transaction",
+      "speaker": "Awaan",
+      "phrases": [
+        "Here is a real purchase from October first, on Arbitrum Sepolia.",
+        "The agent paid zero point two five USDC over x402.",
+        "The buyer signed, and our facilitator sent the transaction and paid the gas."
+      ]
+    },
+    {
+      "id": "d9",
+      "question": "Show the state change",
+      "speaker": "Awaan",
+      "phrases": [
+        "Next, the provider's bond is reserved for this purchase, and the warranty becomes active.",
+        "The agent applied the patch and its tests passed,",
+        "and the result was recorded on chain, into the Stylus score engine."
+      ]
+    },
+    {
+      "id": "d10",
+      "question": "What happens when it fails?",
+      "speaker": "Awaan",
+      "phrases": [
+        "Now the case that matters: a second purchase, where the project's tests failed.",
+        "The failure was recorded on chain,",
+        "and the bond paid zero point two five USDC back to the buyer's refund address."
+      ]
+    },
+    {
+      "id": "d11",
+      "question": "Does it hold today?",
+      "speaker": "Awaan",
+      "phrases": [
+        "And it still holds today.",
+        "This read-only check runs against the chain:",
+        "the contract code matches, the wiring is right, the registry is solvent,",
+        "and the score is recomputed from both outcomes.",
+        "Every check passed."
+      ]
+    },
+    {
+      "id": "d12",
+      "question": "Is it durable?",
+      "speaker": "Awaan",
+      "phrases": [
+        "We tested the hard paths.",
+        "A lost answer is recovered without paying twice.",
+        "Spending limits refuse before anything is signed.",
+        "Changed payment terms are never paid.",
+        "And the contracts have fuzz and invariant tests."
+      ]
+    },
+    {
+      "id": "d13",
+      "question": "What did we cut?",
+      "speaker": "Awaan",
+      "phrases": [
+        "We cut on purpose: no marketplace, no mainnet, no fee split yet.",
+        "First we proved the whole loop: pay, apply, test, refund."
+      ]
+    },
+    {
+      "id": "d14",
+      "question": "What did we trade off?",
+      "speaker": "Awaan",
+      "phrases": [
+        "And the trade-offs, out loud.",
+        "A team key judges failures for now.",
+        "Matching reads only metadata, so it covers fewer projects but never sees your code.",
+        "And one owner key holds the contracts until a multisig."
+      ]
+    },
+    {
+      "id": "d15",
+      "question": "What isn't covered yet?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Not covered yet: independent evaluators, mainnet custody,",
+        "reorg detection in our indexer, and sandboxed tests on macOS."
+      ]
+    },
+    {
+      "id": "d16",
+      "question": "What comes next?",
+      "speaker": "Aryan",
+      "phrases": [
+        "Next: measured benchmarks for every release, outside providers, independent evaluators, an audit, then Arbitrum One.",
+        "Lemma: agents stop paying to rediscover solved work."
+      ]
+    }
+  ]
+}

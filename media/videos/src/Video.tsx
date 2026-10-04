@@ -1,23 +1,49 @@
 import React from 'react';
 import {AbsoluteFill, Audio, Img, Sequence, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
-import timeline from './timeline.json';
-import {C, ease, F, lin, rise, useFonts} from './theme';
-import {SCENES} from './scenes';
+import {C, ease, F, lin, rise, useFonts, type SceneProps} from './theme';
 
-type Segment = (typeof timeline.segments)[number];
+export type Phrase = {text: string; start: number; end: number};
+export type Segment = {
+	id: string;
+	index: number;
+	question: string;
+	speaker: string;
+	questionStart: number;
+	answerStart: number;
+	end: number;
+	words: number;
+	phrases: Phrase[];
+};
+export type Timeline = {fps: number; total: number; introEnd: number; outroStart: number; segments: Segment[]};
 
-export type PitchProps = {
+export type VideoProps = {
 	/** Show the teleprompter and timecode instead of captions, for recording the voice-over. */
 	guide: boolean;
-	/** Voice files in public/voice, by segment id (for example { "q1": "q1.m4a" }). */
+	/** Voice files in public/voice/<video>, by segment id (for example { "q1": "q1.m4a" }). */
 	voices: Record<string, string>;
+};
+
+type VideoConfig = {
+	name: 'pitch' | 'demo';
+	timeline: Timeline;
+	scenes: Record<string, React.FC<SceneProps>>;
+	Intro: React.FC;
+	Outro: React.FC;
+	/** Drawn above the scenes and below the captions, across the whole video. */
+	Overlay?: React.FC<{segment: Segment | null}>;
 };
 
 const QUESTION_EXIT = 10;
 
-export const Pitch: React.FC<PitchProps> = ({guide, voices}) => {
+export const makeVideo = (config: VideoConfig): React.FC<VideoProps> => {
+	const View: React.FC<VideoProps> = (props) => <VideoView {...props} config={config} />;
+	return View;
+};
+
+const VideoView: React.FC<VideoProps & {config: VideoConfig}> = ({guide, voices, config}) => {
 	useFonts();
 	const frame = useCurrentFrame();
+	const {timeline, scenes, Intro, Outro, Overlay} = config;
 	const hasVoices = Object.keys(voices).length > 0;
 	const current = timeline.segments.find((s) => frame >= s.questionStart && frame < s.end) ?? null;
 
@@ -29,19 +55,20 @@ export const Pitch: React.FC<PitchProps> = ({guide, voices}) => {
 			</Sequence>
 			{timeline.segments.map((s) => (
 				<Sequence key={s.id} from={s.questionStart} durationInFrames={s.end - s.questionStart} name={`${s.id}: ${s.question}`}>
-					<SegmentView segment={s} />
+					<SegmentView segment={s} total={timeline.segments.length} Scene={scenes[s.id]} />
 				</Sequence>
 			))}
 			<Sequence from={timeline.outroStart} name="Outro">
 				<Outro />
 			</Sequence>
-			<Progress segment={current} />
-			{guide ? <Teleprompter segment={current} /> : <Captions segment={current} />}
-			<Audio src={staticFile('music.wav')} volume={hasVoices ? 0.55 : 1} />
+			{Overlay ? <Overlay segment={current} /> : null}
+			<Progress timeline={timeline} segment={current} />
+			{guide ? <Teleprompter timeline={timeline} segment={current} /> : <Captions segment={current} />}
+			<Audio src={staticFile(`music-${config.name}.wav`)} volume={hasVoices ? 0.55 : 1} />
 			{timeline.segments.map((s) =>
 				voices[s.id] ? (
 					<Sequence key={`voice-${s.id}`} from={s.answerStart} name={`voice ${s.id}`}>
-						<Audio src={staticFile(`voice/${voices[s.id]}`)} />
+						<Audio src={staticFile(`voice/${config.name}/${voices[s.id]}`)} />
 					</Sequence>
 				) : null,
 			)}
@@ -76,12 +103,11 @@ const Backdrop: React.FC = () => {
 	);
 };
 
-const SegmentView: React.FC<{segment: Segment}> = ({segment}) => {
+const SegmentView: React.FC<{segment: Segment; total: number; Scene: React.FC<SceneProps>}> = ({segment, total, Scene}) => {
 	const f = useCurrentFrame();
 	const qLen = segment.answerStart - segment.questionStart;
 	const dur = segment.end - segment.answerStart;
 	const t = f - qLen;
-	const Scene = SCENES[segment.id];
 	const ph = segment.phrases.map((p) => p.start - segment.answerStart);
 	const out = 1 - lin(f, segment.end - segment.questionStart - 8, segment.end - segment.questionStart);
 
@@ -107,7 +133,7 @@ const SegmentView: React.FC<{segment: Segment}> = ({segment}) => {
 					}}
 				>
 					<div style={{fontFamily: F.head, fontSize: 34, letterSpacing: 6, color: C.mint, textTransform: 'uppercase', marginBottom: 28}}>
-						Question {segment.index + 1} of 10
+						Question {segment.index + 1} of {total}
 					</div>
 					<div style={{fontFamily: F.head, fontWeight: 500, fontSize: 104, lineHeight: 1.1, textAlign: 'center', maxWidth: 1500}}>
 						{segment.question}
@@ -149,7 +175,7 @@ const SegmentView: React.FC<{segment: Segment}> = ({segment}) => {
 	);
 };
 
-const Progress: React.FC<{segment: Segment | null}> = ({segment}) => {
+const Progress: React.FC<{timeline: Timeline; segment: Segment | null}> = ({timeline, segment}) => {
 	const frame = useCurrentFrame();
 	const show = ease(frame, timeline.introEnd - 10, timeline.introEnd + 10) * (1 - ease(frame, timeline.outroStart, timeline.outroStart + 15));
 	return (
@@ -161,8 +187,8 @@ const Progress: React.FC<{segment: Segment | null}> = ({segment}) => {
 					<div
 						key={s.id}
 						style={{
-							width: active ? 40 : 14,
-							height: 14,
+							width: active ? (timeline.segments.length > 12 ? 30 : 40) : timeline.segments.length > 12 ? 10 : 14,
+							height: timeline.segments.length > 12 ? 10 : 14,
 							borderRadius: 999,
 							background: active || done ? C.mint : C.line,
 							opacity: done && !active ? 0.55 : 1,
@@ -201,7 +227,7 @@ const Captions: React.FC<{segment: Segment | null}> = ({segment}) => {
 	);
 };
 
-const Teleprompter: React.FC<{segment: Segment | null}> = ({segment}) => {
+const Teleprompter: React.FC<{timeline: Timeline; segment: Segment | null}> = ({timeline, segment}) => {
 	const frame = useCurrentFrame();
 	const {fps} = useVideoConfig();
 	const clock = `${Math.floor(frame / fps / 60)}:${String(Math.floor((frame / fps) % 60)).padStart(2, '0')}.${Math.floor(((frame % fps) / fps) * 10)}`;
@@ -257,48 +283,3 @@ const Teleprompter: React.FC<{segment: Segment | null}> = ({segment}) => {
 	);
 };
 
-const Intro: React.FC = () => {
-	const f = useCurrentFrame();
-	const mark = ease(f, 4, 28);
-	const out = 1 - ease(f, timeline.introEnd - 12, timeline.introEnd);
-	return (
-		<AbsoluteFill style={{justifyContent: 'center', alignItems: 'center', opacity: out}}>
-			<div style={{display: 'flex', alignItems: 'center', gap: 40}}>
-				<Img src={staticFile('brand/lemma-mark-dark.svg')} style={{width: 200, opacity: mark, transform: `scale(${0.8 + 0.2 * mark}) rotate(${(1 - mark) * -8}deg)`}} />
-				<div style={{fontFamily: F.head, fontWeight: 500, fontSize: 190, letterSpacing: -4, ...rise(f, 14, 30)}}>Lemma</div>
-			</div>
-			<div style={{fontFamily: F.head, fontSize: 52, color: C.muted, marginTop: 30, ...rise(f, 34)}}>
-				in <span style={{color: C.mint}}>ten questions</span>
-			</div>
-			<div
-				style={{
-					marginTop: 54,
-					padding: '10px 26px',
-					borderRadius: 999,
-					border: `1px solid ${C.line}`,
-					fontSize: 28,
-					color: C.muted,
-					...rise(f, 52),
-				}}
-			>
-				Built on <span style={{color: C.text}}>Arbitrum</span> · x402 · USDC · Stylus
-			</div>
-		</AbsoluteFill>
-	);
-};
-
-const Outro: React.FC = () => {
-	const f = useCurrentFrame();
-	return (
-		<AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
-			<Img src={staticFile('brand/lemma-logo-dark.png')} style={{width: 640, ...rise(f, 0, 20, 20)}} />
-			<div style={{fontFamily: F.head, fontSize: 46, marginTop: 40, ...rise(f, 12)}}>Agents stop paying to rediscover solved work.</div>
-			<div style={{display: 'flex', gap: 28, marginTop: 50, fontFamily: F.mono, fontSize: 30, color: C.mint, ...rise(f, 24)}}>
-				<span>lemma-production-8383.up.railway.app</span>
-				<span style={{color: C.faint}}>·</span>
-				<span>github.com/4waan/Lemma</span>
-			</div>
-			<div style={{marginTop: 36, fontSize: 26, color: C.muted, ...rise(f, 34)}}>Aryan Singh Rathore · Awaan Mustafa Siddiqui</div>
-		</AbsoluteFill>
-	);
-};

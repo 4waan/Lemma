@@ -58,7 +58,7 @@ The demo carries the judge's questions and the proof. The pitch carries the busi
 
 ## The pitch video: ten questions, about 3:09
 
-The pitch runs as questions and answers. Each question fills the screen for two seconds with a soft chime and no voice, then shrinks to a chip in the top-left corner while Aryan or Awaan answers it. A row of ten dots along the bottom shows which question is being answered. Built in Remotion, rendered at 1920×1080 and 30 fps, with a light music bed and burned-in captions. About 370 spoken words. The project, its renders and the voice-recording steps are in [`media/pitch-video`](../media/pitch-video/README.md).
+The pitch runs as questions and answers. Each question fills the screen for two seconds with a soft chime and no voice, then shrinks to a chip in the top-left corner while Aryan or Awaan answers it. A row of ten dots along the bottom shows which question is being answered. Built in Remotion, rendered at 1920×1080 and 30 fps, with a light music bed and burned-in captions. About 370 spoken words. The project, its renders and the voice-recording steps are in [`media/videos`](../media/videos/README.md).
 
 | Time | On screen: the question | Speaker | What is said | What is shown during the answer |
 | --- | --- | --- | --- | --- |
@@ -79,10 +79,10 @@ Each answer is timed to about 2.4 spoken words a second. If a take runs long, th
 
 ### How the pitch gets made
 
-1. **Visuals:** the Remotion project in `media/pitch-video` renders the cards, the question chips, the animations and the captions. Remotion is free for individuals and companies of up to three people, so the two of us need no license.
-2. **Music:** an original bed synthesized from the same timeline (`scripts/music.mjs`), with a chime on each question and a dip under each answer, so it has no licensing questions.
+1. **Visuals:** the Remotion project in `media/videos` renders the cards, the question chips, the animations and the captions. Remotion is free for individuals and companies of up to three people, so the two of us need no license.
+2. **Music:** an original bed synthesized from the same timeline (`scripts/music.mjs pitch`), with a chime on each question and a dip under each answer, so it has no licensing questions.
 3. **Voice:** Aryan and Awaan each record their answers while watching the guide render (`lemma-pitch-guide.mp4`, a teleprompter with countdowns), one file per answer, `q1.m4a` to `q10.m4a`. QuickTime's New Audio Recording is enough.
-4. **Assembly:** `node scripts/mix-voices.mjs <voice folder>` places each file at its answer, cleans and levels the voices, lowers the music, and writes the final MP4 with ffmpeg alone.
+4. **Assembly:** `node scripts/mix-voices.mjs pitch <voice folder>` places each file at its answer, cleans and levels the voices, lowers the music, and writes the final MP4 with ffmpeg alone.
 
 ## The demo video: the recorded run, about 4:30
 
@@ -112,10 +112,10 @@ Each beat opens with the judge's question as a short card (1.4 s), which then st
 
 ### How it gets made
 
-1. **Browser footage:** Chromium driven by Playwright records the dashboard and Arbiscan at 1920×1080 with scripted scrolling, and a mint outline on the line being talked about.
-2. **Terminal footage:** the real commands ran on 2026-10-04 and their output was saved. Remotion replays it as a terminal, with the command typed and the output streaming, labelled "real output, 2026-10-04".
+1. **Browser footage:** Chromium driven by Playwright captures the dashboard and the 1 October transactions on Arbiscan as 2× screenshots (`capture/pages.mjs`); the video pans and zooms over them and outlines the line being talked about. Arbiscan keeps address pages behind a bot check, so the contracts appear through their deployment and outcome transactions.
+2. **Terminal footage:** `capture/terminal.mjs` ran the real commands on 2026-10-04 and saved their output; the video replays it as a terminal, with the command typed and the output streaming.
 3. **Cards, chips, tracker and captions:** Remotion, with the same components as the pitch.
-4. **Voice:** a guide render with a teleprompter, as for the pitch. Aryan records `d1` to `d4`, `d15` and `d16`; Awaan records `d5` to `d14`. The same mixer places them.
+4. **Voice:** a guide render with a teleprompter, as for the pitch. Aryan records `d1` to `d4`, `d15` and `d16`; Awaan records `d5` to `d14`. `node scripts/mix-voices.mjs demo <voice folder>` places them.
 
 ## Claims to keep straight in both videos
 

@@ -7,7 +7,7 @@ import path from 'node:path';
 const browserExecutable = process.env.REMOTION_BROWSER;
 const comp = process.argv[2] ?? 'Pitch';
 const only = process.argv[3];
-const timeline = JSON.parse(readFileSync('src/timeline.json', 'utf8'));
+const timeline = JSON.parse(readFileSync(`src/timeline-${comp.startsWith('Demo') ? 'demo' : 'pitch'}.json`, 'utf8'));
 const serveUrl = await bundle({entryPoint: path.resolve('src/index.ts')});
 const composition = await selectComposition({serveUrl, id: comp, browserExecutable});
 mkdirSync('out/stills', {recursive: true});

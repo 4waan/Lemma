@@ -8,8 +8,31 @@ How to record the two videos for the Arbitrum Open House Singapore online builda
 - **Prizes:** the Overall Prize pays 40,000, 20,000 and 10,000 USDC. The Promising Products Track pays 7,000, 5,000 and 3,000 USDC. Up to 30,000 USDC goes out as milestone grants. Every prize is paid against development milestones.
 - **Qualifying rule:** the project must be deployed on an Arbitrum chain. Arbitrum Sepolia counts.
 - **Judging criteria:** smart contract quality, product-market fit, innovation and creativity, and real problem solving. Projects that integrate Paxos' USDG get extra consideration. At least one of the three Overall prizes goes to a Robinhood Chain project, and at least one goes to an Arbitrum project.
-- **HackQuest project fields:** a **Pitch Video**, a **Demo Video**, the GitHub repository, progress during the hackathon, and fundraising status.
+- **HackQuest project fields:** a **Pitch Video**, a **Demo Video**, the GitHub repository, progress during the hackathon, and fundraising status. Each video can be an uploaded file or a YouTube or Loom link. HackQuest sets no length for this buildathon; its general guide asks for a demo of 2 to 5 minutes that shows the contract interaction and the UI ([HackQuest best practices](https://www.hackquest.io/blog/Best-Practices-for-Successful-Web3-Hackathon-Project-Submissions)).
 - **Buildathon form fields:** frontend link, core contract addresses (`network: address — label`, at most 300 characters), factory contracts, token contract, which code was written during the buildathon (at most 300 characters), and sponsor technologies.
+
+## What the judges say they look for
+
+Ben Greenberg (@hummusonrails), Arbitrum DevRel and a frequent Open House judge, wrote the most useful guide ([article](https://x.com/hummusonrails/status/2098064078438866979), linked from Builder's Block #026):
+
+- Judges assume AI wrote much of the code. They score your decisions: a narrow problem for a named user, why it must be on chain and on Arbitrum, what you cut, and which tradeoffs you made, said out loud.
+- "Run it live where you can. A recording only proves the run you chose to record." Judges ask what happens with another wallet, an empty balance, two users at once, or a transaction that fails halfway.
+- "The demo itself should hit a real network, and include one failure on purpose. Show the transaction. Show the state change. Then show what the user sees when something goes wrong, and say which failure modes you have not covered yet."
+- The README should say what works and what does not, with explorer links, and tests should cover the hard path.
+
+## What past winners sent
+
+Lengths from the winners' HackQuest project pages, read on 2026-10-04:
+
+| Buildathon | Winner | Pitch | Demo |
+| --- | --- | --- | --- |
+| NYC, 1st | Tilt Protocol | 2:42 | 3:25 |
+| London, 1st open | Verus | 4:45 | 4:50 |
+| London, 2nd open | Capricorn | 3:13 | 3:34 |
+| London, 1st agentic | ReineiraOS, "bonded x402" | 2:39 | 1:58 |
+| London, 3rd agentic | Pact Network, refunds for x402 payments | 2:11 | 1:37 |
+
+Two London agentic winners are close to Lemma: ReineiraOS backs agent commitments with a bond, and Pact Network refunds an agent when a paid x402 API fails. The judges have seen both, so the pitch must say what is different: Lemma answers "does this fit, and is it worth buying" **before** any money moves, and its bond covers a tested integration in the buyer's own repository, not an API call. Pact's pitch followed problem, customer interviews, how it works, business model, market size, traction, ask. Its demo was a dashboard, one call failing live, and the refund landing.
 
 ## How the two videos differ
 
@@ -20,12 +43,12 @@ How to record the two videos for the Arbitrum Open House Singapore online builda
 | Viewer | Arbitrum Foundation ecosystem and grants people choosing who goes to Founder House and gets milestone money | Technical judges checking the build |
 | What is on screen | A face on camera, plus a few slides or full-screen visuals | The real product: the agent, the terminal, the dashboard, Arbiscan |
 | Tone | Story: problem, insight, product, market, business model, roadmap, ask | Proof: one task followed end to end, with every claim shown on screen |
-| Length | 2 to 3 minutes | 3 to 4 minutes, hard stop at 5 |
+| Length | 2:30 to 3:00 | 3:00 to 4:00, never past 5 |
 | Mistake to avoid | Spending a minute on architecture | Spending a minute on slides |
 
 Both videos have to stand alone. A judge may watch only one, so each opens with the one-line hook and says "on Arbitrum" in its first 20 seconds.
 
-## The pitch video, about 2:45
+## The pitch video, about 2:55
 
 Record the face on camera with a clean background. Cut to full-screen visuals for the numbers. Every number on screen names its source.
 
@@ -35,11 +58,13 @@ Record the face on camera with a clean background. Cut to full-screen visuals fo
 | 0:15 | Problem | Agents rebuild the same x402 payment gating, paying clients and facilitators again and again. Each rebuild burns model tokens and can still fail its tests. Copying old code doesn't work: the agent can't tell whether it fits this repository, whether it is safe to apply, or whether buying beats building. | A terminal of an agent looping on the same integration, with a token counter |
 | 0:45 | Insight | What matters is the answer to "does this fit my repo, and what will it cost me," not the code. Lemma sells that answer, priced against what it saves and backed by a bond. | The README banner (`docs/brand/lemma-readme-banner.svg`) |
 | 1:05 | Product | The four steps: check for free (only a profile, never code), buy for cents over x402, apply and test locally, and get a refund from a USDC bond if the test fails. | The four-step table, one step at a time |
-| 1:30 | Why Arbitrum | The agent pays USDC with no ETH. A Stylus contract computes each release's score on chain. A Solidity registry holds the bond and refunds failures. A whole purchase cost under 0.00002 testnet ETH in gas. | The contract addresses and the 2026-10-01 transactions on Arbiscan |
+| 1:20 | Against what exists | Copying from GitHub gives code without fit; insurance like Pact refunds a call after it fails. Lemma checks fit first, prices against measured saving, then backs the result with a bond. | A three-column comparison |
+| 1:35 | Why Arbitrum | The agent pays USDC with no ETH. A Stylus contract computes each release's score on chain. A Solidity registry holds the bond and refunds failures. A whole purchase cost under 0.00002 testnet ETH in gas. | The contract addresses and the 2026-10-01 transactions on Arbiscan |
 | 1:55 | Business model | Price is capped at 30% of the saving a benchmark measured, and the buyer must still save at least 25%. Providers post a bond; the protocol can take a fee later. Show the worked example and say it is an example, not a measurement. | The pricing table from the README |
-| 2:15 | Traction and honesty | Built during the buildathon, from 24 September. Live dashboard, one-click install for Cursor, VS Code, Goose, Claude Code and Codex. Two real purchases on Arbitrum Sepolia: one passed, one refunded. Over 1,000 tests, Foundry invariants, a reproducible Stylus build. | Dashboard, Connect page, test count |
-| 2:30 | Roadmap and ask | Next: measured benchmark evidence so releases go on sale, third-party providers, ERC-8004 reputation, an audit, then Arbitrum One. Founder House would help us find the first providers and buyers. | Roadmap table from Demo Script, Future scope |
-| 2:40 | Close | "Lemma: agents stop paying to rediscover solved work." | Logo, URL, GitHub |
+| 2:15 | Decisions we made | What we cut (one first-party provider, a team evaluator, testnet only) and why: prove that an agent pays, applies, tests and gets refunded before building a marketplace. | Text on screen, one line per cut |
+| 2:25 | Traction and honesty | Built during the buildathon, from 24 September. Live dashboard, one-click install for Cursor, VS Code, Goose, Claude Code and Codex. Two real purchases on Arbitrum Sepolia: one passed, one refunded. Over 1,000 tests, Foundry invariants, a reproducible Stylus build. | Dashboard, Connect page, test count |
+| 2:35 | Roadmap and ask | Next: measured benchmark evidence so releases go on sale, third-party providers, ERC-8004 reputation, an audit, then Arbitrum One. Founder House would help us find the first providers and buyers. | Roadmap table from Demo Script, Future scope |
+| 2:50 | Close | "Lemma: agents stop paying to rediscover solved work." | Logo, URL, GitHub |
 
 Say who the team is in one sentence near the start or the end: names, roles, and why you can build this.
 
@@ -47,7 +72,7 @@ Say who the team is in one sentence near the start or the end: names, roles, and
 
 A screen recording with a voice-over. Record at 1080p or higher, with the terminal font at 18 pt or more and the browser zoomed to 125%. Cut every wait; for an on-chain wait, show a "1 minute later" card instead of real time.
 
-Follow one task from start to finish: "add x402 payment gating to this MCP server on Arbitrum Sepolia."
+Follow one task from start to finish: "add x402 payment gating to this MCP server on Arbitrum Sepolia." The failed test and its refund are the deliberate failure the judges ask for; keep them in even if time is short. End by naming the failure modes the build already handles (a lost paid response recovered without paying twice, a spend limit refusing a purchase) and the ones it does not yet (an independent evaluator, mainnet custody).
 
 | Time | Beat | Shows | Source |
 | --- | --- | --- | --- |

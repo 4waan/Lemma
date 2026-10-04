@@ -10,6 +10,7 @@ The mark is the L of Lemma: a dark stem with a slanted top (the proven piece), a
 | `lemma-mark-dark.svg` | The mark for dark backgrounds: a light stem, and the arrow ends in green instead of ink. |
 | `lemma-mark-mono.svg` | One color (`currentColor`), for stamps, prints and small sizes. |
 | `lemma-logo.png`, `lemma-logo-dark.png` | The horizontal lockup, 640×176, for READMEs and slides. |
+| `lemma-readme-banner.svg` | The four-step banner at the top of the root README: check, buy, apply and test, covered. Dark on purpose, so it reads on GitHub's light and dark themes. |
 | `lemma-logo-stacked.png`, `lemma-logo-stacked-dark.png` | The stacked lockup: the mark above the wordmark. |
 
 The dashboard draws the same geometry inline (`apps/web/src/components/Logo.tsx`), and its favicon (`apps/web/src/favicon.svg`) is a flat version on an ink tile that reads at 16 px.

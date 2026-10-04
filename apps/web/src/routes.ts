@@ -1,5 +1,5 @@
 /** The home page's sections a link may land on. */
-export type HomeAnchor = "how-it-works" | "arbitrum" | "pricing";
+export type HomeAnchor = "how-it-works" | "arbitrum" | "purchases" | "pricing";
 
 /** The dashboard's views, addressed by URL fragment so the server serves one page. */
 export type Route =
@@ -17,7 +17,7 @@ const HEX32 = /^0x[0-9a-f]{64}$/;
 export function parseRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, "");
   if (path === "" || path === "overview") return { view: "overview", anchor: null };
-  if (path === "how-it-works" || path === "arbitrum" || path === "pricing") return { view: "overview", anchor: path };
+  if (path === "how-it-works" || path === "arbitrum" || path === "purchases" || path === "pricing") return { view: "overview", anchor: path };
   // "evidence" and "setup" are the pages' earlier names; links to them still land.
   if (path === "benchmark" || path === "evidence") return { view: "benchmark", anchor: null };
   if (path === "what-to-trust") return { view: "benchmark", anchor: "what-to-trust" };
@@ -57,7 +57,7 @@ export const REPOSITORY_URL = "https://github.com/4waan/Lemma";
 /** The header's links. Connect your agent is the header's button. */
 export const NAV: readonly NavItem[] = [
   { href: "#/catalog", label: "Catalog", view: "catalog" },
-  { href: "#/resolutions", label: "Resolutions", view: "resolution" },
+  { href: "#/purchases", label: "Purchases", view: "overview", anchor: "purchases" },
   { href: "#/benchmark", label: "Benchmark", view: "benchmark" },
   { href: "#/status", label: "Status", view: "status" },
   { href: REPOSITORY_URL, label: "GitHub", view: null },
@@ -80,7 +80,7 @@ export const FOOTER_COLUMNS: ReadonlyArray<{ readonly title: string; readonly it
   {
     title: "Explore",
     items: [
-      { href: "#/resolutions", label: "Resolutions", view: "resolution" },
+      { href: "#/purchases", label: "Recorded purchases", view: "overview", anchor: "purchases" },
       { href: "#/demand", label: "Demand", view: "demand" },
       { href: "#/status", label: "Status", view: "status" },
     ],

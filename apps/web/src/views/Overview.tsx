@@ -6,14 +6,15 @@ import { CostComparison } from "../components/CostChart.js";
 import { Icon, type IconName } from "../components/Icon.js";
 import { AgentTerminal } from "../components/Terminal.js";
 import { Badge, PricingCard } from "../components/ui.js";
-import { DEPLOYMENT } from "../deployment.js";
+import { DEPLOYMENT, PURCHASES } from "../deployment.js";
 import { usdcAmount } from "../format.js";
 import { explorerAddressUrl, explorerTxUrl } from "../links.js";
 import { NETWORK_LABEL } from "../routes.js";
 
 /**
  * The home page, in the order a visitor asks: what Lemma is (with a sample
- * agent session), how it works, what the chain adds, and the price. The claim
+ * agent session), how it works, what the chain adds, two recorded purchases
+ * with every step on chain, and the price. The claim
  * window comes from this server's catalog, refreshed every minute while the
  * page is open; the chain links point at Lemma's own recorded run.
  */
@@ -24,6 +25,7 @@ export function Overview() {
       <Hero />
       <HowItWorks />
       <OnArbitrum />
+      <RecordedPurchases />
       <Pricing catalog={catalog} />
       <div className="cta-band">
         <div>
@@ -154,6 +156,48 @@ function OnArbitrum() {
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+/** The recorded run's two purchases, every step linked to its transaction, so anyone can check them. */
+function RecordedPurchases() {
+  return (
+    <section className="section" id="purchases" aria-labelledby="purchases-title">
+      <div className="section-head">
+        <span className="eyebrow">Recorded purchases</span>
+        <h2 id="purchases-title">Two purchases, every step on chain</h2>
+        <p>
+          On {DEPLOYMENT.measuredOn}, an agent bought a test release twice through the bridge, the signer and x402. One passed its tests; the other failed and was
+          refunded. Open any step to check it.
+        </p>
+      </div>
+      <div className="purchase-grid">
+        {PURCHASES.map((purchase) => (
+          <article className="card purchase" key={purchase.title}>
+            <div className="card-head">
+              <h3 className="card-title">{purchase.title}</h3>
+              {purchase.outcome === "passed" ? <Badge tone="ok">Tests passed</Badge> : <Badge tone="warn">Refunded</Badge>}
+            </div>
+            <p className="purchase-summary">{purchase.summary}</p>
+            <ol className="purchase-steps">
+              {purchase.steps.map((step) => {
+                const href = explorerTxUrl(DEPLOYMENT.explorer, step.tx);
+                return (
+                  <li key={step.tx}>
+                    <span>{step.label}</span>
+                    {href === null ? null : (
+                      <a href={href} target="_blank" rel="noopener noreferrer" aria-label={`${step.label}: transaction on Arbiscan`}>
+                        Arbiscan <Icon name="external" size={14} />
+                      </a>
+                    )}
+                  </li>
+                );
+              })}
+            </ol>
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

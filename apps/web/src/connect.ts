@@ -36,8 +36,11 @@ export function installFor(origin: string): Install {
   const packageUrl = `${origin}/dl/lemma-mcp-${BRIDGE_VERSION}.tgz`;
   const launch = { command: "npx", args: ["-y", packageUrl] };
   const env = { LEMMA_API_URL: origin };
-  // Editors that expand ${workspaceFolder} pass the open project, so the bridge reads that project and nothing above it.
+  // Cursor expands ${workspaceFolder} to the open project, so the bridge reads that project and nothing above it.
+  // VS Code's one-click install writes the user's own settings, where ${workspaceFolder} is not defined and the
+  // server would not start, so its config leaves it out: the bridge then reads the folder VS Code starts it in.
   const editor = { ...launch, env: { ...env, LEMMA_WORKSPACE: "${workspaceFolder}" } };
+  const vscode = { type: "stdio", ...launch, env };
   const goose = new URLSearchParams([
     ["cmd", launch.command],
     ...launch.args.map((arg): [string, string] => ["arg", arg]),
@@ -48,7 +51,7 @@ export function installFor(origin: string): Install {
   return {
     packageUrl,
     cursorUrl: `https://cursor.com/en/install-mcp?name=${SERVER_NAME}&config=${encodeURIComponent(base64(JSON.stringify(editor)))}`,
-    vscodeUrl: `https://vscode.dev/redirect/mcp/install?name=${SERVER_NAME}&config=${encodeURIComponent(JSON.stringify({ type: "stdio", ...editor }))}`,
+    vscodeUrl: `https://vscode.dev/redirect/mcp/install?name=${SERVER_NAME}&config=${encodeURIComponent(JSON.stringify(vscode))}`,
     gooseUrl: `goose://extension?${goose.toString()}`,
     claudeCommand: `claude mcp add -s local -t stdio -e LEMMA_API_URL=${origin} ${SERVER_NAME} -- npx -y ${packageUrl}`,
     codexCommand: `codex mcp add ${SERVER_NAME} --env LEMMA_API_URL=${origin} -- npx -y ${packageUrl}`,

@@ -206,7 +206,7 @@ function AddStep({ agent, install }: { agent: AgentId; install: ReturnType<typeo
     case "cursor":
       return <InstallButton href={install.cursorUrl} label="Add to Cursor" note="Opens Cursor and asks you to confirm." />;
     case "vscode":
-      return <InstallButton href={install.vscodeUrl} label="Install in VS Code" note="Opens VS Code and asks you to confirm. Use it in agent mode." />;
+      return <InstallButton href={install.vscodeUrl} label="Install in VS Code" note="Opens VS Code and asks you to confirm. Open your project folder first, and use it in agent mode." />;
     case "goose":
       return <InstallButton href={install.gooseUrl} label="Add to Goose" note="Opens Goose and asks you to confirm." />;
     case "claude":

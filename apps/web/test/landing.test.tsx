@@ -8,7 +8,7 @@ import { type Loaded, MAX_POLL_MS, POLL_MS, POLL_START, type Polled, nextPolled,
 import { App } from "../src/App.js";
 import { WORKED_EXAMPLE } from "../src/calculator.js";
 import { AgentTerminal, DECISION, SESSION, transcript } from "../src/components/Terminal.js";
-import { DEPLOYMENT } from "../src/deployment.js";
+import { DEPLOYMENT, PURCHASES } from "../src/deployment.js";
 import { shortHex } from "../src/format.js";
 import { BUILT_ON, FOOTER_COLUMNS, NAV, NETWORK_LABEL, REPOSITORY_URL, isCurrent, parseRoute } from "../src/routes.js";
 import { THEME_COLOR, applyTheme, storedTheme } from "../src/theme.js";
@@ -240,10 +240,23 @@ describe("the home page sections", () => {
     expect(section).not.toMatch(/<svg class="(gas|cost)/);
   });
 
-  it("renders the whole home page without inline styles, in its five parts", () => {
+  it("shows the recorded run's two purchases, every step linked to its transaction, and says the release was a test release", () => {
+    const html = renderToStaticMarkup(<Overview />);
+    const section = html.slice(html.indexOf('id="purchases"'), html.indexOf('id="pricing"'));
+    expect(section).toContain("Two purchases, every step on chain");
+    expect(section).toContain("bought a test release twice");
+    expect(section).toContain(DEPLOYMENT.measuredOn);
+    expect(section.match(/<article class="card purchase">/g)).toHaveLength(2);
+    for (const badge of ["Tests passed", "Refunded"]) expect(section).toContain(badge);
+    for (const purchase of PURCHASES) for (const step of purchase.steps) expect(section).toContain(`href="https://sepolia.arbiscan.io/tx/${step.tx}"`);
+    expect(PURCHASES.flatMap((p) => p.steps)).toHaveLength(7);
+    expect(new Set(PURCHASES.flatMap((p) => p.steps.map((step) => step.tx))).size).toBe(7);
+  });
+
+  it("renders the whole home page without inline styles, in its six parts", () => {
     const html = renderToStaticMarkup(<Overview />);
     expect(html).not.toContain("style=");
-    for (const text of ["Tested integrations your agent can reuse", "Sample session", 'id="how-it-works"', 'id="arbitrum"', `On ${NETWORK_LABEL}`, 'id="pricing"', "Try it in your agent", 'href="#/connect"']) {
+    for (const text of ["Tested integrations your agent can reuse", "Sample session", 'id="how-it-works"', 'id="arbitrum"', `On ${NETWORK_LABEL}`, 'id="purchases"', 'id="pricing"', "Try it in your agent", 'href="#/connect"']) {
       expect(html).toContain(text);
     }
     for (const gone of ["Every test result counts", "Live record", "Building blocks", 'id="verify"', "Why Arbitrum", "454,236 gas", "Chain ID"]) expect(html).not.toContain(gone);
@@ -361,8 +374,11 @@ describe("the shell", () => {
     expect(renderToStaticMarkup(<App initialHash="#/" />)).toContain(`<a class="pill network" href="#/arbitrum"`);
   });
 
-  it("links Catalog, Resolutions, Benchmark, Status and GitHub, with Connect your agent as the button", () => {
-    expect(NAV.map((item) => item.label)).toEqual(["Catalog", "Resolutions", "Benchmark", "Status", "GitHub"]);
+  it("links Catalog, Purchases, Benchmark, Status and GitHub, with Connect your agent as the button, and no empty Resolutions page", () => {
+    expect(NAV.map((item) => item.label)).toEqual(["Catalog", "Purchases", "Benchmark", "Status", "GitHub"]);
+    expect(renderToStaticMarkup(<App initialHash="#/purchases" />)).toContain('<a href="#/purchases" aria-current="page">Purchases</a>');
+    expect(parseRoute("#/purchases")).toEqual({ view: "overview", anchor: "purchases" });
+    for (const item of [...NAV, ...FOOTER_COLUMNS.flatMap((c) => c.items)]) expect(item.href).not.toBe("#/resolutions");
     const html = renderToStaticMarkup(<App initialHash="#/" />);
     expect(html).toContain(`<a href="${REPOSITORY_URL}" target="_blank" rel="noopener noreferrer">GitHub`);
     expect(REPOSITORY_URL).toBe("https://github.com/4waan/Lemma");

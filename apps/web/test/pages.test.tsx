@@ -283,7 +283,7 @@ describe("pages", () => {
     expect(html).not.toContain("file paths or environment values to the server.");
   });
 
-  it("shows each release as a compact card, the integrations not available yet, and how to add one", () => {
+  it("shows each release as a compact card, says Lemma runs on x402, lists what is next, and how to add a release", () => {
     const html = renderToStaticMarkup(<Catalog view={previewOnly} />);
     // What it is, its price or a free preview, what it fits, the warranty and the source come first.
     for (const text of ["<h3>MCP server paywall</h3>", '<span class="badge">Free preview</span>', "x402 payment gating for a TypeScript MCP server", "<li>TypeScript</li>", "<li>Node 22–24</li>", "72 h to claim", "coinbase/x402"]) {
@@ -291,11 +291,14 @@ describe("pages", () => {
     }
     // No banner about what is missing, no reasons on the card, and the catalog's own titles stay out.
     for (const gone of ["Nothing is for sale yet", "not for sale yet", "not sold:", "Skeleton:"]) expect(html).not.toContain(gone);
-    // A capability with no release is one line under Not available yet, not a card; there are no filter chips.
-    expect(html).toContain("Not available yet");
+    // Lemma's own payments run on x402, said up front, so a release still to come never reads as x402 missing.
+    expect(html).toContain("Lemma runs on x402: every purchase is paid in USDC and settled by Lemma&#x27;s own facilitator.");
+    // A capability with no release is one line under Next in the catalog, not a card; there are no filter chips.
+    expect(html).toContain("Next in the catalog");
+    expect(html).not.toMatch(/not available/i);
     expect(html).toContain("<strong>Payment facilitator</strong>");
     expect(html).not.toContain("<h3>Payment facilitator</h3>");
-    expect(html).toContain("Agents asking for these get a free answer to build it themselves.");
+    expect(html).toContain("an agent that asks gets a free answer to build it itself");
     expect(html).not.toContain('class="filters"');
     // How to add a release: three steps and the guide.
     expect(html).toContain("Add a release");

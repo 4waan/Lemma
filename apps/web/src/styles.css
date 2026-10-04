@@ -2810,7 +2810,21 @@ td.num .platform-deps {
   color: var(--fg-2);
 }
 
-/* ---------- Catalog: not yet available, and adding a release ---------- */
+/* ---------- Catalog: x402, next in the catalog, and adding a release ---------- */
+
+.x402-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.25rem 0 0.75rem;
+  color: var(--fg-2);
+  font-size: 0.9375rem;
+}
+
+.x402-note svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
 
 .not-yet {
   margin-top: 2.5rem;

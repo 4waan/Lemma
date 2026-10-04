@@ -24,6 +24,10 @@ export function Catalog({ view }: { view: CatalogView }) {
     <>
       <PageHead eyebrow="Catalog" title="What your agent can reuse">
         <p className="lead">Tested integrations, and the projects each one fits.</p>
+        <p className="x402-note">
+          <Icon name="bolt" size={16} />
+          <span>Lemma runs on x402: every purchase is paid in USDC and settled by Lemma&apos;s own facilitator.</span>
+        </p>
         <p className="meta-line">
           <span>
             {view.releases.length} {view.releases.length === 1 ? "release" : "releases"}
@@ -42,11 +46,11 @@ export function Catalog({ view }: { view: CatalogView }) {
   );
 }
 
-/** Integrations with no release: one line each. Agents asking for them get a free answer to build it themselves. */
+/** Integrations with no release yet: one line each. Agents asking for them get a free answer to build it themselves. */
 function NotYet({ capabilities }: { capabilities: readonly CapabilityId[] }) {
   return (
     <section className="not-yet" aria-labelledby="not-yet-title">
-      <h2 id="not-yet-title">Not available yet</h2>
+      <h2 id="not-yet-title">Next in the catalog</h2>
       <ul>
         {capabilities.map((c) => (
           <li key={c}>
@@ -56,7 +60,7 @@ function NotYet({ capabilities }: { capabilities: readonly CapabilityId[] }) {
         ))}
       </ul>
       <p className="small muted">
-        Agents asking for these get a free answer to build it themselves. Each request is counted in <a href="#/demand">Demand</a>.
+        Until its release is published, an agent that asks gets a free answer to build it itself, and the request is counted in <a href="#/demand">Demand</a>.
       </p>
     </section>
   );

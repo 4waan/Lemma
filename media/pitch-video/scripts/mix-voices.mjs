@@ -8,7 +8,8 @@
 // cleaned up (rumble filter, light noise reduction, gentle compression) and
 // levelled, the music is lowered under it, and the result is loudness
 // normalized for YouTube. A take that runs past its slot is sped up by at most
-// 8%; a longer one is reported so it can be re-recorded.
+// 8%; a longer one is cut at the end of its slot and reported, so it can be
+// re-recorded.
 import {execFileSync} from 'node:child_process';
 import {existsSync, readdirSync, readFileSync} from 'node:fs';
 import path from 'node:path';
@@ -50,7 +51,8 @@ for (const s of timeline.segments) {
 	filters.push(
 		`[${index}:a]silenceremove=start_periods=1:start_threshold=-45dB,highpass=f=80,afftdn=nf=-25,` +
 			`acompressor=threshold=-20dB:ratio=3:attack=5:release=120,` +
-			`${tempo > 1 ? `atempo=${tempo.toFixed(3)},` : ''}loudnorm=I=-17:TP=-2:LRA=7,` +
+			`${tempo > 1 ? `atempo=${tempo.toFixed(3)},` : ''}atrim=0:${slot.toFixed(2)},afade=t=out:st=${(slot - 0.3).toFixed(2)}:d=0.3,` +
+			`loudnorm=I=-17:TP=-2:LRA=7,` +
 			`aresample=48000,adelay=${delay}|${delay}[v${index}]`,
 	);
 	console.log(`${s.id}  ${file}  ${length.toFixed(1)} s  slot ${slot.toFixed(1)} s${tempo > 1 ? `  sped up ${((tempo - 1) * 100).toFixed(1)}%` : ''}`);

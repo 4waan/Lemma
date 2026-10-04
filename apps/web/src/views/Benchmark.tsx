@@ -18,7 +18,7 @@ export function Benchmark({ view }: { view: CatalogView }) {
   const scored = view.releases.flatMap((r) => r.profiles.filter((p) => p.compatibility !== null).map((p) => ({ release: r, profile: p })));
   return (
     <>
-      <PageHead eyebrow="Benchmark" title="Measured, not promised">
+      <PageHead title="Benchmark">
         <p className="lead">The same task, run with and without Lemma. A release is sold only after this shows it saves money.</p>
       </PageHead>
 
